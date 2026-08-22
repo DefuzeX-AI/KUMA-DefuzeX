@@ -12,7 +12,7 @@ Do not disclose suspected vulnerabilities, credentials, private service
 details, or user data in a public issue.
 
 Use GitHub's private vulnerability reporting for
-`DefuzeX-company/defuzex-python-sdk` from the repository's **Security** tab.
+`DefuzeX-AI/KUMA-DefuzeX` from the repository's **Security** tab.
 Include the affected version, a minimal reproduction, expected impact, and any
 safe mitigation you have identified. Do not include real API keys or third-party
 data.

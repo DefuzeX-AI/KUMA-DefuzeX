@@ -13,8 +13,8 @@ SDK 只访问 `https://defuzex.ai/api/agentdefuze`。Backend、Core MCP、模型
 需要 Python 3.10 或更高版本。
 
 ```bash
-git clone https://github.com/DefuzeX-company/defuzex-python-sdk.git
-cd defuzex-python-sdk
+git clone https://github.com/DefuzeX-AI/KUMA-DefuzeX.git
+cd KUMA-DefuzeX
 python -m venv .venv
 ```
 
@@ -136,7 +136,7 @@ report = run.submit(
 
 日志使用增量采集并受服务端动态大小限制。不要把 API Key、环境变量转储或其他秘密写入日志。`upload_diff=False` 默认不上传源码 diff。
 
-支持标准 OpenTelemetry Agent/Workflow 最终输出的 Agent，可以使用 `defuzex.otel.configure_trace_evidence()` 并调用 `run.submit()`；不支持标准 OTel 输出时，继续使用显式 `run.submit(output)`。完整 OTel 示例见仓库根目录 [README](../../README.md#opentelemetry-trace-evidence)。
+支持标准 OpenTelemetry Agent/Workflow 最终输出的 Agent，可以使用 `defuzex.otel.configure_trace_evidence()` 并调用 `run.submit()`；不支持标准 OTel 输出时，继续使用显式 `run.submit(output)`。完整 OTel 说明见[架构文档](../../docs/architecture.md#opentelemetry-适配)。
 
 ## 6. 检查结果
 
@@ -178,4 +178,4 @@ print("Evidence gaps:", list(report.evidence_gaps))
 - `service_busy`：当前请求未执行，稍后发起一个新 Run。
 - `input_protocol`：检查 `get_input()` 与 `submit()` 是否严格交替。
 
-稳定错误码、Provider 组合和全部参数见仓库根目录 [README](../../README.md)。
+稳定错误处理、Provider 组合和常用参数见[英文 SDK 指南](../../docs/sdk-guide.md)。
