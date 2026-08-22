@@ -1,10 +1,12 @@
-# DefuzeX Python SDK guide
+# KUMA Python SDK guide
 
-This guide holds the detailed setup and integration material intentionally kept out of the project homepage. For the Chinese integration path, see the [中文用户接入指南](../examples/full_stack/USER_GUIDE.md).
+[English](sdk-guide.md) | [简体中文](sdk-guide.zh-CN.md)
+
+This is the canonical user guide for KUMA configuration and integration. The package, CLI, environment variables, and wire fields retain their existing `defuzex` / `DEFUZEX_*` technical identifiers.
 
 ## Installation
 
-DefuzeX supports Python 3.10 through 3.14. Install from the current source repository in an isolated environment:
+KUMA supports Python 3.10 through 3.14. Install the current source repository in an isolated environment:
 
 ```bash
 git clone https://github.com/DefuzeX-AI/KUMA-DefuzeX.git
@@ -12,7 +14,7 @@ cd KUMA-DefuzeX
 python -m venv .venv
 ```
 
-On Windows PowerShell:
+Windows PowerShell:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
@@ -20,7 +22,7 @@ python -m pip install --upgrade pip
 python -m pip install .
 ```
 
-On Linux or macOS:
+Linux or macOS:
 
 ```bash
 source .venv/bin/activate
@@ -28,31 +30,33 @@ python -m pip install --upgrade pip
 python -m pip install .
 ```
 
-Install the optional in-process OpenTelemetry adapter from the checkout only when needed:
+Optional OpenTelemetry support:
 
 ```bash
 python -m pip install ".[otel]"
 ```
 
-Contributors should follow [`CONTRIBUTING.md`](../CONTRIBUTING.md) for the editable development install and canonical checks.
+Contributors should use the editable development setup in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
-## Account-free first run
+## Local quickstart
 
-`defuzex quickstart` runs a deterministic exact-match check in an SDK-owned temporary directory. It reads no user repository and requires no account, API key, Docker, or network:
+The CLI quickstart runs a deterministic exact-match check in an SDK-owned temporary directory. It reads no user repository and requires no account, API key, Docker, or network:
 
 ```bash
 defuzex quickstart
 ```
 
-Use `defuzex quickstart --fail-demo` to inspect the deterministic failure path and non-zero exit status. [`examples/minimal_local.py`](../examples/minimal_local.py) demonstrates a complete local `Run` with a custom Case Provider and no Judge:
+Use `defuzex quickstart --fail-demo` to exercise the deterministic failure path. A complete local `Run` with a custom Case Provider and no Judge is also available:
 
 ```bash
 python examples/minimal_local.py
 ```
 
-## Official service setup
+## Configuration
 
-Official Case or Judge providers require a DefuzeX API key beginning with `dfx_`. Supply it through the process environment or the local user credential store; never place it in source, Notebook output, or Git.
+### API key
+
+Official Case or Judge Providers require a KUMA API key beginning with `dfx_`. Keep it in the process environment or user credential store; never place it in source, Notebook output, logs, or Git.
 
 Windows PowerShell:
 
@@ -68,7 +72,7 @@ export DEFUZEX_API_KEY="dfx_your_key_here"
 defuzex whoami
 ```
 
-The SDK can validate and atomically save the key without contacting the network:
+The SDK can validate and atomically store the key without a network request:
 
 ```python
 from defuzex import configure
@@ -77,7 +81,13 @@ credential_path = configure(api_key="dfx_your_key_here")
 print(credential_path)
 ```
 
-Credential resolution order is an explicit function argument, `DEFUZEX_API_KEY`, then the user credential file.
+Credential precedence is: `create_run(api_key=...)`, `DEFUZEX_API_KEY`, then the user credential file.
+
+| Environment variable | Purpose |
+|---|---|
+| `DEFUZEX_API_KEY` | Credential for official Providers |
+| `DEFUZEX_CONFIG_HOME` | Override the user credential directory |
+| `DEFUZEX_BASE_URL` | Override the accepted public or loopback API base URL; non-loopback URLs must use HTTPS |
 
 ### Requirement file
 
@@ -102,11 +112,11 @@ Diagnose the requested defect, apply a bounded fix, and run relevant checks.
 Do not read credentials or access paths outside the repository.
 ```
 
-The official service currently accepts text Inputs. Custom Case Providers can use locally validated structured Inputs.
+`agent_description`, `input_type`, and all three headings are required. Official Cases currently accept text Inputs. Structured Inputs require a custom Case Provider plus a locally validated JSON Schema declared through `input_schema`.
 
 ### Agent integration
 
-The user owns the Agent invocation; the SDK owns the Run protocol. Replace the deterministic body below with the existing Agent call:
+The user owns Agent execution; KUMA owns the synchronous `Run` protocol. Replace the deterministic function body with the existing Agent call:
 
 ```python
 from typing import Any
@@ -132,47 +142,79 @@ print(run.state)
 print(report)
 ```
 
-Production runs should place the SDK and Agent in the same controlled container and omit `allow_local=True`. The [Single Agent template](../examples/single_agent_template/README.md) provides a framework-neutral adapter with explicit timeout and failure handling.
+`get_input()` returns the JSON-compatible payload; `get_input(full=True)` returns an immutable `DefuzeXInput`. Completed submissions require finite JSON-compatible output. Do not advance one Run concurrently.
 
-## Run lifecycle and providers
+## Providers and Run lifecycle
 
-One `Run` follows a strict synchronous sequence:
+### Provider combinations
 
-1. `create_run()` validates configuration and obtains one Case.
-2. `get_input()` delivers the current Input.
-3. The user invokes the Agent.
-4. `submit()` records the result and Evidence atomically.
-5. Steps 2–4 repeat until the Case ends; an enabled Judge then returns a `TestReport`.
-
-Do not advance one Run concurrently. Call `run.cancel()` when abandoning it early.
-
-| Case provider | Judge provider | Behavior |
+| Case Provider | Judge Provider | Behavior |
 |---|---|---|
 | omitted | omitted | Official Case and Judge; API key required |
 | omitted | custom | Official Case with local Judge; API key required |
 | custom | omitted | Local Case with official Judge; API key required |
-| custom | custom | Fully local; the Case carries its public evaluation rule |
+| custom | custom | Fully local |
 | any | `judge=False` | Complete after the final submission without a Judge |
 
-Common `create_run()` controls include:
+Custom Case Providers require `max_inputs`. Provider outputs are normalized and validated before entering the Run.
 
-| Option | Purpose |
+### Run state machine
+
+The normal sequence is `ready` → `input_delivered` → `submitting`, returning to `ready` for another Input or moving to `completed`. An enabled Judge uses `judging` → `report_ready`.
+
+| State | Meaning |
 |---|---|
-| `repo_path`, `requirement_path` | Select the evaluated repository and requirement |
-| `case_provider`, `judge_provider` | Replace either official boundary with a custom Provider |
-| `max_inputs` | Bound custom Case input count |
-| `allow_local` | Explicitly permit trusted local development outside Docker |
-| `track_files`, `upload_diff`, `save_local` | Control file Evidence and local step records |
-| `timeout`, `operation_wait_timeout`, `max_retries` | Bound public HTTP attempts and official operation polling |
-| `trace_evidence` | Attach the optional in-process Trace capture |
+| `ready` | The next Input may be delivered |
+| `input_delivered` | The current Input awaits exactly one submission |
+| `submitting` | The submission and Evidence transaction are committing |
+| `completed` | Input processing ended; a Judge may run or retry |
+| `judging` | The synchronous Judge call is in progress |
+| `report_ready` | A validated `TestReport` is available |
+| `cancelled` | The caller cancelled the Run and released runtime state |
+| `failed` | Runtime finalization failed |
 
-The Python API remains synchronous while official single-Case and Judge requests use bounded server operations internally. See [SDK architecture](architecture.md#create_run-编排与调用流程) for the complete sequence and [public API contract](api-contract.md) for the HTTP boundary.
+Repeated `get_input()` calls before `submit()` return the same Input. Invalid ordering raises `InputProtocolError`. Call `run.cancel()` when abandoning a Run.
 
-## Evidence and OpenTelemetry
+### `create_run()` parameters
 
-Each `get_input()` to `submit()` interval is one Evidence transaction. File tracking records metadata by default; `logs=[...]` reads only explicitly named file increments. Capture status, missing reasons, dropped counts, and runtime warnings expose incomplete or degraded capture.
+| Parameter | Default | Purpose |
+|---|---:|---|
+| `repo_path` | `"."` | Repository evaluated by the Agent |
+| `requirement_path` | `None` | Requirement file; official Case Providers require it |
+| `case_provider` | `None` | Custom Case Provider; omitted selects the official Provider |
+| `judge_provider` | `None` | Custom Judge Provider; omitted selects the official Provider when judging |
+| `strategy` | `"auto"` | Automatic selection or an explicit strategy ID |
+| `max_inputs` | `None` | Positive Input bound; required for custom Cases |
+| `judge` | `True` | Run the configured Judge after the final Input |
+| `on_failure` | `"continue"` | Continue or stop after a failed submission |
+| `allow_local` | `False` | Permit trusted development outside Docker |
+| `track_files` | `True` | Capture bounded file metadata around each Input |
+| `upload_diff` | `False` | Include bounded text diffs in file Evidence |
+| `save_local` | `False` | Save submission records under `.defuzex/runs/` |
+| `allow_sensitive` | `False` | Explicit override for ordinary Evidence scanning; does not relax Trace allowlists |
+| `timeout` | `300.0` | Per-request public HTTP timeout in seconds |
+| `operation_wait_timeout` | `600.0` | Total wait bound for one official Case or Judge operation |
+| `max_retries` | `2` | Automatic transient retry count, from 0 through 5 |
+| `api_key` | `None` | Per-call credential with highest precedence |
+| `trace_evidence` | `None` | Capture returned by `configure_trace_evidence()` |
 
-OpenTelemetry support is optional and stays in process. DefuzeX adds a standard processor to the provided `TracerProvider`; it does not replace the global provider:
+`on_failure` accepts only `continue` or `stop`. The Python API is synchronous; `wait=False` is not supported.
+
+## Evidence, files, logs, and privacy
+
+Each `get_input()` to `submit()` interval is one Evidence transaction. Evidence commits only after the immutable Submission is appended to History; a failed submission build does not advance log offsets or Trace budgets.
+
+- Repository metadata is bounded and contains paths, types, sizes, and a fingerprint—not repository file contents.
+- File tracking records hashes, sizes, modes, and change types by default. Text content enters Evidence only when `upload_diff=True`.
+- `submit(..., logs=[...])` reads increments only from explicitly selected files and requires Evidence capture to be enabled.
+- `save_local=True` writes structured records under `.defuzex/runs/<run_id>/submissions/`; local persistence does not replace official submission.
+- `CaptureStatus`, `missing`, `dropped_count`, and `runtime_warnings` expose partial or degraded capture.
+
+Before official upload, KUMA scans output, errors, paths, diffs, explicit logs, and custom Cases for sensitive material. The API key is used for authorization and is not added to Evidence. `allow_sensitive=True` is an explicit ordinary-Evidence override, not a substitute for isolation or secret hygiene.
+
+## OpenTelemetry
+
+The optional adapter captures ended spans from the same process and current Input. It adds a standard processor to the supplied `TracerProvider`; it does not replace the application's provider:
 
 ```python
 from opentelemetry.sdk.trace import TracerProvider
@@ -193,23 +235,23 @@ run = create_run(
 )
 ```
 
-Only ended spans associated with the current Input are captured. A restrictive allowlist, size limits, and sensitive-data checks apply. Explicit `submit(output)` remains the portable fallback when Agent instrumentation does not expose a supported final output. The SDK does not provide an OTLP receiver, cross-process correlation, trace UI, or trace storage. See [OpenTelemetry architecture](architecture.md#opentelemetry-适配) for mapping and transaction details.
+Span counts, attributes, events, text, and total Run bytes are bounded. A restrictive allowlist excludes prompts, completions, source, log bodies, keys, and credentials. Explicit `submit(output)` remains the portable fallback; omitted output works only when supported Agent/Workflow spans expose a valid final output. KUMA does not provide an OTLP receiver, cross-process correlation, trace UI, or storage service.
 
-## Docker and runtime safety
+## Docker and runtime security
 
-`allow_local=True` is a development switch, not a sandbox. The user remains responsible for the Agent's file, command, network, and secret permissions. Evidence scanning complements container isolation and least privilege; it does not replace them.
+Official production runs require the SDK and Agent in the same controlled container by default. `allow_local=True` is a development switch, not a sandbox. The user remains responsible for the Agent's file, command, network, resource, and secret permissions.
 
-The public user-flow image is a build-validation example:
+Build the supplied user-flow example:
 
 ```bash
 docker build -f examples/full_stack/Dockerfile.user-flow -t defuzex-user-flow .
 ```
 
-The [Docker user-flow guide](../examples/full_stack/USER_GUIDE.md) and [Notebook](../examples/full_stack/defuzex_v4_real_user_flow.ipynb) describe the full user-owned Agent path and its prerequisites.
+See the [full-stack example guide](../examples/full_stack/USER_GUIDE.md) for its exact workspace and runtime requirements.
 
-## Troubleshooting
+## Errors, retries, and timeouts
 
-Catch stable public errors through `DefuzeError`:
+Catch stable SDK errors through `DefuzeError`:
 
 ```python
 from defuzex.errors import DefuzeError
@@ -220,21 +262,31 @@ except DefuzeError as exc:
     print(exc.code, exc.retryable, exc.request_id)
 ```
 
+Common subclasses include `ConfigurationError`, `AuthenticationError`, `PermissionDeniedError`, `ValidationError`, `SensitiveDataError`, `LimitExceededError`, `InputProtocolError`, `ProviderError`, `DefuzeTimeoutError`, `ServiceBusyError`, and `ServiceError`.
+
+`timeout` bounds one public HTTP attempt. `operation_wait_timeout` bounds the complete official single-Case or Judge operation. POST retries reuse a stable idempotency key; only server-declared transient failures are retried within `max_retries`, and `ServiceBusyError` is not retried automatically.
+
+An operation timeout retains bounded recovery metadata without storing credentials, request content, Evidence, or results. Judge retry requires the original Run and History; the high-level API cannot rebuild a lost Run from only `run_id` after process exit.
+
+## Troubleshooting
+
 | Symptom | Action |
 |---|---|
-| Missing API key | Use fully local Providers or `judge=False`, or configure a valid key |
-| `DockerRequiredError` | Run SDK and Agent in one container; use `allow_local=True` only for trusted development |
-| `submit()` returns `None` | Check whether more Inputs remain, whether Judge is disabled, and inspect `run.state` |
-| Operation timeout | Preserve the original Run, inspect `retryable`, and retry without changing protocols |
-| Missing OTel output | Submit an explicit JSON-compatible output or install and attach `[otel]` correctly |
-| Sensitive-data rejection | Remove credentials or sensitive content from output, paths, logs, and uploaded diffs |
-
-Only server-declared transient failures are retried within `max_retries`. Public server internals are not exposed through SDK exceptions.
+| Missing API key | Configure a valid key or use fully local Providers / `judge=False` |
+| Requirement rejected | Check UTF-8, front matter, required headings, and structured-input schema |
+| `DockerRequiredError` | Use one controlled container; enable `allow_local=True` only for trusted development |
+| `submit()` returns `None` | Check remaining Inputs, `judge`, `run.state`, and `run.history` |
+| `input_protocol` | Alternate one `get_input()` with one `submit()` and avoid concurrent advancement |
+| Sensitive-data rejection | Remove secrets from output, paths, logs, diffs, and custom Cases |
+| Operation timeout | Keep the original Run, inspect `retryable`, and retry without changing protocols |
+| Missing Trace output | Submit explicit JSON output or install and attach `[otel]` correctly |
 
 ## Reference
 
-- [SDK architecture](architecture.md)
+- [Architecture](architecture.md)
 - [Public API contract](api-contract.md)
-- [Chinese integration guide](../examples/full_stack/USER_GUIDE.md)
-- [Contributing](../CONTRIBUTING.md)
+- [Minimal local example](../examples/minimal_local.py)
+- [Single Agent template](../examples/single_agent_template/README.md)
+- [Full-stack example](../examples/full_stack/USER_GUIDE.md)
 - [Security policy](../SECURITY.md)
+- [Contributing](../CONTRIBUTING.md)

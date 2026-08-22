@@ -1,4 +1,4 @@
-# Contributing to DefuzeX Python SDK
+# Contributing to KUMA Python SDK
 
 Thank you for helping improve the public SDK. Keep changes within the client's
 responsibilities: public protocol models, transport behavior, Run lifecycle,

@@ -1,13 +1,13 @@
 # SDK v4 架构
 
-本文描述当前 `defuzex` Python 包的模块边界、同步用户 API、内部 v2 operation 流程和关键不变量。公开 HTTP 字段与路径另见 [API Contract](api-contract.md)；使用方式见[中文用户接入指南](../examples/full_stack/USER_GUIDE.md)或[英文 SDK 指南](sdk-guide.md)。
+本文描述当前 `defuzex` Python 包的模块边界、同步用户 API、内部 v2 operation 流程和关键不变量。公开 HTTP 字段与路径另见 [API Contract](api-contract.md)；使用方式见[简体中文 SDK 指南](sdk-guide.zh-CN.md)或[英文 SDK 指南](sdk-guide.md)。
 
 ## 系统边界与数据归属
 
 ```mermaid
 flowchart LR
     Agent["User Agent process"]
-    SDK["DefuzeX Python SDK<br/>public protocol, Run, Evidence"]
+    SDK["KUMA Python SDK<br/>public protocol, Run, Evidence"]
     Backend["Website Backend<br/>public HTTPS control plane"]
     Core["Private Core MCP<br/>Case, Rubric, Judge"]
     Model["Model provider"]

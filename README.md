@@ -5,7 +5,7 @@
 <h1 align="center">KUMA</h1>
 
 <p align="center">
-  <strong>DefuzeX Python SDK</strong><br>
+  <strong>KUMA Python SDK</strong><br>
   Knowledge-grounded Universal Measurement for Agents
 </p>
 
@@ -13,22 +13,11 @@
   <a href="README.md">English</a> &nbsp;|&nbsp; <a href="README.zh-CN.md">简体中文</a>
 </p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.10--3.14-3776AB?logo=python&amp;logoColor=white" alt="Python 3.10 to 3.14">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-4C8CBF" alt="Apache 2.0 license"></a>
-</p>
-
-DefuzeX is the public Python SDK for running evidence-bounded Agent behavior tests with local or official Case and Judge providers.
-
-## Why DefuzeX
-
-- **A strict, framework-neutral protocol:** connect an existing Agent through the synchronous `get_input()` → Agent → `submit()` lifecycle.
-- **Useful evidence with explicit boundaries:** capture file metadata, selected logs, and optional in-process OpenTelemetry spans with bounded, privacy-aware defaults.
-- **Local first, hosted when needed:** start without an account or network, then use official Case and Judge services through the public HTTPS API.
+KUMA is the public Python SDK for testing Agent behavior through a strict `Run` protocol and bounded Evidence capture. It owns the client boundary only: it does not run Agents, execute models, or expose private evaluation logic.
 
 ## Install
 
-Python 3.10 or newer is required. Install the current source checkout:
+Python 3.10 or newer is required:
 
 ```bash
 git clone https://github.com/DefuzeX-AI/KUMA-DefuzeX.git
@@ -36,41 +25,24 @@ cd KUMA-DefuzeX
 python -m pip install .
 ```
 
-For virtual environments, optional OpenTelemetry support, and contributor setup, see the [SDK guide](docs/sdk-guide.md#installation).
+## Quick start
 
-## Minimal runnable example
-
-Run the deterministic local check—no account, API key, Docker, or network required:
+Run the deterministic local check without an account, API key, Docker, or network:
 
 ```bash
 defuzex quickstart
 ```
 
-Expected result:
-
-```text
-Local check: PASS
-Score: 100/100
-Reason: Output exactly matched the published rule.
-Artifact: <temporary directory>/result.json
-```
-
-For a complete local `Run`, execute [`examples/minimal_local.py`](examples/minimal_local.py):
-
-```bash
-python examples/minimal_local.py
-```
-
 ## Core capabilities
 
-- Synchronous, single-Case [`Run` lifecycle](docs/sdk-guide.md#run-lifecycle-and-providers) with immutable inputs, submissions, history, and reports.
-- Official or custom [Case and Judge providers](docs/sdk-guide.md#run-lifecycle-and-providers), including fully local operation.
-- Bounded [Evidence capture](docs/sdk-guide.md#evidence-and-opentelemetry) for file changes, explicit logs, and capture gaps.
-- Optional [OpenTelemetry trace evidence](docs/sdk-guide.md#evidence-and-opentelemetry) without replacing the application's tracer provider.
-- Public HTTPS-only service boundary; the SDK does not host Agents, models, databases, or private evaluation assets. See [architecture](docs/architecture.md) and the [public API contract](docs/api-contract.md).
+- Synchronous, framework-neutral Case and Judge workflow.
+- Official or custom Providers, including fully local runs.
+- Bounded file, log, and optional in-process trace Evidence.
 
-## Support and project links
+## Detailed documentation
 
-- [SDK guide](docs/sdk-guide.md) · [Single Agent template](examples/single_agent_template/README.md) · [Docker user flow](examples/full_stack/USER_GUIDE.md)
-- [GitHub Issues](https://github.com/DefuzeX-AI/KUMA-DefuzeX/issues) · [Security policy](SECURITY.md)
-- [Contributing](CONTRIBUTING.md) · [Apache License 2.0](LICENSE)
+[English SDK guide](docs/sdk-guide.md) · [简体中文 SDK 指南](docs/sdk-guide.zh-CN.md)
+
+## Project
+
+[Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Apache License 2.0](LICENSE)

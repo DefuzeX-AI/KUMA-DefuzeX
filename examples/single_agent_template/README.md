@@ -1,6 +1,6 @@
-# DefuzeX Single Agent Template
+# KUMA Single Agent Template
 
-This framework-neutral template connects one Agent call to the public DefuzeX `Run` protocol. It contains no model client, Agent framework, production transport mock, service credential, or deployment logic.
+This framework-neutral template connects one Agent call to the public KUMA `Run` protocol. It contains no model client, Agent framework, production transport mock, service credential, or deployment logic.
 
 ## Ownership boundary
 

@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes are provided for the latest released version of the DefuzeX
+Security fixes are provided for the latest released version of the KUMA
 Python SDK. Upgrade to the latest release before reporting a problem that may
 already have been fixed.
 

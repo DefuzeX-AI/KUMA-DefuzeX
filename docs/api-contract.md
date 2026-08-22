@@ -1,4 +1,4 @@
-# DefuzeX SDK API Contract
+# KUMA SDK API Contract
 
 Base URL：`https://defuzex.ai/api/agentdefuze`
 
