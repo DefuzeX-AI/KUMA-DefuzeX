@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 280" role="img" aria-labelledby="title description">
+  <title id="title">DefuzeX geometric wordmark</title>
+  <desc id="description">A dark blue banner with a connected D and X symbol beside the geometric word DefuzeX.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071426"/>
+      <stop offset="0.55" stop-color="#102A43"/>
+      <stop offset="1" stop-color="#172554"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="280" rx="28" fill="url(#background)"/>
+  <path d="M0 224 C180 154 302 275 478 210 S822 130 1200 208" fill="none" stroke="#38BDF8" stroke-opacity="0.12" stroke-width="2"/>
+  <path d="M0 56 C228 128 374 8 604 70 S990 154 1200 72" fill="none" stroke="#A78BFA" stroke-opacity="0.12" stroke-width="2"/>
+
+  <g transform="translate(70 48)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M34 18 H98 C146 18 174 48 174 92 S146 166 98 166 H34 Z" stroke="#F8FAFC" stroke-width="15"/>
+    <path d="M84 58 L142 126 M142 58 L84 126" stroke="url(#accent)" stroke-width="15"/>
+    <circle cx="84" cy="58" r="8" fill="#38BDF8" stroke="none"/>
+    <circle cx="142" cy="58" r="8" fill="#A78BFA" stroke="none"/>
+    <circle cx="84" cy="126" r="8" fill="#A78BFA" stroke="none"/>
+    <circle cx="142" cy="126" r="8" fill="#38BDF8" stroke="none"/>
+  </g>
+
+  <g transform="translate(310 71)" fill="none" stroke="#F8FAFC" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 0 V138 H42 C82 138 102 112 102 69 S82 0 42 0 Z"/>
+    <path d="M142 0 V138 M142 0 H220 M142 69 H207 M142 138 H220"/>
+    <path d="M260 138 V0 H338 M260 68 H325"/>
+    <path d="M378 0 V96 C378 126 397 142 426 142 S474 126 474 96 V0"/>
+    <path d="M514 0 H598 L514 138 H598"/>
+    <path d="M638 0 V138 M638 0 H716 M638 69 H703 M638 138 H716"/>
+    <path d="M756 0 L848 138 M848 0 L756 138" stroke="url(#accent)"/>
+  </g>
+
+  <g fill="#38BDF8">
+    <circle cx="1075" cy="36" r="4" opacity="0.8"/>
+    <circle cx="1110" cy="54" r="3" opacity="0.5"/>
+    <circle cx="1142" cy="33" r="5" opacity="0.65"/>
+  </g>
+</svg>

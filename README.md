@@ -1,6 +1,30 @@
-# DefuzeX Python SDK
+<p align="center">
+  <img src="docs/assets/defuzex-banner.svg" width="760" alt="DefuzeX Python SDK geometric wordmark banner">
+</p>
 
-[中文](#中文) | [English](#english)
+<h1 align="center">DefuzeX Python SDK</h1>
+
+<p align="center">
+  <strong>Evidence-first behavior testing for AI agents</strong><br>
+  面向 AI Agent 的证据优先行为测试 SDK
+</p>
+
+<p align="center">
+  <a href="docs/architecture.md"><strong>阅读文档 / Read the Docs →</strong></a>
+</p>
+
+<p align="center">
+  <a href="#中文">简体中文</a> &nbsp;|&nbsp; <a href="#english">English</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/DefuzeX-company/defuzex-python-sdk/actions/workflows/ci.yml"><img src="https://github.com/DefuzeX-company/defuzex-python-sdk/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <img src="https://img.shields.io/badge/Python-3.10--3.14-3776AB?logo=python&amp;logoColor=white" alt="Python 3.10 to 3.14">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-4C8CBF" alt="Apache 2.0 license"></a>
+  <img src="https://img.shields.io/badge/package-v4.0.0-6C63FF" alt="Package v4.0.0">
+</p>
+
+---
 
 ## 中文
 
