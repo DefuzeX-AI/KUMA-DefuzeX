@@ -1,12 +1,13 @@
 <p align="center">
-  <img src="docs/assets/defuzex-banner.svg" width="760" alt="DefuzeX Python SDK geometric wordmark banner">
+  <img src="docs/assets/defuzex-banner.svg" width="760" alt="KUMA geometric wordmark banner">
 </p>
 
-<h1 align="center">DefuzeX Python SDK</h1>
+<h1 align="center">KUMA</h1>
 
 <p align="center">
-  <strong>Evidence-first behavior testing for AI agents</strong><br>
-  面向 AI Agent 的证据优先行为测试 SDK
+  <strong>DefuzeX Python SDK</strong><br>
+  Knowledge-grounded Universal Measurement for Agents<br>
+  面向 Agent 的知识与证据驱动通用评测
 </p>
 
 <p align="center">
@@ -18,7 +19,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/DefuzeX-company/defuzex-python-sdk/actions/workflows/ci.yml"><img src="https://github.com/DefuzeX-company/defuzex-python-sdk/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <a href="https://github.com/DefuzeX-AI/KUMA-DefuzeX/actions/workflows/ci.yml"><img src="https://github.com/DefuzeX-AI/KUMA-DefuzeX/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
   <img src="https://img.shields.io/badge/Python-3.10--3.14-3776AB?logo=python&amp;logoColor=white" alt="Python 3.10 to 3.14">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-4C8CBF" alt="Apache 2.0 license"></a>
   <img src="https://img.shields.io/badge/package-v4.0.0-6C63FF" alt="Package v4.0.0">
@@ -55,8 +56,8 @@ SDK 只实现客户端协议和 Evidence 边界。它不启动或托管 Agent，
 需要 Python 3.10 或更高版本。
 
 ```bash
-git clone https://github.com/DefuzeX-company/defuzex-python-sdk.git
-cd defuzex-python-sdk
+git clone https://github.com/DefuzeX-AI/KUMA-DefuzeX.git
+cd KUMA-DefuzeX
 python -m venv .venv
 ```
 
@@ -364,8 +365,8 @@ See the [architecture document](docs/architecture.md) and [public API Contract](
 Python 3.10 or newer is required.
 
 ```bash
-git clone https://github.com/DefuzeX-company/defuzex-python-sdk.git
-cd defuzex-python-sdk
+git clone https://github.com/DefuzeX-AI/KUMA-DefuzeX.git
+cd KUMA-DefuzeX
 python -m venv .venv
 ```
 
