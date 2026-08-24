@@ -65,7 +65,7 @@ python examples/minimal_local.py
 
 - Synchronous, single-Case [`Run` lifecycle](docs/sdk-guide.md#run-lifecycle-and-providers) with immutable inputs, submissions, history, and reports.
 - Official or custom [Case and Judge providers](docs/sdk-guide.md#run-lifecycle-and-providers), including fully local operation.
-- Bounded [Evidence capture](docs/sdk-guide.md#evidence-and-opentelemetry) for file changes, explicit logs, and capture gaps.
+- Bounded [Evidence capture](docs/sdk-guide.md#evidence-and-opentelemetry) with a canonical, hash-only [Runtime Evidence contract](docs/runtime-evidence.md).
 - Optional [OpenTelemetry trace evidence](docs/sdk-guide.md#evidence-and-opentelemetry) without replacing the application's tracer provider.
 - Public HTTPS-only service boundary; the SDK does not host Agents, models, databases, or private evaluation assets. See [architecture](docs/architecture.md) and the [public API contract](docs/api-contract.md).
 

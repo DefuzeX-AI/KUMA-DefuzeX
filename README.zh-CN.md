@@ -65,7 +65,7 @@ python examples/minimal_local.py
 
 - 同步、单 Case 的 [`Run` 生命周期](docs/architecture.md#run-状态机)，包含不可变的 Input、Submission、History 和 Report。
 - 支持官方或自定义 [Case 与 Judge Provider](docs/architecture.md#provider)，也可完全本地运行。
-- 有界 [Evidence 采集](docs/architecture.md#trackingevidence-与隐私)，覆盖文件变化、指定日志和采集缺口。
+- 有界 [Evidence 采集](docs/architecture.md#trackingevidence-与隐私)，并提供规范、仅含哈希的 [Runtime Evidence 合同](docs/runtime-evidence.md)。
 - 可选的 [OpenTelemetry Trace Evidence](docs/architecture.md#opentelemetry-适配)，不替换应用已有的 Tracer Provider。
 - 仅访问公开 HTTPS 服务；SDK 不托管 Agent、模型、数据库或私有评估资产。参见[架构](docs/architecture.md)和[公开 API Contract](docs/api-contract.md)。
 

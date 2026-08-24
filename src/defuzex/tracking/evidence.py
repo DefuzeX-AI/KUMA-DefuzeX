@@ -10,6 +10,7 @@ from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
 from typing import Any
 
+from .._runtime_evidence import build_runtime_evidence, runtime_submission_id
 from ..contracts import (
     CaptureComponent,
     CaptureStatus,
@@ -230,8 +231,27 @@ class EvidenceCollector:
             "allow_sensitive": self.allow_sensitive,
             "sensitive_detected": bool(findings),
         }
+        trace_evidence = None
         if prepared_traces is not None and prepared_traces.evidence is not None:
-            extensions["trace_evidence"] = prepared_traces.evidence
+            trace_evidence = prepared_traces.evidence
+            extensions["trace_evidence"] = trace_evidence
+        if self.run_id and self.case_id:
+            built = build_runtime_evidence(
+                run_id=self.run_id,
+                input_id=input_id,
+                step_id=input_id,
+                submission_id=runtime_submission_id(self.run_id, input_id),
+                root=self.root,
+                status=status,
+                output=output,
+                error=error,
+                file_evidence=prepared_files.evidence,
+                logs=prepared_logs.segments,
+                trace_evidence=trace_evidence,
+            )
+            extensions["runtime_evidence"] = built.evidence
+            missing.extend(built.missing)
+            dropped_count += built.dropped_count
         record = {
             "input_id": input_id,
             "status": status,

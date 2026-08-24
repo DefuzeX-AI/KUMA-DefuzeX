@@ -234,6 +234,14 @@ flowchart LR
 
 Evidence 的完整性不由单个布尔值掩盖。`CaptureStatus` 分组件记录 complete/partial/failed/skipped，`missing` 给出缺失原因，`dropped_count` 给出丢弃数量，非致命运行问题进入 `runtime_warnings`。`save_local=True` 将同一结构写入 `.defuzex/runs/<run_id>/submissions/`，先写 pending file，提交后 rename；本地保存失败只产生 warning，不伪造提交状态。
 
+每个已关联 Run/Case/Input 的 Submission 还会生成
+[`defuzex.runtime_evidence.v1`](runtime-evidence.md) 公开 envelope。它使用闭合
+typed component union，只传关联 ID、顺序、路径/大小、结果枚举和 SHA-256，
+不传日志、输出或工具参数正文。Official Judge 通过公开 Judge config 的
+`evidence_types` 协商传输：新服务收到每步 typed EvidenceItem，未广告该 schema
+的旧服务仍收到 `defuzex.run_evidence.v1`。SDK 不从文本、OTel span name 或框架
+事件推断 tool/command/test/state 事实。
+
 ## OpenTelemetry 适配
 
 `otel.py` 通过用户提供的 SDK `TracerProvider.add_span_processor()` 增加一个处理器。它不调用全局 `set_tracer_provider()`，因此可与已有 processor/exporter 和 instrumentation 共存。未安装 `[otel]` 时，核心包不导入 OpenTelemetry，也不改变原有行为。
