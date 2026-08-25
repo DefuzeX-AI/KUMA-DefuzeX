@@ -6,6 +6,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from .._runtime_evidence_contract import CASEGEN_EVIDENCE_CAPABILITY_ORDER
 from ..backend import BackendClient, new_idempotency_key
 from ..errors import (
     ConfigurationError,
@@ -236,7 +237,10 @@ def _behavior_spec(context: CaseGenerationContext) -> dict[str, str]:
 
 
 def _safe_case_payload(
-    context: CaseGenerationContext, *, allow_sensitive: bool
+    context: CaseGenerationContext,
+    *,
+    allow_sensitive: bool,
+    evidence_capabilities: tuple[str, ...],
 ) -> tuple[dict[str, Any], str]:
     if context.input_type != "text":
         raise ConfigurationError(
@@ -255,6 +259,8 @@ def _safe_case_payload(
         "count": 1,
         **safe_fields,
     }
+    if evidence_capabilities:
+        payload["evidence_capabilities"] = list(evidence_capabilities)
     return payload, repo_meta["repo_fingerprint"]
 
 
@@ -320,6 +326,22 @@ class OfficialCaseProvider:
         self.client = client
         self.allow_sensitive = allow_sensitive
         self.operation_wait_timeout = operation_wait_timeout
+        self._evidence_capabilities: tuple[str, ...] = ()
+
+    def _configure_evidence_capabilities(self, values: tuple[str, ...]) -> None:
+        declared = set(values)
+        ordered = tuple(
+            item for item in CASEGEN_EVIDENCE_CAPABILITY_ORDER if item in declared
+        )
+        observable = {"file_change", "artifact_snapshot"}
+        if (
+            ordered != values
+            or declared - observable - {"agent_response_claim"}
+            or (declared and "agent_response_claim" not in declared)
+            or (declared and not observable.intersection(declared))
+        ):
+            raise ConfigurationError("Runtime Evidence capabilities are invalid")
+        self._evidence_capabilities = values
 
     def generate_case(self, context: CaseGenerationContext) -> Mapping[str, Any]:
         """Return a public Case shape after strategy and integrity validation."""
@@ -327,6 +349,7 @@ class OfficialCaseProvider:
         payload, repo_fingerprint = _safe_case_payload(
             context,
             allow_sensitive=self.allow_sensitive,
+            evidence_capabilities=self._evidence_capabilities,
         )
         response = self._run_operation(context, payload)
         return _normalized_case(

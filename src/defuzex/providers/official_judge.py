@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import threading
 from collections.abc import Mapping, Sequence
@@ -14,11 +13,12 @@ from ..backend import BackendClient, UploadPart, mapped_error, new_idempotency_k
 from ..contracts import JudgeBatchResult
 from ..errors import ConfigurationError, LimitExceededError, ProviderError
 from ..operations import PendingOperationStore, await_operation
-from ..privacy import enforce_sensitive_policy, scan_sensitive_json, scan_sensitive_text
-from ._evidence_projection import project_run_evidence
+from ..privacy import enforce_sensitive_policy, scan_sensitive_text
+from ._official_evidence_upload import JudgeUploadConfig as _JudgeConfig
+from ._official_evidence_upload import evidence_upload as _evidence_upload
+from ._official_evidence_upload import judge_upload_config as _judge_config
 from ._official_judgment import normalize_official_judgment as _normalize_judgment
 from ._official_wire import (
-    history_evidence,
     plain_json,
     required_text,
     validate_official_case_provenance,
@@ -26,17 +26,7 @@ from ._official_wire import (
 from .base import JudgeContext
 from .normalization import normalize_report
 
-_MAX_BATCH_ITEMS = 20
 _MAX_TRACKED_RUNS = 1024
-
-
-@dataclass(frozen=True, slots=True)
-class _JudgeConfig:
-    max_files: int
-    max_file_bytes: int
-    max_total_bytes: int
-    manifest_schema_version: str
-    max_batch_items: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,85 +37,6 @@ class _JudgeUpload:
     case_part: UploadPart | None
     log_parts: tuple[UploadPart, ...]
     idempotency_key: str
-
-
-def _judge_config(response: Mapping[str, Any]) -> _JudgeConfig:
-    max_files = response.get("max_files")
-    max_file_bytes = response.get("max_file_bytes")
-    max_total_bytes = response.get("max_total_bytes")
-    allowed = response.get("allowed_extensions")
-    manifest_schema_version = response.get("manifest_schema_version")
-    evidence_types = response.get("evidence_types")
-    max_batch_items = response.get("max_batch_items", _MAX_BATCH_ITEMS)
-    if (
-        isinstance(max_files, bool)
-        or not isinstance(max_files, int)
-        or max_files < 1
-        or isinstance(max_file_bytes, bool)
-        or not isinstance(max_file_bytes, int)
-        or max_file_bytes <= 0
-        or isinstance(max_total_bytes, bool)
-        or not isinstance(max_total_bytes, int)
-        or max_total_bytes <= 0
-        or not isinstance(allowed, list)
-        or ".json" not in allowed
-        or not isinstance(manifest_schema_version, str)
-        or not manifest_schema_version
-        or not isinstance(evidence_types, list)
-        or "raw_log" not in evidence_types
-        or isinstance(max_batch_items, bool)
-        or not isinstance(max_batch_items, int)
-        or max_batch_items < 1
-    ):
-        raise ProviderError(
-            "The Backend returned invalid Judge upload configuration",
-            code="invalid_response",
-        )
-    return _JudgeConfig(
-        max_files=max_files,
-        max_file_bytes=max_file_bytes,
-        max_total_bytes=max_total_bytes,
-        manifest_schema_version=manifest_schema_version,
-        max_batch_items=max_batch_items,
-    )
-
-
-def _evidence_upload(
-    context: JudgeContext, config: _JudgeConfig, part_prefix: str
-) -> tuple[UploadPart, dict[str, Any], list[Any]]:
-    evidence = {
-        "schema_version": "defuzex.run_evidence.v1",
-        "run_status": context.run_status,
-        "history": history_evidence(context),
-        "summary": plain_json(context.evidence_summary),
-    }
-    findings = list(scan_sensitive_json(evidence, location="judge_evidence"))
-    evidence, evidence_bytes = project_run_evidence(
-        evidence,
-        max_utf8_bytes=min(config.max_file_bytes, config.max_total_bytes),
-    )
-    filename = "defuzex-run-evidence.json"
-    part = UploadPart(
-        name=f"{part_prefix}log" if part_prefix else "logs",
-        filename=filename,
-        content_type="application/json",
-        data=evidence_bytes,
-    )
-    manifest = {
-        "schema_version": config.manifest_schema_version,
-        "files": [
-            {
-                "name": filename,
-                "sha256": hashlib.sha256(evidence_bytes).hexdigest(),
-                "evidence_type": "raw_log",
-            }
-        ],
-    }
-    return (
-        part,
-        manifest,
-        findings,
-    )
 
 
 def _custom_case_part(
@@ -329,7 +240,7 @@ class OfficialJudgeProvider:
         idempotency_key: str | None = None,
     ) -> _JudgeUpload:
         run_id = self._run_id(context)
-        log_part, manifest, findings = _evidence_upload(context, config, part_prefix)
+        log_parts, manifest, findings = _evidence_upload(context, config, part_prefix)
         metadata: dict[str, Any] = {
             "status": self._submission_status(context),
             "force": False,
@@ -351,7 +262,7 @@ class OfficialJudgeProvider:
             metadata=metadata,
             case_id=case_id,
             case_part=case_part,
-            log_parts=(log_part,),
+            log_parts=log_parts,
             idempotency_key=idempotency_key or self._idempotency_key(run_id),
         )
 

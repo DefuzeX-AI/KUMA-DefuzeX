@@ -210,6 +210,8 @@ print(report)
 - `save_local=True` 将结构化记录写入 `.defuzex/runs/<run_id>/submissions/`；本地记录不能替代官方提交。
 - `CaptureStatus`、`missing`、`dropped_count` 和 `runtime_warnings` 用于呈现采集不完整或降级。
 
+框架无关的运行时元数据遵循规范、仅含哈希的 [Runtime Evidence 合同](runtime-evidence.md)；其 schema 与隐私规则以该文档为准。
+
 上传到官方服务前，KUMA 会扫描 output、error、路径、diff、显式日志和自定义 Case 中的敏感内容。API Key 仅用于鉴权，不会加入 Evidence。`allow_sensitive=True` 只是普通 Evidence 的显式覆盖，不能替代隔离与 secret 管理。
 
 ## OpenTelemetry
@@ -285,6 +287,7 @@ operation 超时只保留有界恢复元数据，不保存凭证、请求正文�
 
 - [架构](architecture.md)
 - [公开 API Contract](api-contract.md)
+- [Runtime Evidence 合同](runtime-evidence.md)
 - [最小本地示例](../examples/minimal_local.py)
 - [Single Agent 模板](../examples/single_agent_template/README.md)
 - [完整流程示例](../examples/full_stack/USER_GUIDE.md)

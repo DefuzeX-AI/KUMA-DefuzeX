@@ -210,6 +210,8 @@ Each `get_input()` to `submit()` interval is one Evidence transaction. Evidence 
 - `save_local=True` writes structured records under `.defuzex/runs/<run_id>/submissions/`; local persistence does not replace official submission.
 - `CaptureStatus`, `missing`, `dropped_count`, and `runtime_warnings` expose partial or degraded capture.
 
+Framework-neutral runtime metadata follows the canonical, hash-only [Runtime Evidence contract](runtime-evidence.md); that page is the authoritative schema and privacy reference.
+
 Before official upload, KUMA scans output, errors, paths, diffs, explicit logs, and custom Cases for sensitive material. The API key is used for authorization and is not added to Evidence. `allow_sensitive=True` is an explicit ordinary-Evidence override, not a substitute for isolation or secret hygiene.
 
 ## OpenTelemetry
@@ -285,6 +287,7 @@ An operation timeout retains bounded recovery metadata without storing credentia
 
 - [Architecture](architecture.md)
 - [Public API contract](api-contract.md)
+- [Runtime Evidence contract](runtime-evidence.md)
 - [Minimal local example](../examples/minimal_local.py)
 - [Single Agent template](../examples/single_agent_template/README.md)
 - [Full-stack example](../examples/full_stack/USER_GUIDE.md)

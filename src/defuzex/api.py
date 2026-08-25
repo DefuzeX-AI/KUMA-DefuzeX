@@ -7,6 +7,10 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from ._runtime_evidence_contract import (
+    casegen_framework_is_advertised,
+    derive_casegen_evidence_capabilities,
+)
 from .backend import DEFAULT_BASE_URL, BackendClient
 from .config import CreateRunConfig, resolve_create_run_config, write_api_key
 from .contracts import Case
@@ -46,6 +50,7 @@ def _adapted_providers(
     judge_provider: Any,
     api_key: str | None,
     repo_path: Path,
+    trace_evidence: TraceEvidenceCapture | None,
 ) -> tuple[CaseProvider, JudgeProvider | None, bool, bool]:
     official_case = case_provider is None
     official_judge = config.judge and judge_provider is None
@@ -60,15 +65,27 @@ def _adapted_providers(
             timeout=config.timeout,
             max_retries=config.max_retries,
         )
-    adapted_case = (
-        OfficialCaseProvider(
+    evidence_capabilities = derive_casegen_evidence_capabilities(
+        track_files=config.track_files,
+        trace_evidence_configured=trace_evidence is not None,
+    )
+    can_negotiate = bool(official_case and official_judge and evidence_capabilities)
+    if can_negotiate and backend is not None:
+        can_negotiate = casegen_framework_is_advertised(
+            backend.json("GET", "/sdk/entitlements/")
+        )
+    if not can_negotiate:
+        evidence_capabilities = ()
+    if official_case and backend is not None:
+        official_case_provider = OfficialCaseProvider(
             backend,
             allow_sensitive=config.allow_sensitive,
             operation_wait_timeout=config.operation_wait_timeout,
         )
-        if official_case and backend is not None
-        else adapt_case_provider(case_provider)
-    )
+        official_case_provider._configure_evidence_capabilities(evidence_capabilities)
+        adapted_case: CaseProvider = official_case_provider
+    else:
+        adapted_case = adapt_case_provider(case_provider)
     if not config.judge:
         adapted_judge = None
     elif official_judge and backend is not None:
@@ -382,6 +399,7 @@ def create_run(
         judge_provider=judge_provider,
         api_key=api_key,
         repo_path=resolved_repo,
+        trace_evidence=trace_evidence,
     )
     requirement_required = bool(
         getattr(adapted_case_provider, "requirement_required", True)

@@ -13,7 +13,7 @@
   <a href="README.md">English</a> &nbsp;|&nbsp; <a href="README.zh-CN.md">简体中文</a>
 </p>
 
-KUMA 是公开 Python SDK，通过严格的 `Run` 协议和有界 Evidence 采集测试 Agent 行为。它只负责客户端边界，不运行 Agent、不执行模型，也不暴露私有评估逻辑。
+KUMA 是公开 Python SDK，通过严格的 `Run` 协议和有界 Evidence 采集测试 Agent 行为。官方服务仅通过公开 HTTPS 访问；SDK 不运行 Agent、不执行模型，也不暴露私有评估逻辑。
 
 ## 安装
 
@@ -37,11 +37,11 @@ defuzex quickstart
 
 - 同步且不绑定框架的 Case 与 Judge 流程。
 - 支持官方或自定义 Provider，也可完全本地运行。
-- 有界采集文件、日志和可选的同进程 Trace Evidence。
+- 有界采集文件、日志和可选 Trace Evidence，并提供规范、仅含哈希的 Runtime Evidence 合同。
 
 ## 详细文档
 
-[简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [English SDK guide](docs/sdk-guide.md)
+[简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [English SDK guide](docs/sdk-guide.md) · [Runtime Evidence 合同](docs/runtime-evidence.md)
 
 ## 项目链接
 

@@ -13,7 +13,7 @@
   <a href="README.md">English</a> &nbsp;|&nbsp; <a href="README.zh-CN.md">简体中文</a>
 </p>
 
-KUMA is the public Python SDK for testing Agent behavior through a strict `Run` protocol and bounded Evidence capture. It owns the client boundary only: it does not run Agents, execute models, or expose private evaluation logic.
+KUMA is the public Python SDK for testing Agent behavior through a strict `Run` protocol and bounded Evidence capture. Official services are reached only through public HTTPS; the SDK does not run Agents, execute models, or expose private evaluation logic.
 
 ## Install
 
@@ -37,11 +37,11 @@ defuzex quickstart
 
 - Synchronous, framework-neutral Case and Judge workflow.
 - Official or custom Providers, including fully local runs.
-- Bounded file, log, and optional in-process trace Evidence.
+- Bounded file, log, and optional trace Evidence, plus a canonical hash-only Runtime Evidence contract.
 
 ## Detailed documentation
 
-[English SDK guide](docs/sdk-guide.md) · [简体中文 SDK 指南](docs/sdk-guide.zh-CN.md)
+[English SDK guide](docs/sdk-guide.md) · [简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [Runtime Evidence contract](docs/runtime-evidence.md)
 
 ## Project
 
