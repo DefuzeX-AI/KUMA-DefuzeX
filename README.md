@@ -43,6 +43,8 @@ defuzex quickstart
 
 [English SDK guide](docs/sdk-guide.md) · [简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [Runtime Evidence contract](docs/runtime-evidence.md)
 
+Docker builds retain local images and cache; review [local Docker storage](docs/sdk-guide.md#local-docker-storage) periodically.
+
 ## Project
 
 [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Apache License 2.0](LICENSE)

@@ -43,6 +43,8 @@ defuzex quickstart
 
 [简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [English SDK guide](docs/sdk-guide.md) · [Runtime Evidence 合同](docs/runtime-evidence.md)
 
+Docker 构建会保留本地镜像与缓存；请定期检查[本地 Docker 存储](docs/sdk-guide.zh-CN.md#本地-docker-存储)。
+
 ## 项目链接
 
 [安全策略](SECURITY.md) · [贡献说明](CONTRIBUTING.md) · [Apache License 2.0](LICENSE)

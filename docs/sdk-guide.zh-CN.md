@@ -251,6 +251,38 @@ docker build -f examples/full_stack/Dockerfile.user-flow -t defuzex-user-flow .
 
 示例所需的工作区和运行参数见[完整流程示例指南](../examples/full_stack/USER_GUIDE.md)。
 
+### 本地 Docker 存储
+
+Docker 构建会保留本地镜像与 build cache。请定期检查 Docker Desktop 的 **Images** 和 **Builds** 页面，或用以下只读命令查看磁盘占用：
+
+```bash
+docker system df
+```
+
+确认目标不再需要后，再选择性回收空间：
+
+```bash
+docker image rm <明确镜像:标签>
+```
+
+此命令只移除指定镜像或标签；不要移除运行中容器或必要数据库依赖的镜像。
+
+```bash
+docker image prune
+```
+
+不带 `-a` 时，此命令会在确认后仅移除 dangling 镜像。确认前请检查提示信息。
+
+```bash
+docker builder prune
+```
+
+此命令会在确认后移除未使用的 build cache；请先确认可以接受后续构建变慢。使用 Docker Desktop 时，同样只删除已确认不再使用的项目镜像或构建缓存。
+
+> **警告：** 不要把 `docker system prune -a --volumes` 作为默认清理方式，也不要自动执行。它可能删除其他项目的资源、停止容器仍需的镜像、构建缓存和持久卷。切勿删除运行中的容器、必要的数据库镜像或必要的 volume。
+
+KUMA 只提供 Docker 构建与运行材料，不接管用户 Docker daemon 的生命周期，也不会代替用户回收磁盘空间。
+
 ## 错误、重试与超时
 
 通过 `DefuzeError` 捕获稳定 SDK 错误：

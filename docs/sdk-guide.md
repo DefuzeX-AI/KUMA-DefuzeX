@@ -251,6 +251,38 @@ docker build -f examples/full_stack/Dockerfile.user-flow -t defuzex-user-flow .
 
 See the [full-stack example guide](../examples/full_stack/USER_GUIDE.md) for its exact workspace and runtime requirements.
 
+### Local Docker storage
+
+Docker builds retain local images and build cache. Periodically inspect Docker Desktop's **Images** and **Builds** views, or use this read-only command to review disk usage:
+
+```bash
+docker system df
+```
+
+Reclaim space selectively, only after confirming that the target is no longer needed:
+
+```bash
+docker image rm <explicit-image:tag>
+```
+
+This removes only the named image or tag; do not remove an image required by a running container, including a necessary database image.
+
+```bash
+docker image prune
+```
+
+Without `-a`, this prompts before removing dangling images only. Review the prompt before confirming.
+
+```bash
+docker builder prune
+```
+
+This prompts before removing unused build cache. Confirm that slower rebuilds are acceptable. In Docker Desktop, likewise delete only project images or build cache that you have confirmed are unused.
+
+> **Warning:** Do not use or automate `docker system prune -a --volumes` as a default cleanup step. It can remove resources belonging to other projects, images needed by stopped containers, build cache, and persistent volumes. Never delete running containers, required database images, or required volumes.
+
+KUMA supplies Docker build and runtime materials, but does not manage the Docker daemon lifecycle or reclaim storage on the user's behalf.
+
 ## Errors, retries, and timeouts
 
 Catch stable SDK errors through `DefuzeError`:
