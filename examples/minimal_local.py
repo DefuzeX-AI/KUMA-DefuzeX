@@ -1,10 +1,10 @@
-"""Run one deterministic DefuzeX Case without credentials or network access."""
+"""Run one deterministic KUMA Case without credentials or network access."""
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from defuzex import create_run
-from defuzex.providers import CaseGenerationContext
+from kuma import create_run
+from kuma.providers import CaseGenerationContext
 
 
 def local_case(_context: CaseGenerationContext) -> dict[str, object]:
@@ -24,7 +24,7 @@ def local_case(_context: CaseGenerationContext) -> dict[str, object]:
 
 
 def main() -> None:
-    with TemporaryDirectory(prefix="defuzex-example-") as temporary:
+    with TemporaryDirectory(prefix="kuma-example-") as temporary:
         repo = Path(temporary)
         (repo / "README.md").write_text(
             "# Temporary example repository\n", encoding="utf-8"

@@ -34,7 +34,7 @@ jobs:
         run: |
           python - <<'PY'
           import os
-          from defuzex._version import __version__
+          from kuma._version import __version__
 
           tag = os.environ["RELEASE_TAG"]
           if tag not in {__version__, f"v{__version__}"}:

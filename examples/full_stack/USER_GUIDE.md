@@ -9,7 +9,7 @@ The example combines the KUMA SDK and mini-SWE-agent in one Docker container. It
 Two entry points are provided:
 
 - [`Dockerfile.user-flow`](Dockerfile.user-flow) with [`docker_user_flow.py`](docker_user_flow.py) for a direct container run.
-- [`defuzex_v4_real_user_flow.ipynb`](defuzex_v4_real_user_flow.ipynb) for the guided Windows/WSL flow.
+- [`kuma_real_user_flow.ipynb`](kuma_real_user_flow.ipynb) for the guided Windows/WSL flow.
 
 Both paths invoke real external services and may incur model or service cost.
 
@@ -23,8 +23,8 @@ Use a disposable or fully committed Git workspace. The direct Docker example exp
 
 Export these values before running the example:
 
-- `DEFUZEX_BASE_URL`
-- `DEFUZEX_API_KEY`
+- `KUMA_BASE_URL`
+- `KUMA_API_KEY`
 - `DEEPSEEK_API_KEY`
 
 Do not place populated credentials in the workspace or repository.
@@ -34,7 +34,7 @@ Do not place populated credentials in the workspace or repository.
 From the SDK repository root:
 
 ```bash
-docker build -f examples/full_stack/Dockerfile.user-flow -t defuzex-user-flow .
+docker build -f examples/full_stack/Dockerfile.user-flow -t kuma-user-flow .
 ```
 
 ## Run the container
@@ -44,11 +44,11 @@ Windows PowerShell:
 ```powershell
 $workspace = (Resolve-Path "C:\path\to\workspace").Path
 docker run --rm `
-  --env DEFUZEX_BASE_URL `
-  --env DEFUZEX_API_KEY `
+  --env KUMA_BASE_URL `
+  --env KUMA_API_KEY `
   --env DEEPSEEK_API_KEY `
   --mount "type=bind,source=$workspace,target=/workspace" `
-  defuzex-user-flow
+  kuma-user-flow
 ```
 
 Linux or macOS:
@@ -56,24 +56,24 @@ Linux or macOS:
 ```bash
 workspace="$(pwd)"
 docker run --rm \
-  --env DEFUZEX_BASE_URL \
-  --env DEFUZEX_API_KEY \
+  --env KUMA_BASE_URL \
+  --env KUMA_API_KEY \
   --env DEEPSEEK_API_KEY \
   --mount "type=bind,source=$workspace,target=/workspace" \
-  defuzex-user-flow
+  kuma-user-flow
 ```
 
 The script rejects non-Docker execution and missing environment variables. It also blocks out-of-scope source changes and fails when the Agent does not submit successfully or the final Judge report is absent.
 
 ## Run the Notebook
 
-The Notebook requires Windows, WSL, Jupyter, the two API keys above, and the configured public base URL. Set environment variables before starting Jupyter, open [`defuzex_v4_real_user_flow.ipynb`](defuzex_v4_real_user_flow.ipynb), then follow its cells to select the Agent workspace.
+The Notebook requires Windows, WSL, Jupyter, the two API keys above, and the configured public base URL. Set environment variables before starting Jupyter, open [`kuma_real_user_flow.ipynb`](kuma_real_user_flow.ipynb), then follow its cells to select the Agent workspace.
 
 The Notebook can modify the selected repository. Choose only a disposable workspace or one with all prior work committed.
 
 ## Outputs
 
-The direct flow writes example artifacts under `.defuzex/mini-swe-agent/` in the mounted workspace:
+The direct flow writes example artifacts under `.kuma/mini-swe-agent/` in the mounted workspace:
 
 - compact Agent trajectory and verification Evidence;
 - per-step unittest logs;

@@ -2,15 +2,13 @@
 
 [English](sdk-guide.md) | [简体中文](sdk-guide.zh-CN.md)
 
-This is the canonical user guide for KUMA configuration and integration. The package, CLI, environment variables, and wire fields retain their existing `defuzex` / `DEFUZEX_*` technical identifiers.
+This is the canonical user guide for KUMA configuration and integration. The package, CLI, and environment variables use `kuma` / `KUMA_*`; versioned `defuzex.*` wire schemas remain unchanged for server compatibility.
 
 ## Installation
 
-KUMA supports Python 3.10 through 3.14. Install the current source repository in an isolated environment:
+KUMA supports Python 3.10 through 3.14. Create an isolated environment:
 
 ```bash
-git clone https://github.com/DefuzeX-AI/KUMA-DefuzeX.git
-cd KUMA-DefuzeX
 python -m venv .venv
 ```
 
@@ -19,7 +17,7 @@ Windows PowerShell:
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install .
+python -m pip install "kuma==0.1.0"
 ```
 
 Linux or macOS:
@@ -27,13 +25,13 @@ Linux or macOS:
 ```bash
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install .
+python -m pip install "kuma==0.1.0"
 ```
 
 Optional OpenTelemetry support:
 
 ```bash
-python -m pip install ".[otel]"
+python -m pip install "kuma[otel]==0.1.0"
 ```
 
 Contributors should use the editable development setup in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
@@ -43,10 +41,10 @@ Contributors should use the editable development setup in [`CONTRIBUTING.md`](..
 The CLI quickstart runs a deterministic exact-match check in an SDK-owned temporary directory. It reads no user repository and requires no account, API key, Docker, or network:
 
 ```bash
-defuzex quickstart
+kuma quickstart
 ```
 
-Use `defuzex quickstart --fail-demo` to exercise the deterministic failure path. A complete local `Run` with a custom Case Provider and no Judge is also available:
+Use `kuma quickstart --fail-demo` to exercise the deterministic failure path. A complete local `Run` with a custom Case Provider and no Judge is also available:
 
 ```bash
 python examples/minimal_local.py
@@ -61,33 +59,33 @@ Official Case or Judge Providers require a KUMA API key beginning with `dfx_`. K
 Windows PowerShell:
 
 ```powershell
-$env:DEFUZEX_API_KEY = "dfx_your_key_here"
-defuzex whoami
+$env:KUMA_API_KEY = "dfx_your_key_here"
+kuma whoami
 ```
 
 Linux or macOS:
 
 ```bash
-export DEFUZEX_API_KEY="dfx_your_key_here"
-defuzex whoami
+export KUMA_API_KEY="dfx_your_key_here"
+kuma whoami
 ```
 
 The SDK can validate and atomically store the key without a network request:
 
 ```python
-from defuzex import configure
+from kuma import configure
 
 credential_path = configure(api_key="dfx_your_key_here")
 print(credential_path)
 ```
 
-Credential precedence is: `create_run(api_key=...)`, `DEFUZEX_API_KEY`, then the user credential file.
+Credential precedence is: `create_run(api_key=...)`, `KUMA_API_KEY`, then the user credential file.
 
 | Environment variable | Purpose |
 |---|---|
-| `DEFUZEX_API_KEY` | Credential for official Providers |
-| `DEFUZEX_CONFIG_HOME` | Override the user credential directory |
-| `DEFUZEX_BASE_URL` | Override the accepted public or loopback API base URL; non-loopback URLs must use HTTPS |
+| `KUMA_API_KEY` | Credential for official Providers |
+| `KUMA_CONFIG_HOME` | Override the user credential directory |
+| `KUMA_BASE_URL` | Override the accepted public or loopback API base URL; non-loopback URLs must use HTTPS |
 
 ### Requirement file
 
@@ -121,7 +119,7 @@ The user owns Agent execution; KUMA owns the synchronous `Run` protocol. Replace
 ```python
 from typing import Any
 
-from defuzex import create_run
+from kuma import create_run
 
 
 def execute_agent(test_input: Any) -> dict[str, Any]:
@@ -142,7 +140,7 @@ print(run.state)
 print(report)
 ```
 
-`get_input()` returns the JSON-compatible payload; `get_input(full=True)` returns an immutable `DefuzeXInput`. Completed submissions require finite JSON-compatible output. Do not advance one Run concurrently.
+`get_input()` returns the JSON-compatible payload; `get_input(full=True)` returns an immutable `KumaInput`. Completed submissions require finite JSON-compatible output. Do not advance one Run concurrently.
 
 ## Providers and Run lifecycle
 
@@ -190,7 +188,7 @@ Repeated `get_input()` calls before `submit()` return the same Input. Invalid or
 | `allow_local` | `False` | Permit trusted development outside Docker |
 | `track_files` | `True` | Capture bounded file metadata around each Input |
 | `upload_diff` | `False` | Include bounded text diffs in file Evidence |
-| `save_local` | `False` | Save submission records under `.defuzex/runs/` |
+| `save_local` | `False` | Save submission records under `.kuma/runs/` |
 | `allow_sensitive` | `False` | Explicit override for ordinary Evidence scanning; does not relax Trace allowlists |
 | `timeout` | `300.0` | Per-request public HTTP timeout in seconds |
 | `operation_wait_timeout` | `600.0` | Total wait bound for one official Case or Judge operation |
@@ -207,7 +205,7 @@ Each `get_input()` to `submit()` interval is one Evidence transaction. Evidence 
 - Repository metadata is bounded and contains paths, types, sizes, and a fingerprint—not repository file contents.
 - File tracking records hashes, sizes, modes, and change types by default. Text content enters Evidence only when `upload_diff=True`.
 - `submit(..., logs=[...])` reads increments only from explicitly selected files and requires Evidence capture to be enabled.
-- `save_local=True` writes structured records under `.defuzex/runs/<run_id>/submissions/`; local persistence does not replace official submission.
+- `save_local=True` writes structured records under `.kuma/runs/<run_id>/submissions/`; local persistence does not replace official submission.
 - `CaptureStatus`, `missing`, `dropped_count`, and `runtime_warnings` expose partial or degraded capture.
 
 Framework-neutral runtime metadata follows the canonical, hash-only [Runtime Evidence contract](runtime-evidence.md); that page is the authoritative schema and privacy reference.
@@ -221,8 +219,8 @@ The optional adapter captures ended spans from the same process and current Inpu
 ```python
 from opentelemetry.sdk.trace import TracerProvider
 
-from defuzex import create_run
-from defuzex.otel import TraceEvidenceLimits, configure_trace_evidence
+from kuma import create_run
+from kuma.otel import TraceEvidenceLimits, configure_trace_evidence
 
 provider = TracerProvider()
 trace_evidence = configure_trace_evidence(
@@ -246,25 +244,25 @@ Official production runs require the SDK and Agent in the same controlled contai
 Build the supplied user-flow example:
 
 ```bash
-docker build -f examples/full_stack/Dockerfile.user-flow -t defuzex-user-flow .
+docker build -f examples/full_stack/Dockerfile.user-flow -t kuma-user-flow .
 ```
 
 See the [full-stack example guide](../examples/full_stack/USER_GUIDE.md) for its exact workspace and runtime requirements.
 
 ## Errors, retries, and timeouts
 
-Catch stable SDK errors through `DefuzeError`:
+Catch stable SDK errors through `KumaError`:
 
 ```python
-from defuzex.errors import DefuzeError
+from kuma.errors import KumaError
 
 try:
     report = run.judge()
-except DefuzeError as exc:
+except KumaError as exc:
     print(exc.code, exc.retryable, exc.request_id)
 ```
 
-Common subclasses include `ConfigurationError`, `AuthenticationError`, `PermissionDeniedError`, `ValidationError`, `SensitiveDataError`, `LimitExceededError`, `InputProtocolError`, `ProviderError`, `DefuzeTimeoutError`, `ServiceBusyError`, and `ServiceError`.
+Common subclasses include `ConfigurationError`, `AuthenticationError`, `PermissionDeniedError`, `ValidationError`, `SensitiveDataError`, `LimitExceededError`, `InputProtocolError`, `ProviderError`, `KumaTimeoutError`, `ServiceBusyError`, and `ServiceError`.
 
 `timeout` bounds one public HTTP attempt. `operation_wait_timeout` bounds the complete official single-Case or Judge operation. POST retries reuse a stable idempotency key; only server-declared transient failures are retried within `max_retries`, and `ServiceBusyError` is not retried automatically.
 

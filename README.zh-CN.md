@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/defuzex-banner.svg" width="760" alt="KUMA geometric wordmark banner">
+  <img src="docs/assets/kuma-banner.svg" width="760" alt="KUMA geometric wordmark banner">
 </p>
 
 <h1 align="center">KUMA</h1>
@@ -20,9 +20,7 @@ KUMA 是公开 Python SDK，通过严格的 `Run` 协议和有界 Evidence 采�
 需要 Python 3.10 或更高版本：
 
 ```bash
-git clone https://github.com/DefuzeX-AI/KUMA-DefuzeX.git
-cd KUMA-DefuzeX
-python -m pip install .
+python -m pip install "kuma==0.1.0"
 ```
 
 ## 快速开始
@@ -30,7 +28,7 @@ python -m pip install .
 无需账号、API Key、Docker 或网络即可运行确定性的本地检查：
 
 ```bash
-defuzex quickstart
+kuma quickstart
 ```
 
 ## 核心能力

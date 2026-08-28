@@ -42,8 +42,8 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: python -m pip install .
-      - run: python -c "import importlib.metadata, defuzex; assert defuzex.__version__ == importlib.metadata.version('defuzex')"
-      - run: python -m defuzex --help
+      - run: python -c "import importlib.metadata, kuma; assert kuma.__version__ == importlib.metadata.version('kuma')"
+      - run: python -m kuma --help
       - run: python examples/minimal_local.py
 
   windows:
@@ -57,8 +57,8 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: python -m pip install .
-      - run: python -c "import importlib.metadata, defuzex; assert defuzex.__version__ == importlib.metadata.version('defuzex')"
-      - run: python -m defuzex --help
+      - run: python -c "import importlib.metadata, kuma; assert kuma.__version__ == importlib.metadata.version('kuma')"
+      - run: python -m kuma --help
       - run: python examples/minimal_local.py
 
   macos:
@@ -72,8 +72,8 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: python -m pip install .
-      - run: python -c "import importlib.metadata, defuzex; assert defuzex.__version__ == importlib.metadata.version('defuzex')"
-      - run: python -m defuzex --help
+      - run: python -c "import importlib.metadata, kuma; assert kuma.__version__ == importlib.metadata.version('kuma')"
+      - run: python -m kuma --help
       - run: python examples/minimal_local.py
 
   package:
@@ -91,18 +91,18 @@ jobs:
       - run: python -m twine check dist/*
       - name: Install and verify wheel
         run: |
-          python -m venv /tmp/defuzex-wheel
-          /tmp/defuzex-wheel/bin/python -m pip install dist/*.whl
-          /tmp/defuzex-wheel/bin/python -c "import importlib.metadata, defuzex; assert defuzex.__version__ == importlib.metadata.version('defuzex')"
+          python -m venv /tmp/kuma-wheel
+          /tmp/kuma-wheel/bin/python -m pip install dist/*.whl
+          /tmp/kuma-wheel/bin/python -c "import importlib.metadata, kuma; assert kuma.__version__ == importlib.metadata.version('kuma')"
       - name: Install and verify sdist
         run: |
-          python -m venv /tmp/defuzex-sdist
-          /tmp/defuzex-sdist/bin/python -m pip install dist/*.tar.gz
-          /tmp/defuzex-sdist/bin/python -c "import importlib.metadata, defuzex; assert defuzex.__version__ == importlib.metadata.version('defuzex')"
+          python -m venv /tmp/kuma-sdist
+          /tmp/kuma-sdist/bin/python -m pip install dist/*.tar.gz
+          /tmp/kuma-sdist/bin/python -c "import importlib.metadata, kuma; assert kuma.__version__ == importlib.metadata.version('kuma')"
 
   docker-smoke:
     name: Docker build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: docker build -f examples/full_stack/Dockerfile.user-flow -t defuzex-user-flow .
+      - run: docker build -f examples/full_stack/Dockerfile.user-flow -t kuma-user-flow .

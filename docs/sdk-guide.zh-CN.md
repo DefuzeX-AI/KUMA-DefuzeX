@@ -2,15 +2,13 @@
 
 [English](sdk-guide.md) | [简体中文](sdk-guide.zh-CN.md)
 
-本文是 KUMA 配置与接入的规范用户指南。Python 包、CLI、环境变量和 wire 字段继续使用现有的 `defuzex` / `DEFUZEX_*` 技术标识。
+本文是 KUMA 配置与接入的规范用户指南。Python 包、CLI 和环境变量使用 `kuma` / `KUMA_*`；版本化 `defuzex.*` wire schema 为兼容服务端保持不变。
 
 ## 安装
 
-KUMA 支持 Python 3.10 至 3.14。建议在隔离环境中安装当前源码：
+KUMA 支持 Python 3.10 至 3.14。请先创建隔离环境：
 
 ```bash
-git clone https://github.com/DefuzeX-AI/KUMA-DefuzeX.git
-cd KUMA-DefuzeX
 python -m venv .venv
 ```
 
@@ -19,7 +17,7 @@ Windows PowerShell：
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install .
+python -m pip install "kuma==0.1.0"
 ```
 
 Linux 或 macOS：
@@ -27,13 +25,13 @@ Linux 或 macOS：
 ```bash
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install .
+python -m pip install "kuma==0.1.0"
 ```
 
 按需安装 OpenTelemetry 能力：
 
 ```bash
-python -m pip install ".[otel]"
+python -m pip install "kuma[otel]==0.1.0"
 ```
 
 贡献者请按 [`CONTRIBUTING.md`](../CONTRIBUTING.md) 使用可编辑开发环境。
@@ -43,10 +41,10 @@ python -m pip install ".[otel]"
 CLI quickstart 会在 SDK 自有临时目录中执行确定性的精确匹配检查，不读取用户仓库，也不需要账号、API Key、Docker 或网络：
 
 ```bash
-defuzex quickstart
+kuma quickstart
 ```
 
-`defuzex quickstart --fail-demo` 可验证确定性失败路径。另有一个使用自定义 Case Provider、关闭 Judge 的完整本地 `Run`：
+`kuma quickstart --fail-demo` 可验证确定性失败路径。另有一个使用自定义 Case Provider、关闭 Judge 的完整本地 `Run`：
 
 ```bash
 python examples/minimal_local.py
@@ -61,33 +59,33 @@ python examples/minimal_local.py
 Windows PowerShell：
 
 ```powershell
-$env:DEFUZEX_API_KEY = "dfx_your_key_here"
-defuzex whoami
+$env:KUMA_API_KEY = "dfx_your_key_here"
+kuma whoami
 ```
 
 Linux 或 macOS：
 
 ```bash
-export DEFUZEX_API_KEY="dfx_your_key_here"
-defuzex whoami
+export KUMA_API_KEY="dfx_your_key_here"
+kuma whoami
 ```
 
 SDK 也可在不访问网络的情况下验证并原子保存 Key：
 
 ```python
-from defuzex import configure
+from kuma import configure
 
 credential_path = configure(api_key="dfx_your_key_here")
 print(credential_path)
 ```
 
-凭证优先级为：`create_run(api_key=...)`、`DEFUZEX_API_KEY`、用户凭证文件。
+凭证优先级为：`create_run(api_key=...)`、`KUMA_API_KEY`、用户凭证文件。
 
 | 环境变量 | 用途 |
 |---|---|
-| `DEFUZEX_API_KEY` | 官方 Provider 使用的凭证 |
-| `DEFUZEX_CONFIG_HOME` | 覆盖用户凭证目录 |
-| `DEFUZEX_BASE_URL` | 覆盖允许的公开或 loopback API 地址；非 loopback 地址必须使用 HTTPS |
+| `KUMA_API_KEY` | 官方 Provider 使用的凭证 |
+| `KUMA_CONFIG_HOME` | 覆盖用户凭证目录 |
+| `KUMA_BASE_URL` | 覆盖允许的公开或 loopback API 地址；非 loopback 地址必须使用 HTTPS |
 
 ### Requirement 文件
 
@@ -121,7 +119,7 @@ Do not read credentials or access paths outside the repository.
 ```python
 from typing import Any
 
-from defuzex import create_run
+from kuma import create_run
 
 
 def execute_agent(test_input: Any) -> dict[str, Any]:
@@ -142,7 +140,7 @@ print(run.state)
 print(report)
 ```
 
-`get_input()` 返回兼容 JSON 的 payload；`get_input(full=True)` 返回不可变的 `DefuzeXInput`。成功的 Submission 必须包含有限且兼容 JSON 的输出。同一个 Run 不得并发推进。
+`get_input()` 返回兼容 JSON 的 payload；`get_input(full=True)` 返回不可变的 `KumaInput`。成功的 Submission 必须包含有限且兼容 JSON 的输出。同一个 Run 不得并发推进。
 
 ## Provider 与 Run 生命周期
 
@@ -190,7 +188,7 @@ print(report)
 | `allow_local` | `False` | 允许在 Docker 外进行可信开发运行 |
 | `track_files` | `True` | 在每个 Input 前后采集有界文件元数据 |
 | `upload_diff` | `False` | 在文件 Evidence 中加入有界文本 diff |
-| `save_local` | `False` | 将 Submission 记录保存到 `.defuzex/runs/` |
+| `save_local` | `False` | 将 Submission 记录保存到 `.kuma/runs/` |
 | `allow_sensitive` | `False` | 显式覆盖普通 Evidence 扫描；不会放宽 Trace allowlist |
 | `timeout` | `300.0` | 单次公开 HTTP 请求超时，单位为秒 |
 | `operation_wait_timeout` | `600.0` | 单次官方 Case 或 Judge operation 的总等待上限 |
@@ -207,7 +205,7 @@ print(report)
 - Repo metadata 有明确上限，只包含路径、类型、大小和 fingerprint，不包含仓库文件正文。
 - 默认文件追踪只记录 hash、大小、mode 和变化类型；仅 `upload_diff=True` 时文本内容才进入 Evidence。
 - `submit(..., logs=[...])` 只读取显式指定文件的增量，并要求启用 Evidence 采集。
-- `save_local=True` 将结构化记录写入 `.defuzex/runs/<run_id>/submissions/`；本地记录不能替代官方提交。
+- `save_local=True` 将结构化记录写入 `.kuma/runs/<run_id>/submissions/`；本地记录不能替代官方提交。
 - `CaptureStatus`、`missing`、`dropped_count` 和 `runtime_warnings` 用于呈现采集不完整或降级。
 
 框架无关的运行时元数据遵循规范、仅含哈希的 [Runtime Evidence 合同](runtime-evidence.md)；其 schema 与隐私规则以该文档为准。
@@ -221,8 +219,8 @@ print(report)
 ```python
 from opentelemetry.sdk.trace import TracerProvider
 
-from defuzex import create_run
-from defuzex.otel import TraceEvidenceLimits, configure_trace_evidence
+from kuma import create_run
+from kuma.otel import TraceEvidenceLimits, configure_trace_evidence
 
 provider = TracerProvider()
 trace_evidence = configure_trace_evidence(
@@ -246,25 +244,25 @@ span 数量、属性、事件、文本和整个 Run 的字节数均有上限。�
 构建仓库提供的用户流程示例：
 
 ```bash
-docker build -f examples/full_stack/Dockerfile.user-flow -t defuzex-user-flow .
+docker build -f examples/full_stack/Dockerfile.user-flow -t kuma-user-flow .
 ```
 
 示例所需的工作区和运行参数见[完整流程示例指南](../examples/full_stack/USER_GUIDE.md)。
 
 ## 错误、重试与超时
 
-通过 `DefuzeError` 捕获稳定 SDK 错误：
+通过 `KumaError` 捕获稳定 SDK 错误：
 
 ```python
-from defuzex.errors import DefuzeError
+from kuma.errors import KumaError
 
 try:
     report = run.judge()
-except DefuzeError as exc:
+except KumaError as exc:
     print(exc.code, exc.retryable, exc.request_id)
 ```
 
-常见子类包括 `ConfigurationError`、`AuthenticationError`、`PermissionDeniedError`、`ValidationError`、`SensitiveDataError`、`LimitExceededError`、`InputProtocolError`、`ProviderError`、`DefuzeTimeoutError`、`ServiceBusyError` 和 `ServiceError`。
+常见子类包括 `ConfigurationError`、`AuthenticationError`、`PermissionDeniedError`、`ValidationError`、`SensitiveDataError`、`LimitExceededError`、`InputProtocolError`、`ProviderError`、`KumaTimeoutError`、`ServiceBusyError` 和 `ServiceError`。
 
 `timeout` 限制单次公开 HTTP 尝试；`operation_wait_timeout` 限制完整的官方单 Case 或 Judge operation。POST 重试会复用稳定幂等键；只有服务端声明的瞬态失败才会在 `max_retries` 范围内重试，`ServiceBusyError` 不会自动重试。
 

@@ -22,7 +22,7 @@ run the canonical checks:
 python -m ruff format --check --exclude "*.ipynb" .
 python -m ruff check --exclude "*.ipynb" .
 python -m compileall -q src examples
-defuzex quickstart
+kuma quickstart
 python examples/minimal_local.py
 python -m build
 python -m twine check dist/*

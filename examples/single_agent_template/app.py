@@ -1,4 +1,4 @@
-"""Framework-neutral Single Agent Template for the public DefuzeX SDK."""
+"""Framework-neutral Single Agent Template for the public KUMA SDK."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Protocol, TypeAlias
 
-from defuzex import ConfigurationError, DefuzeError, create_run
-from defuzex.providers import CaseGenerationContext
+from kuma import ConfigurationError, KumaError, create_run
+from kuma.providers import CaseGenerationContext
 
 JsonPrimitive: TypeAlias = str | int | float | bool | None
 JsonValue: TypeAlias = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
@@ -78,29 +78,27 @@ def _environment_flag(name: str, *, default: bool) -> bool:
 
 
 def _agent_timeout() -> float:
-    raw = os.environ.get("DEFUZEX_AGENT_TIMEOUT_SECONDS", "30")
+    raw = os.environ.get("KUMA_AGENT_TIMEOUT_SECONDS", "30")
     try:
         value = float(raw)
     except ValueError:
         raise ConfigurationError(
-            "DEFUZEX_AGENT_TIMEOUT_SECONDS must be a positive number"
+            "KUMA_AGENT_TIMEOUT_SECONDS must be a positive number"
         ) from None
     if not math.isfinite(value) or value <= 0:
-        raise ConfigurationError(
-            "DEFUZEX_AGENT_TIMEOUT_SECONDS must be a positive number"
-        )
+        raise ConfigurationError("KUMA_AGENT_TIMEOUT_SECONDS must be a positive number")
     return value
 
 
 @contextmanager
 def _repository(use_official: bool):
-    configured = os.environ.get("DEFUZEX_REPO_PATH")
+    configured = os.environ.get("KUMA_REPO_PATH")
     if configured:
         yield Path(configured)
         return
     if use_official:
-        raise ConfigurationError("Official mode requires DEFUZEX_REPO_PATH")
-    with TemporaryDirectory(prefix="defuzex-single-agent-") as temporary:
+        raise ConfigurationError("Official mode requires KUMA_REPO_PATH")
+    with TemporaryDirectory(prefix="kuma-single-agent-") as temporary:
         repo = Path(temporary)
         (repo / "README.md").write_text(
             "# Single Agent temporary smoke repository\n", encoding="utf-8"
@@ -197,10 +195,10 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    use_official = _environment_flag("DEFUZEX_USE_OFFICIAL", default=False)
+    use_official = _environment_flag("KUMA_USE_OFFICIAL", default=False)
     requirement = Path(
         os.environ.get(
-            "DEFUZEX_REQUIREMENT_PATH",
+            "KUMA_REQUIREMENT_PATH",
             Path(__file__).with_name("requirement.md"),
         )
     )
@@ -212,9 +210,7 @@ def main(argv: list[str] | None = None) -> int:
             max_inputs=None if use_official else 1,
             judge=use_official,
             on_failure="stop",
-            allow_local=_environment_flag(
-                "DEFUZEX_ALLOW_LOCAL", default=not use_official
-            ),
+            allow_local=_environment_flag("KUMA_ALLOW_LOCAL", default=not use_official),
         )
         try:
             _run_inputs(
@@ -233,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except DefuzeError as exc:
+    except KumaError as exc:
         print(
             f"sdk_error={exc.code} retryable={str(exc.retryable).lower()}",
             file=sys.stderr,

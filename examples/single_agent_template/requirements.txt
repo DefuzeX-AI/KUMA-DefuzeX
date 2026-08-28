@@ -1,5 +1,5 @@
 # Install this SDK checkout first: python -m pip install .
-# For a copied template, pin the approved DefuzeX source/version here.
+# For a copied template, pin the approved KUMA source/version here.
 
 # Add the dependency used inside call_your_agent here. The template itself is
 # framework-neutral and requires no Agent or model package.

@@ -1,8 +1,8 @@
 # This file is documentation only; app.py does not load it automatically.
-DEFUZEX_USE_OFFICIAL=0
-DEFUZEX_API_KEY=
-DEFUZEX_REPO_PATH=
-DEFUZEX_REQUIREMENT_PATH=
-DEFUZEX_AGENT_TIMEOUT_SECONDS=30
+KUMA_USE_OFFICIAL=0
+KUMA_API_KEY=
+KUMA_REPO_PATH=
+KUMA_REQUIREMENT_PATH=
+KUMA_AGENT_TIMEOUT_SECONDS=30
 # Optional: omit for the safe mode-dependent default. Set to 1 only for local development.
-# DEFUZEX_ALLOW_LOCAL=1
+# KUMA_ALLOW_LOCAL=1

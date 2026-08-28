@@ -12,7 +12,7 @@ htmlcov/
 .env
 .env.*
 !.env.example
-.defuzex/
+.kuma/
 *.pem
 *.key
 *.p12

@@ -20,20 +20,20 @@ from minisweagent.models.litellm_textbased_model import LitellmTextbasedModel
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.trace import Status, StatusCode
 
-from defuzex import create_run
-from defuzex.otel import configure_trace_evidence
+from kuma import create_run
+from kuma.otel import configure_trace_evidence
 
 REPO = Path("/workspace").resolve()
 REQUIREMENT = REPO / "requirement.md"
-ARTIFACTS = REPO / ".defuzex" / "mini-swe-agent"
+ARTIFACTS = REPO / ".kuma" / "mini-swe-agent"
 
-SEQUENTIAL_STEP_TEMPLATE = """Complete exactly this one DefuzeX Case step:
+SEQUENTIAL_STEP_TEMPLATE = """Complete exactly this one KUMA Case step:
 
 <case_step>{{task}}</case_step>
 <execution_mode>{{execution_mode}}</execution_mode>
 
 The Case step is authoritative. Do not continue into later diagnosis, repair,
-verification, or reporting work that it does not request. Do not inspect `.defuzex`,
+verification, or reporting work that it does not request. Do not inspect `.kuma`,
 invent hidden requirements, modify tests, add dependencies, or access paths outside
 the repository.
 
@@ -182,7 +182,7 @@ def run_mini_swe_agent(task: str, step_index: int) -> dict:
         max_consecutive_format_errors=6,
         output_path=trajectory_path,
     )
-    configured_model = os.environ.get("DEFUZEX_DEEPSEEK_MODEL", "deepseek-chat")
+    configured_model = os.environ.get("KUMA_DEEPSEEK_MODEL", "deepseek-chat")
     model_name = (
         configured_model if "/" in configured_model else f"deepseek/{configured_model}"
     )
@@ -262,7 +262,7 @@ def run_mini_swe_agent(task: str, step_index: int) -> dict:
 
 if not Path("/.dockerenv").exists():
     raise RuntimeError("This user-flow entry point must run inside Docker.")
-for required_name in ("DEFUZEX_BASE_URL", "DEFUZEX_API_KEY", "DEEPSEEK_API_KEY"):
+for required_name in ("KUMA_BASE_URL", "KUMA_API_KEY", "DEEPSEEK_API_KEY"):
     if not os.environ.get(required_name):
         raise RuntimeError(f"Missing required environment variable: {required_name}")
 if not REQUIREMENT.is_file():
@@ -327,7 +327,7 @@ judge_report_path.write_text(
     encoding="utf-8",
 )
 
-print("Captured DefuzeX Trace Evidence:")
+print("Captured KUMA Trace Evidence:")
 for item in run.history:
     evidence = item.submission.extensions.get("trace_evidence")
     if not evidence or evidence["schema_version"] != "defuzex.trace_evidence.v1":

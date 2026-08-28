@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/defuzex-banner.svg" width="760" alt="KUMA geometric wordmark banner">
+  <img src="docs/assets/kuma-banner.svg" width="760" alt="KUMA geometric wordmark banner">
 </p>
 
 <h1 align="center">KUMA</h1>
@@ -20,9 +20,7 @@ KUMA is the public Python SDK for testing Agent behavior through a strict `Run` 
 Python 3.10 or newer is required:
 
 ```bash
-git clone https://github.com/DefuzeX-AI/KUMA-DefuzeX.git
-cd KUMA-DefuzeX
-python -m pip install .
+python -m pip install "kuma==0.1.0"
 ```
 
 ## Quick start
@@ -30,7 +28,7 @@ python -m pip install .
 Run the deterministic local check without an account, API key, Docker, or network:
 
 ```bash
-defuzex quickstart
+kuma quickstart
 ```
 
 ## Core capabilities
