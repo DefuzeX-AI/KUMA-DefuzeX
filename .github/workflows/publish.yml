@@ -34,8 +34,9 @@ jobs:
         run: |
           python - <<'PY'
           import os
-          from kuma._version import __version__
+          import runpy
 
+          __version__ = runpy.run_path("src/kuma/_version.py")["__version__"]
           tag = os.environ["RELEASE_TAG"]
           if tag not in {__version__, f"v{__version__}"}:
               raise SystemExit(
