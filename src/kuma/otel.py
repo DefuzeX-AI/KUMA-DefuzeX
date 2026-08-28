@@ -17,7 +17,7 @@ try:
     )
 except ImportError as exc:  # pragma: no cover - exercised without the optional extra
     raise ImportError(
-        'OpenTelemetry Trace Evidence requires: pip install "kuma[otel]"'
+        'OpenTelemetry Trace Evidence requires: pip install "kuma-defuzex[otel]"'
     ) from exc
 
 

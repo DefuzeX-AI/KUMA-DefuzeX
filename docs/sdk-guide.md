@@ -17,7 +17,7 @@ Windows PowerShell:
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install "kuma==0.1.0"
+python -m pip install "kuma-defuzex==0.1.0"
 ```
 
 Linux or macOS:
@@ -25,13 +25,13 @@ Linux or macOS:
 ```bash
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "kuma==0.1.0"
+python -m pip install "kuma-defuzex==0.1.0"
 ```
 
 Optional OpenTelemetry support:
 
 ```bash
-python -m pip install "kuma[otel]==0.1.0"
+python -m pip install "kuma-defuzex[otel]==0.1.0"
 ```
 
 Contributors should use the editable development setup in [`CONTRIBUTING.md`](../CONTRIBUTING.md).

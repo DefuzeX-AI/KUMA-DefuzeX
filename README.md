@@ -20,7 +20,7 @@ KUMA is the public Python SDK for testing Agent behavior through a strict `Run` 
 Python 3.10 or newer is required:
 
 ```bash
-python -m pip install "kuma==0.1.0"
+python -m pip install "kuma-defuzex==0.1.0"
 ```
 
 ## Quick start

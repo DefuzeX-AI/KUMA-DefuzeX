@@ -17,7 +17,7 @@ Windows PowerShell：
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install "kuma==0.1.0"
+python -m pip install "kuma-defuzex==0.1.0"
 ```
 
 Linux 或 macOS：
@@ -25,13 +25,13 @@ Linux 或 macOS：
 ```bash
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "kuma==0.1.0"
+python -m pip install "kuma-defuzex==0.1.0"
 ```
 
 按需安装 OpenTelemetry 能力：
 
 ```bash
-python -m pip install "kuma[otel]==0.1.0"
+python -m pip install "kuma-defuzex[otel]==0.1.0"
 ```
 
 贡献者请按 [`CONTRIBUTING.md`](../CONTRIBUTING.md) 使用可编辑开发环境。

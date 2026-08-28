@@ -20,7 +20,7 @@ KUMA 是公开 Python SDK，通过严格的 `Run` 协议和有界 Evidence 采�
 需要 Python 3.10 或更高版本：
 
 ```bash
-python -m pip install "kuma==0.1.0"
+python -m pip install "kuma-defuzex==0.1.0"
 ```
 
 ## 快速开始
