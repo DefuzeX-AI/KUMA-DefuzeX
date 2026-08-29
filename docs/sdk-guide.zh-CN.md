@@ -214,7 +214,48 @@ print(report)
 
 ## OpenTelemetry
 
-可选 adapter 只采集同一进程、当前 Input 中已结束的 span。它向用户提供的 `TracerProvider` 添加标准 processor，不会替换应用已有的 provider：
+OpenTelemetry（OTel）是 Agent 框架和 instrumentation 用来产生 span 的标准可观测性接口。KUMA 只把**同一进程中真实产生**的 span 映射为有界 Evidence；它不会伪造 Agent 行为，也不是 OTel Collector、后端或 Trace UI。
+
+仅在需要 Trace Evidence 时安装可选能力，核心包不强制依赖 OTel：
+
+```bash
+python -m pip install "kuma-defuzex[otel]"
+```
+
+`create_run()` 现在按以下优先级工作：
+
+| 当前环境 | Run 行为 | Trace 行为 | 提示 |
+| --- | --- | --- | --- |
+| 显式传入 `trace_evidence` capture | 正常继续 | 使用显式 capture | 无 |
+| 已配置兼容的全局 SDK `TracerProvider` | 正常继续 | 自动复用 | 无 |
+| 未安装 OTel 或没有兼容的全局 Provider | 正常继续 | 无 Trace Evidence | `trace_auto_capture_unavailable` |
+| 自动附着失败 | 正常继续 | 降级为无 Trace | `trace_auto_attach_failed` |
+
+这些 warning 只表示 Evidence 完整性，记录在 `run.runtime_warnings`，不会阻断 `get_input()`、`submit()` 或 Judge。只安装 extra 不会凭空产生 span；Agent 框架或 instrumentation 还必须配置全局 SDK Provider 并实际发出 span。常见情况下无需任何 KUMA 专属设置：
+
+```python
+from opentelemetry import trace
+
+from kuma import create_run
+
+run = create_run(
+    repo_path=".",
+    requirement_path="requirement.md",
+    allow_local=True,
+)
+tracer = trace.get_tracer("my-agent")
+
+while (test_input := run.get_input()) is not None:
+    with tracer.start_as_current_span("agent.solve"):
+        output = my_agent(test_input)
+    report = run.submit(output)
+```
+
+如果应用没有兼容 Provider，继续使用 `run.submit(output)` 即可；需要时可将 `trace_auto_capture_unavailable` 转换成面向用户的非阻断提示。
+
+### 仍然支持显式配置
+
+非全局 Provider 或自定义资源上限继续使用原有显式 API。显式 capture 始终优先于自动发现，KUMA 也永远不会替换或重置全局 Provider：
 
 ```python
 from opentelemetry.sdk.trace import TracerProvider
@@ -235,7 +276,7 @@ run = create_run(
 )
 ```
 
-span 数量、属性、事件、文本和整个 Run 的字节数均有上限。拒绝式 allowlist 会排除 prompt、completion、源码、日志正文、Key 与凭证。显式 `submit(output)` 始终是可移植的回退；只有受支持的 Agent/Workflow span 提供合法最终输出时才能省略 output。KUMA 不提供 OTLP receiver、跨进程关联、Trace UI 或存储服务。
+span 数量、属性、事件、文本和整个 Run 的字节数均有上限。拒绝式 allowlist 会排除 prompt、completion、源码、日志正文、Key 与凭证。显式 `submit(output)` 始终是可移植的回退；只有受支持的 Agent/Workflow span 提供合法最终输出时才能省略 output。自动捕获当前覆盖 span；普通日志仍遵循既有的显式 Submission 日志合同。KUMA 不提供 OTLP receiver、跨进程关联、Trace UI 或存储服务。
 
 ## Docker 与运行时安全
 

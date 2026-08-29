@@ -214,7 +214,48 @@ Before official upload, KUMA scans output, errors, paths, diffs, explicit logs, 
 
 ## OpenTelemetry
 
-The optional adapter captures ended spans from the same process and current Input. It adds a standard processor to the supplied `TracerProvider`; it does not replace the application's provider:
+OpenTelemetry (OTel) is the standard observability API used by Agent frameworks and instrumentation to emit spans. KUMA maps spans that were **actually emitted in the same process** into bounded Evidence. It does not invent Agent activity and is not an OTel Collector, backend, or trace UI.
+
+Install OTel support only when trace capture is needed; the core package does not require it:
+
+```bash
+python -m pip install "kuma-defuzex[otel]"
+```
+
+`create_run()` now follows this precedence:
+
+| Environment | Run behavior | Trace behavior | Warning |
+| --- | --- | --- | --- |
+| Explicit `trace_evidence` capture | Continues | Uses the supplied capture | None |
+| Compatible global SDK `TracerProvider` already configured | Continues | Reuses it automatically | None |
+| OTel missing or no compatible global provider | Continues | No Trace Evidence | `trace_auto_capture_unavailable` |
+| Automatic attachment fails | Continues | Degrades to no Trace Evidence | `trace_auto_attach_failed` |
+
+The warnings are Evidence-completeness signals in `run.runtime_warnings`; they never block `get_input()`, `submit()`, or Judge. Installing the extra alone does not create spans. A framework or instrumentation must configure a global SDK provider and emit spans. In that common case, no KUMA-specific setup is needed:
+
+```python
+from opentelemetry import trace
+
+from kuma import create_run
+
+run = create_run(
+    repo_path=".",
+    requirement_path="requirement.md",
+    allow_local=True,
+)
+tracer = trace.get_tracer("my-agent")
+
+while (test_input := run.get_input()) is not None:
+    with tracer.start_as_current_span("agent.solve"):
+        output = my_agent(test_input)
+    report = run.submit(output)
+```
+
+If the application has no compatible provider, continue with `run.submit(output)` and optionally show a user-facing notice when `trace_auto_capture_unavailable` is present.
+
+### Explicit configuration remains supported
+
+Use the existing explicit API for a non-global provider or custom limits. Explicit capture always wins over automatic discovery, and KUMA never replaces or resets a global provider:
 
 ```python
 from opentelemetry.sdk.trace import TracerProvider
@@ -235,7 +276,7 @@ run = create_run(
 )
 ```
 
-Span counts, attributes, events, text, and total Run bytes are bounded. A restrictive allowlist excludes prompts, completions, source, log bodies, keys, and credentials. Explicit `submit(output)` remains the portable fallback; omitted output works only when supported Agent/Workflow spans expose a valid final output. KUMA does not provide an OTLP receiver, cross-process correlation, trace UI, or storage service.
+Span counts, attributes, events, text, and total Run bytes are bounded. A restrictive allowlist excludes prompts, completions, source, log bodies, keys, and credentials. Explicit `submit(output)` remains the portable fallback; omitted output works only when supported Agent/Workflow spans expose a valid final output. Automatic capture currently covers spans; ordinary logs remain governed by the existing explicit Submission log contract. KUMA does not provide an OTLP receiver, cross-process correlation, trace UI, or storage service.
 
 ## Docker and runtime security
 

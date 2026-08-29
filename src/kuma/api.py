@@ -43,6 +43,29 @@ def configure(*, api_key: str) -> Path:
     return write_api_key(api_key)
 
 
+def _resolve_trace_evidence(
+    configured: TraceEvidenceCapture | None,
+) -> tuple[TraceEvidenceCapture | None, str | None]:
+    if configured is not None:
+        if not isinstance(configured, TraceEvidenceCapture):
+            raise ConfigurationError(
+                "trace_evidence must come from kuma.otel.configure_trace_evidence()"
+            )
+        return configured, None
+    try:
+        from .otel import _automatic_trace_evidence
+    except ImportError:
+        return None, "trace_auto_capture_unavailable"
+    try:
+        capture = _automatic_trace_evidence()
+        if capture is None:
+            return None, "trace_auto_capture_unavailable"
+        return capture, None
+    except Exception:
+        # Optional observability must never turn a valid Run into a failed Run.
+        return None, "trace_auto_attach_failed"
+
+
 def _adapted_providers(
     *,
     config: CreateRunConfig,
@@ -114,7 +137,6 @@ def _create_run_config(
     timeout: float,
     operation_wait_timeout: float,
     max_retries: int,
-    trace_evidence: TraceEvidenceCapture | None,
 ) -> CreateRunConfig:
     config = resolve_create_run_config(
         {
@@ -134,12 +156,6 @@ def _create_run_config(
     )
     if config.upload_diff and not config.track_files:
         raise ConfigurationError("upload_diff requires track_files=True")
-    if trace_evidence is not None and not isinstance(
-        trace_evidence, TraceEvidenceCapture
-    ):
-        raise ConfigurationError(
-            "trace_evidence must come from kuma.otel.configure_trace_evidence()"
-        )
     return config
 
 
@@ -259,6 +275,7 @@ def _assemble_run(
     official_case: bool,
     official_judge: bool,
     trace_evidence: TraceEvidenceCapture | None,
+    trace_auto_warning: str | None,
 ) -> Run:
     requirement, context = _case_generation_context(
         resolved_repo=resolved_repo,
@@ -287,6 +304,8 @@ def _assemble_run(
         official_judge=official_judge,
         trace_evidence=trace_evidence,
     )
+    if trace_auto_warning is not None:
+        evidence.runtime_warnings.append(trace_auto_warning)
     return Run(
         run_id=run_id,
         case=case,
@@ -309,6 +328,7 @@ def _open_run(
     official_case: bool,
     official_judge: bool,
     trace_evidence: TraceEvidenceCapture | None,
+    trace_auto_warning: str | None,
 ) -> Run:
     run_id = f"run_{uuid.uuid4().hex}"
     runtime = RuntimeSession.open(
@@ -329,6 +349,7 @@ def _open_run(
             official_case=official_case,
             official_judge=official_judge,
             trace_evidence=trace_evidence,
+            trace_auto_warning=trace_auto_warning,
         )
     except BaseException:
         runtime.close()
@@ -364,8 +385,11 @@ def create_run(
     combinations are validated before the first Input can be delivered.
 
     ``allow_local`` is an explicit development escape hatch; the default runtime
-    requires SDK and Agent to share a Docker container. ``trace_evidence`` must
-    be the capture returned by :func:`kuma.otel.configure_trace_evidence`.
+    requires SDK and Agent to share a Docker container. When ``trace_evidence``
+    is omitted, an already-configured global OpenTelemetry SDK provider is
+    attached automatically; missing or unconfigured OTel only records a runtime
+    warning. Passing a capture from :func:`kuma.otel.configure_trace_evidence`
+    overrides automatic discovery.
 
     The caller owns Agent execution and must alternate :meth:`Run.get_input`
     with exactly one :meth:`Run.submit` until no Inputs remain, or call
@@ -385,8 +409,8 @@ def create_run(
         timeout=timeout,
         operation_wait_timeout=operation_wait_timeout,
         max_retries=max_retries,
-        trace_evidence=trace_evidence,
     )
+    trace_evidence, trace_auto_warning = _resolve_trace_evidence(trace_evidence)
     resolved_repo = Path(repo_path).expanduser().resolve()
     (
         adapted_case_provider,
@@ -418,6 +442,7 @@ def create_run(
         official_case=official_case,
         official_judge=official_judge,
         trace_evidence=trace_evidence,
+        trace_auto_warning=trace_auto_warning,
     )
 
 

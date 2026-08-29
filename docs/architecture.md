@@ -244,7 +244,7 @@ typed component union，只传关联 ID、顺序、路径/大小、结果枚举�
 
 ## OpenTelemetry 适配
 
-`otel.py` 通过用户提供的 SDK `TracerProvider.add_span_processor()` 增加一个处理器。它不调用全局 `set_tracer_provider()`，因此可与已有 processor/exporter 和 instrumentation 共存。未安装 `[otel]` 时，核心包不导入 OpenTelemetry，也不改变原有行为。
+`otel.py` 通过 SDK `TracerProvider.add_span_processor()` 增加一个处理器。显式 capture 始终优先；未传 capture 时，`create_run()` 惰性复用已经配置的兼容全局 Provider，并按 Provider 身份幂等复用 capture。它不调用全局 `set_tracer_provider()`，因此可与已有 processor/exporter 和 instrumentation 共存。未安装 `[otel]` 或没有兼容 Provider 时，Run 正常继续并记录稳定的 `trace_auto_capture_unavailable`；真正的自动附着失败记录 `trace_auto_attach_failed`，两者都不阻断 Run。
 
 span 在 start 时绑定到 capture 当前唯一 active step，因此同进程线程池不依赖 `ContextVar` 继承；在 end 时才映射和导出。父 span 可以先于或后于 child 结束，JSON 使用 ID 保留关系，并按开始时间稳定排序。step prepare 会 force flush，然后冻结本次 Evidence；commit 才累计整个 Run 的字节预算，abort 可恢复同一 association。
 

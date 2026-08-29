@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import threading
+import weakref
 from collections.abc import Sequence
+from contextlib import suppress
 from typing import Any
 
 from .errors import ConfigurationError
@@ -19,6 +22,12 @@ except ImportError as exc:  # pragma: no cover - exercised without the optional 
     raise ImportError(
         'OpenTelemetry Trace Evidence requires: pip install "kuma-defuzex[otel]"'
     ) from exc
+
+
+_ATTACH_LOCK = threading.RLock()
+_ATTACHED_CAPTURES: weakref.WeakKeyDictionary[Any, TraceEvidenceCapture] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 class TraceEvidenceSpanExporter(SpanExporter):
@@ -85,6 +94,22 @@ class TraceEvidenceSpanProcessor(SpanProcessor):
         self.exporter.shutdown()
 
 
+def _attach_trace_evidence(
+    provider: Any, limits: TraceEvidenceLimits | None
+) -> TraceEvidenceCapture:
+    add_processor = getattr(provider, "add_span_processor", None)
+    if not callable(add_processor):
+        raise ConfigurationError(
+            "Trace Evidence requires an SDK TracerProvider with add_span_processor()"
+        )
+    capture = TraceEvidenceCapture(limits)
+    exporter = TraceEvidenceSpanExporter(capture)
+    processor = TraceEvidenceSpanProcessor(exporter)
+    add_processor(processor)
+    capture._set_force_flush(processor.force_flush)
+    return capture
+
+
 def configure_trace_evidence(
     tracer_provider: Any | None = None,
     *,
@@ -99,17 +124,31 @@ def configure_trace_evidence(
     """
 
     provider = tracer_provider or trace.get_tracer_provider()
-    add_processor = getattr(provider, "add_span_processor", None)
-    if not callable(add_processor):
-        raise ConfigurationError(
-            "Trace Evidence requires an SDK TracerProvider with add_span_processor()"
-        )
-    capture = TraceEvidenceCapture(limits)
-    exporter = TraceEvidenceSpanExporter(capture)
-    processor = TraceEvidenceSpanProcessor(exporter)
-    add_processor(processor)
-    capture._set_force_flush(processor.force_flush)
-    return capture
+    with _ATTACH_LOCK:
+        capture = _attach_trace_evidence(provider, limits)
+        # Automatic mode can later reuse explicit configuration. Custom wrappers
+        # that cannot be weakly referenced remain available only through the
+        # explicit capture returned to their caller.
+        with suppress(TypeError):
+            _ATTACHED_CAPTURES[provider] = capture
+        return capture
+
+
+def _automatic_trace_evidence() -> TraceEvidenceCapture | None:
+    """Reuse or attach capture when the global OTel SDK is already configured."""
+
+    provider = trace.get_tracer_provider()
+    if not callable(getattr(provider, "add_span_processor", None)):
+        return None
+    with _ATTACH_LOCK:
+        try:
+            capture = _ATTACHED_CAPTURES.get(provider)
+        except TypeError:
+            return None
+        if capture is None:
+            capture = _attach_trace_evidence(provider, None)
+            _ATTACHED_CAPTURES[provider] = capture
+        return capture
 
 
 __all__ = [
