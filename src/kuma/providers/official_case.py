@@ -355,15 +355,18 @@ class OfficialCaseProvider:
             allow_sensitive=self.allow_sensitive,
             evidence_capabilities=self._evidence_capabilities,
         )
-        response = self._run_operation(context, payload)
-        return _normalized_case(
-            response,
-            context=context,
+        return self._run_operation(
+            context,
+            payload,
             repo_fingerprint=repo_fingerprint,
         )
 
     def _run_operation(
-        self, context: CaseGenerationContext, payload: Mapping[str, Any]
+        self,
+        context: CaseGenerationContext,
+        payload: Mapping[str, Any],
+        *,
+        repo_fingerprint: str,
     ) -> Mapping[str, Any]:
         store = _case_operation_store(
             context,
@@ -383,12 +386,20 @@ class OfficialCaseProvider:
                 **kwargs,
             )
 
+        def accept_result(response: Mapping[str, Any]) -> Mapping[str, Any]:
+            return _normalized_case(
+                response,
+                context=context,
+                repo_fingerprint=repo_fingerprint,
+            )
+
         return await_operation(
             self.client,
             store,
             key_factory=lambda: new_idempotency_key("casegen"),
             start=start_operation,
             wait_timeout=self.operation_wait_timeout,
+            accept_result=accept_result,
         )
 
 

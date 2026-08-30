@@ -341,8 +341,9 @@ def await_operation(
     key_factory: Callable[[], str],
     start: StartOperation,
     wait_timeout: float,
+    accept_result: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
 ) -> Mapping[str, Any]:
-    """Start or resume one operation and synchronously return its public result."""
+    """Return one accepted public result while preserving resumable state."""
 
     deadline = time.monotonic() + validate_operation_wait_timeout(wait_timeout)
     state = store.load_or_create(key_factory)
@@ -376,8 +377,9 @@ def await_operation(
             continue
         status, result, error = _poll_response(response, state.operation_id or "")
         if status == "succeeded" and result is not None:
+            accepted = result if accept_result is None else accept_result(result)
             store.clear()
-            return result
+            return accepted
         if status == "failed" and error is not None:
             store.clear()
             raise mapped_error(error[0], retryable=error[1])
