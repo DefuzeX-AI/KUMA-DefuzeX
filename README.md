@@ -31,6 +31,51 @@ Run the deterministic local check without an account, API key, Docker, or networ
 kuma quickstart
 ```
 
+## Real end-to-end example
+
+The repository includes a runnable [Docker user flow](examples/full_stack/docker_user_flow.py) that exercises the complete official path:
+
+```text
+KUMA SDK → public Backend → Core evaluation service → public Judgment
+```
+
+The example requests an official Case, passes every Case step to mini-SWE-agent, submits bounded file/log/OTel Evidence, obtains the official Judgment, and writes its public fields to `.kuma/mini-swe-agent/judge-report.json`.
+
+Its central Run loop is:
+
+```python
+run = create_run(
+    repo_path=REPO,
+    requirement_path=REQUIREMENT,
+    track_files=True,
+    save_local=True,
+    trace_evidence=trace_evidence,
+)
+
+report = None
+while (case_input := run.get_input(full=True)) is not None:
+    result = run_mini_swe_agent(str(case_input.payload), step_index)
+    log_keys = {"evidence_log", "test_log", "trajectory_log"}
+    output = {key: value for key, value in result.items() if key not in log_keys}
+    report = run.submit(output, logs=[result["evidence_log"]])
+    step_index += 1
+```
+
+The linked source contains the Agent adapter, bounded execution, verification, and report persistence used by the actual run. To execute it, prepare a disposable workspace as described in the [full-stack guide](examples/full_stack/USER_GUIDE.md), set `KUMA_BASE_URL`, `KUMA_API_KEY`, and `DEEPSEEK_API_KEY`, then run:
+
+```bash
+docker build -f examples/full_stack/Dockerfile.user-flow -t kuma-user-flow .
+workspace=/absolute/path/to/prepared-workspace
+docker run --rm \
+  --env KUMA_BASE_URL \
+  --env KUMA_API_KEY \
+  --env DEEPSEEK_API_KEY \
+  --mount "type=bind,source=$workspace,target=/workspace" \
+  kuma-user-flow
+```
+
+This flow calls real services and may consume service credit and model budget. KUMA sends requests only to the configured public Backend; it never asks the user for a private Core address or credential.
+
 ## Core capabilities
 
 - Synchronous, framework-neutral Case and Judge workflow.
