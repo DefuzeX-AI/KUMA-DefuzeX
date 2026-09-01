@@ -33,35 +33,9 @@ kuma quickstart
 
 ## 真实全流程示例
 
-仓库提供了一个可直接运行的 [Docker 用户流程](examples/full_stack/docker_user_flow.py)，覆盖完整的官方调用链：
+可运行的 [Docker 示例](examples/full_stack/docker_user_flow.py)会完成真实流程：获取官方 Case、用 mini-SWE-agent 执行每个步骤、提交 Evidence、取得官方 Judgment，并保存为 `.kuma/mini-swe-agent/judge-report.json`。
 
-```text
-KUMA SDK → 公网 Backend → Core 评测服务 → 公共 Judgment
-```
-
-该示例会获取官方 Case，把每个 Case 步骤交给 mini-SWE-agent，提交有界的文件、日志和 OTel Evidence，取得官方 Judgment，并将其中的公共字段保存到 `.kuma/mini-swe-agent/judge-report.json`。
-
-示例的核心 Run 循环如下：
-
-```python
-run = create_run(
-    repo_path=REPO,
-    requirement_path=REQUIREMENT,
-    track_files=True,
-    save_local=True,
-    trace_evidence=trace_evidence,
-)
-
-report = None
-while (case_input := run.get_input(full=True)) is not None:
-    result = run_mini_swe_agent(str(case_input.payload), step_index)
-    log_keys = {"evidence_log", "test_log", "trajectory_log"}
-    output = {key: value for key, value in result.items() if key not in log_keys}
-    report = run.submit(output, logs=[result["evidence_log"]])
-    step_index += 1
-```
-
-链接的源码包含真实运行使用的 Agent adapter、有界执行、验证和报告持久化逻辑。按照[全流程指南](examples/full_stack/USER_GUIDE.md)准备一次性工作区，设置 `KUMA_BASE_URL`、`KUMA_API_KEY` 和 `DEEPSEEK_API_KEY`，然后执行：
+按照[简短指南](examples/full_stack/USER_GUIDE.md)准备一次性 Agent 工作区，设置 `KUMA_BASE_URL`、`KUMA_API_KEY` 和 `DEEPSEEK_API_KEY`，然后在本仓库执行：
 
 ```bash
 docker build -f examples/full_stack/Dockerfile.user-flow -t kuma-user-flow .
@@ -74,7 +48,7 @@ docker run --rm \
   kuma-user-flow
 ```
 
-该流程会调用真实服务，可能消耗服务 Credit 和模型预算。KUMA 只请求用户配置的公网 Backend，不要求用户提供私有 Core 地址或凭据。
+该流程会调用真实服务，可能消耗服务 Credit 和模型预算。KUMA 只需要公网 Backend 地址和用户密钥，不需要私有 Core 地址。
 
 ## 核心能力
 

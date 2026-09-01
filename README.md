@@ -33,35 +33,9 @@ kuma quickstart
 
 ## Real end-to-end example
 
-The repository includes a runnable [Docker user flow](examples/full_stack/docker_user_flow.py) that exercises the complete official path:
+The runnable [Docker example](examples/full_stack/docker_user_flow.py) performs the real flow: obtain an official Case, run each step with mini-SWE-agent, submit Evidence, receive the official Judgment, and save it as `.kuma/mini-swe-agent/judge-report.json`.
 
-```text
-KUMA SDK → public Backend → Core evaluation service → public Judgment
-```
-
-The example requests an official Case, passes every Case step to mini-SWE-agent, submits bounded file/log/OTel Evidence, obtains the official Judgment, and writes its public fields to `.kuma/mini-swe-agent/judge-report.json`.
-
-Its central Run loop is:
-
-```python
-run = create_run(
-    repo_path=REPO,
-    requirement_path=REQUIREMENT,
-    track_files=True,
-    save_local=True,
-    trace_evidence=trace_evidence,
-)
-
-report = None
-while (case_input := run.get_input(full=True)) is not None:
-    result = run_mini_swe_agent(str(case_input.payload), step_index)
-    log_keys = {"evidence_log", "test_log", "trajectory_log"}
-    output = {key: value for key, value in result.items() if key not in log_keys}
-    report = run.submit(output, logs=[result["evidence_log"]])
-    step_index += 1
-```
-
-The linked source contains the Agent adapter, bounded execution, verification, and report persistence used by the actual run. To execute it, prepare a disposable workspace as described in the [full-stack guide](examples/full_stack/USER_GUIDE.md), set `KUMA_BASE_URL`, `KUMA_API_KEY`, and `DEEPSEEK_API_KEY`, then run:
+Prepare a disposable Agent workspace using the [short guide](examples/full_stack/USER_GUIDE.md), set `KUMA_BASE_URL`, `KUMA_API_KEY`, and `DEEPSEEK_API_KEY`, then run from this repository:
 
 ```bash
 docker build -f examples/full_stack/Dockerfile.user-flow -t kuma-user-flow .
@@ -74,7 +48,7 @@ docker run --rm \
   kuma-user-flow
 ```
 
-This flow calls real services and may consume service credit and model budget. KUMA sends requests only to the configured public Backend; it never asks the user for a private Core address or credential.
+This calls real services and may use service credit and model budget. KUMA needs only the public Backend URL and user keys—never a private Core address.
 
 ## Core capabilities
 
