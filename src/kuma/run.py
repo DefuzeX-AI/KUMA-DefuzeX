@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
+import os
 import threading
-from collections.abc import Mapping
-from pathlib import Path
+from collections.abc import Sequence
 from typing import Any, Literal
 
+from ._json_values import detach_json
 from .contracts import (
     CaptureStatus,
     Case,
@@ -43,28 +43,145 @@ _OUTPUT_UNSET = object()
 
 
 def _plain_json(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return {str(key): _plain_json(child) for key, child in value.items()}
-    if isinstance(value, tuple):
-        return [_plain_json(child) for child in value]
-    if isinstance(value, list):
-        return [_plain_json(child) for child in value]
-    return value
+    """Return one detached bounded JSON graph for internal Run callers.
+
+    Args:
+        value: Candidate Input or Submission value.
+
+    Returns:
+        A mutable built-in JSON graph detached from caller-owned containers.
+
+    Raises:
+        JsonStructureError: Through :func:`detach_json` when the graph is
+            unsupported, cyclic, non-finite, or deeper than 256 containers.
+
+    Postconditions:
+        Success is safe for later immutable contract construction.
+
+    Side Effects:
+        Traverses custom Mapping values locally and performs no external I/O.
+    """
+    return detach_json(value)
 
 
 def _validate_json(value: Any, description: str) -> Any:
-    plain = _plain_json(value)
+    """Validate Agent output before Evidence, persistence, Judge, or billing.
+
+    Args:
+        value: Explicit or OTel-derived Agent result to detach. Cyclic graphs and
+            values deeper than 256 nested containers are invalid.
+        description: Safe field label used in the stable public error message;
+            callers pass a constant rather than user-controlled text.
+
+    Returns:
+        A detached finite JSON value made of built-in dictionaries/lists and
+        scalars. Shared aliases are copied and remain valid.
+
+    Raises:
+        ValidationError: If traversal, a custom Mapping, or JSON encoding fails.
+            The stable code is ``output_invalid`` and the original exception or
+            caller value is never included in display text.
+
+    Preconditions:
+        Run state has not entered Evidence preparation or submission commit.
+
+    Postconditions:
+        Success is safe to freeze into Submission history. Failure leaves the
+        current Input delivered and performs no persistence or network action.
+
+    Side Effects:
+        Iterates custom Mapping output locally; performs no external I/O.
+
+    Security/Privacy:
+        Arbitrary Mapping errors, recursion details, keys, values, and object
+        representations are replaced with one stable SDK message.
+    """
     try:
-        json.dumps(plain, allow_nan=False)
-    except (TypeError, ValueError) as exc:
+        return _plain_json(value)
+    except Exception:
         raise ValidationError(
             f"{description} must be JSON serializable", code="output_invalid"
-        ) from exc
-    return plain
+        ) from None
+
+
+def _validate_log_paths(
+    logs: Sequence[str | os.PathLike[str]] | None,
+) -> tuple[str, ...] | None:
+    """Validate explicit log-path syntax before Run state or Evidence I/O.
+
+    Args:
+        logs: ``None`` or an ordered sequence whose elements are text or
+            ``os.PathLike`` values resolving to text. A bare string and all
+            bytes-like containers are values, not path sequences, and are
+            rejected.
+
+    Returns:
+        ``None`` when capture was not requested; otherwise an immutable tuple
+        of detached path spellings for repository-root resolution.
+
+    Raises:
+        ValidationError: If the top-level value is not an ordered sequence or
+            any element is not a text path-like value.
+
+    Preconditions:
+        None. Validation deliberately runs before checking Run state so invalid
+        path containers cannot reach Evidence preparation or Judge transport.
+
+    Postconditions:
+        Success has not read a path, changed Run state, or performed network I/O.
+
+    Security/Privacy:
+        Conversion failures use one stable message and never include the
+        supplied object, path spelling, or underlying exception text.
+    """
+    if logs is None:
+        return None
+    if isinstance(logs, (str, bytes, bytearray)) or not isinstance(logs, Sequence):
+        raise ValidationError(
+            "logs must be None or an ordered sequence of text paths",
+            code="logs_invalid",
+        )
+    normalized: list[str] = []
+    for item in logs:
+        if isinstance(item, (bytes, bytearray)) or not isinstance(
+            item, (str, os.PathLike)
+        ):
+            raise ValidationError(
+                "logs must be None or an ordered sequence of text paths",
+                code="logs_invalid",
+            )
+        try:
+            value = os.fspath(item)
+        except Exception:
+            raise ValidationError(
+                "logs must be None or an ordered sequence of text paths",
+                code="logs_invalid",
+            ) from None
+        if not isinstance(value, str):
+            raise ValidationError(
+                "logs must be None or an ordered sequence of text paths",
+                code="logs_invalid",
+            )
+        normalized.append(value)
+    return tuple(normalized)
 
 
 class Run:
-    """Synchronous delivery, submission, and Judge lifecycle for one Case."""
+    """Coordinate the synchronous Input → Submission → Judge lifecycle.
+
+    A Run is created by :func:`kuma.create_run`; callers do not instantiate it
+    directly. It owns exactly one immutable Case, one active runtime lease, the
+    ordered committed history, transactional Evidence state, and at most one
+    final report. Public methods are protected by a re-entrant lock so concurrent
+    calls cannot commit the same input twice.
+
+    Attributes:
+        run_id: Public identifier for this execution.
+        case_id: Public Case identifier used by official Judge requests.
+        strategy: Requested/selected public Case strategy identifier.
+        max_steps: Actual number of inputs in this validated Case. This is not
+            the configured upper bound when the provider returned fewer steps.
+    """
 
     def __init__(
         self,
@@ -78,10 +195,36 @@ class Run:
         strategy: str,
         evidence: EvidenceCollector | None = None,
     ) -> None:
+        """Initialize one validated Run and take ownership of its runtime lease.
+
+        Args:
+            run_id: Newly generated public Run identifier.
+            case: Fully normalized immutable Case owned by this Run.
+            runtime: Open runtime session whose lock/resources this Run closes.
+            judge_provider: Configured Judge provider, or ``None`` when judging
+                is disabled or deliberately unavailable.
+            judge_enabled: Whether the last Submission should invoke Judge.
+            on_failure: ``continue`` or ``stop`` behavior after a non-completed
+                Submission.
+            strategy: Public Case strategy recorded for introspection.
+            evidence: Step Evidence collector, or ``None`` when capture is not
+                configured.
+
+        Preconditions:
+            ``case`` has at least one correlated input and ``runtime`` is open
+            with the active-Run lease already acquired.
+
+        Postconditions:
+            The Run is ``ready`` at input index zero and owns the supplied
+            runtime and Evidence lifecycle until completion or cancellation.
+
+        Side Effects:
+            None beyond taking ownership of already-created objects.
+        """
         self.run_id = run_id
         self.case_id = case.case_id or ""
         self.strategy = strategy
-        self.max_inputs = len(case.inputs)
+        self.max_steps = len(case.inputs)
         self._case = case
         self._runtime = runtime
         self._judge_provider = judge_provider
@@ -134,13 +277,30 @@ class Run:
                 only its JSON-compatible payload when ``False``.
 
         Returns:
-            The current payload or ``KumaInput``. Returns ``None`` after all
-            Inputs are committed. Repeated calls before :meth:`submit` return
-            the same Input and do not advance the Run.
+            Current payload or ``KumaInput``. Returns ``None`` after all inputs
+            are committed. Repeated calls before :meth:`submit` return the same
+            input and do not advance the Run.
 
         Raises:
-            InputProtocolError: The Run cannot currently deliver an Input.
-            EvidenceCaptureError: Step-level Evidence initialization fails.
+            InputProtocolError: If the Run cannot currently deliver an input.
+            EvidenceCaptureError: If step Evidence initialization fails.
+
+        Preconditions:
+            The Run is ``ready`` or already ``input_delivered``. The caller must
+            submit the delivered input before requesting the next one.
+
+        Postconditions:
+            First delivery changes ``ready`` to ``input_delivered`` and starts
+            that input's Evidence transaction. Repeated delivery changes
+            nothing. Returning ``None`` means no uncommitted inputs remain.
+
+        Side Effects:
+            May initialize bounded file, log, and Trace capture. It never calls
+            Judge or appends history.
+
+        Security/Privacy:
+            Only the public Case input is returned; private Rubrics and private
+            evaluation metadata are never exposed.
         """
 
         with self._mutex:
@@ -170,7 +330,7 @@ class Run:
         *,
         status: str = "completed",
         error: str | None = None,
-        logs: list[str | Path] | None = None,
+        logs: Sequence[str | os.PathLike[str]] | None = None,
         wait: bool = True,
     ) -> TestReport | None:
         """Validate and commit one result, then advance or judge synchronously.
@@ -180,32 +340,55 @@ class Run:
                 completed Submission, KUMA uses a supported OTel
                 ``invoke_agent``/``invoke_workflow`` output. Explicit output has
                 priority; ``None`` is invalid for ``status="completed"``.
-            status: ``"completed"``, ``"failed"``, ``"timeout"``, or
-                ``"aborted"``.
-            error: Optional caller-safe error summary for a non-completed
-                Submission. Do not pass secrets or raw tracebacks.
-            logs: Optional log-file paths whose bounded increments are captured.
-                Evidence must be enabled; scope and sensitive checks still apply.
-            wait: Must remain ``True`` when the final Submission triggers Judge;
-                the public Run API does not expose background polling.
+                Containers may nest up to 256 levels (root container is level
+                one). Cycles are invalid; shared acyclic children are allowed.
+            status: ``completed``, ``failed``, ``timeout``, or ``aborted``.
+            error: Optional caller-safe summary for a non-completed Submission.
+                Do not pass secrets or raw tracebacks.
+            logs: ``None`` or an ordered sequence of text/path-like log-file
+                paths. Relative paths resolve from this Run's repository, never
+                the process working directory. Bare ``str``/bytes-like values
+                are invalid. Accepted files remain subject to count/size,
+                repository-scope, suffix, symlink, and sensitive-data checks.
+            wait: Must remain ``True`` when the last Submission triggers Judge;
+                the public Run API exposes synchronous completion only.
 
         Returns:
-            Final :class:`TestReport` only when this is the last Input and Judge
-            completes; otherwise ``None``. The committed Submission is available
-            through :attr:`history`.
+            Final :class:`TestReport` only when this is the last input and Judge
+            completes; otherwise ``None``. The committed result is always
+            available through :attr:`history`.
 
         Raises:
-            InputProtocolError: No Input is currently delivered.
-            ValidationError: Output, status, error, or serialization is invalid.
-            EvidenceCaptureError: Requested Evidence cannot be captured safely.
-            KumaError: The final official or custom Judge fails.
+            InputProtocolError: If no input is currently delivered.
+            ValidationError: If output, status, error, or serialization is invalid.
+            EvidenceCaptureError: If requested Evidence cannot be captured safely.
+            KumaError: If the final official or custom Judge fails.
 
-        Evidence offsets, local files, and Trace byte budgets advance only after
-        the immutable Submission is appended successfully.
+        Preconditions:
+            Exactly one input has been delivered and not yet submitted. A
+            completed Submission needs explicit output or a supported OTel final
+            output. Log paths must be in the allowed Evidence scope.
+
+        Postconditions:
+            Success appends exactly one immutable history item and commits
+            Evidence offsets, local records, and Trace budgets together. The Run
+            becomes ``ready``, ``completed``, or ``report_ready``. Validation or
+            preparation failure leaves the input delivered. Judge failure leaves
+            completed history available for retry.
+
+        Side Effects:
+            Reads bounded log/file state, may atomically write local Evidence,
+            and may synchronously poll the configured Judge after the final input.
+
+        Security/Privacy:
+            Output, error, logs, diffs, and Evidence may cross the public Judge
+            boundary. Do not pass credentials, raw tracebacks, prompts, private
+            rubrics, or unauthorized repository content.
         """
 
+        log_paths = _validate_log_paths(logs)
         with self._mutex:
-            current = self._submission_input(logs)
+            current = self._submission_input(log_paths)
             plain_output = self._validated_output(
                 output,
                 current=current,
@@ -217,7 +400,7 @@ class Run:
                 output=plain_output,
                 status=status,
                 error=error,
-                logs=logs,
+                logs=log_paths,
             )
             submission = self._submission(
                 current=current,
@@ -229,7 +412,8 @@ class Run:
             self._record_submission(current, submission, prepared)
             return self._advance_after_submission(status=status, wait=wait)
 
-    def _submission_input(self, logs: list[str | Path] | None) -> KumaInput:
+    def _submission_input(self, logs: Sequence[str] | None) -> KumaInput:
+        """Require one delivered Input and an Evidence collector when logs are supplied."""
         if self._state != "input_delivered" or self._current is None:
             raise InputProtocolError(
                 f"submit() requires a delivered Input; Run is {self._state}"
@@ -249,6 +433,7 @@ class Run:
         status: str,
         error: str | None,
     ) -> Any:
+        """Validate status/output and fall back to actual OTel Agent output when omitted."""
         if error is not None and not isinstance(error, str):
             raise ValidationError("error must be text or None", code="output_invalid")
         if status not in {"completed", "failed", "timeout", "aborted"}:
@@ -273,8 +458,9 @@ class Run:
         output: Any,
         status: str,
         error: str | None,
-        logs: list[str | Path] | None,
+        logs: Sequence[str] | None,
     ) -> PreparedEvidence | None:
+        """Prepare transactional Evidence without advancing collector offsets."""
         if self._evidence is None:
             return None
         return self._evidence.prepare(
@@ -294,6 +480,7 @@ class Run:
         error: str | None,
         prepared: PreparedEvidence | None,
     ) -> Submission:
+        """Build the immutable Submission and abort prepared Evidence on validation failure."""
         try:
             return Submission(
                 run_id=self.run_id,
@@ -322,6 +509,7 @@ class Run:
         submission: Submission,
         prepared: PreparedEvidence | None,
     ) -> None:
+        """Append history then commit Evidence, restoring deliverable state on append failure."""
         self._state = "submitting"
         try:
             self._history.append(HistoryItem(test_input=current, submission=submission))
@@ -338,6 +526,7 @@ class Run:
     def _advance_after_submission(
         self, *, status: str, wait: bool
     ) -> TestReport | None:
+        """Advance to the next Input, stop early, or enter the configured Judge."""
         if status != "completed" and self._on_failure == "stop":
             self._stopped_early = True
             self._finish_runtime()
@@ -351,11 +540,26 @@ class Run:
         return None
 
     def cancel(self) -> None:
-        """Cancel an unfinished Run and release Evidence, files, and its lock.
+        """Cancel an unfinished Run and release Evidence and its runtime lease.
 
-        The operation is idempotent for already-cancelled or report-ready Runs.
-        It raises :class:`InputProtocolError` when cancellation would hide a
-        failed or actively committing state.
+        Returns:
+            ``None``.
+
+        Raises:
+            InputProtocolError: If the Run is failed or is in an intermediate
+                state whose work must not be hidden by cancellation.
+
+        Preconditions:
+            The Run is in a cancellable public lifecycle state.
+
+        Postconditions:
+            An unfinished Run becomes ``cancelled``; active Evidence is discarded
+            and runtime resources are released. Calls on ``cancelled`` or
+            ``report_ready`` Runs are idempotent.
+
+        Side Effects:
+            Closes runtime resources and removes validated temporary runtime
+            files. It does not create a Submission or invoke Judge.
         """
 
         with self._mutex:
@@ -380,26 +584,42 @@ class Run:
 
         Args:
             wait: Must be ``True``. Official operation polling remains internal
-                and bounded by ``operation_wait_timeout`` from :func:`create_run`.
+                and is bounded by ``operation_wait_timeout`` from ``create_run``.
 
         Returns:
             Validated final :class:`TestReport`. Repeated calls after success
-            return the same report.
+            return the same report object.
 
         Raises:
-            ConfigurationError: ``wait=False`` is requested.
-            InputProtocolError: The Run is not completed and ready for Judge.
-            ProviderError: No Judge is configured or a custom Judge fails.
-            KumaError: The official Judge operation fails or times out.
+            ConfigurationError: If ``wait=False`` is requested.
+            InputProtocolError: If the Run is not completed and ready for Judge.
+            ProviderError: If no Judge is configured or a custom Judge fails.
+            KumaError: If an official Judge operation fails or times out.
 
-        A failure restores the ``completed`` state so retry reuses truthful
-        History and pending-operation metadata rather than creating a new result.
+        Preconditions:
+            Every delivered input has a committed Submission, state is
+            ``completed``, and a Judge Provider is configured.
+
+        Postconditions:
+            Success stores the report and changes state to ``report_ready``.
+            Failure restores ``completed`` so retry reuses the same immutable
+            history, idempotency identity, and pending operation.
+
+        Side Effects:
+            Calls the configured Judge for an unresolved report. Official Judge
+            uses bounded synchronous HTTP polling.
+
+        Security/Privacy:
+            Only validated public provenance, committed Submission Evidence, and
+            bounded public metadata cross the official Backend boundary. The SDK
+            never retrieves a private rubric.
         """
 
         with self._mutex:
             return self._judge_locked(wait=wait)
 
     def _judge_locked(self, *, wait: bool) -> TestReport:
+        """Judge completed history once and restore ``completed`` after Provider failure."""
         if not wait:
             raise ConfigurationError(
                 "SDK v4 Judge requests are synchronous; wait must remain True"
@@ -439,6 +659,7 @@ class Run:
         return report
 
     def _finish_runtime(self) -> None:
+        """Seal Evidence and release the active-Run lease, marking cleanup failure."""
         self._state = "completed"
         try:
             if self._evidence is not None:

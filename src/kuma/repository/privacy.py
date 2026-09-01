@@ -55,6 +55,7 @@ PRIVATE_DATA_FIELDS = frozenset(
         "answer_key",
         "deepseek_key",
         "expected_answer",
+        "expected_output",
         "hidden_answer",
         "hidden_inputs",
         "internal_labels",
@@ -71,17 +72,26 @@ PRIVATE_DATA_FIELDS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class SensitiveFinding:
+    """Identify a sensitive-data category without retaining the matched value.
+
+    Attributes:
+        kind: Stable category such as credential file, API token, or private field.
+        location: Caller-supplied safe component/path label, not secret content.
+    """
+
     kind: str
     location: str
 
     @property
     def reason(self) -> str:
+        """Return the stable public reason code for this sensitive-data finding."""
         return f"sensitive_{self.kind}:{self.location}"
 
 
 def scan_sensitive_path(
     path: str | Path, *, location: str = "file"
 ) -> tuple[SensitiveFinding, ...]:
+    """Return a finding when a path suggests credentials or private data."""
     candidate = Path(path)
     basename = candidate.name.casefold()
     if (
@@ -94,6 +104,7 @@ def scan_sensitive_path(
 
 
 def scan_sensitive_text(text: str, *, location: str) -> tuple[SensitiveFinding, ...]:
+    """Scan bounded text for credential and private-data signatures."""
     findings = [
         SensitiveFinding(kind, location)
         for kind, pattern in _TEXT_PATTERNS
@@ -103,9 +114,11 @@ def scan_sensitive_text(text: str, *, location: str) -> tuple[SensitiveFinding, 
 
 
 def scan_sensitive_json(value: Any, *, location: str) -> tuple[SensitiveFinding, ...]:
+    """Recursively scan JSON keys and scalar values for sensitive data."""
     findings: list[SensitiveFinding] = []
 
     def visit(item: Any) -> None:
+        """Visit nested JSON values while applying the sensitive-data scanner."""
         if isinstance(item, Mapping):
             for key, child in item.items():
                 if (
@@ -136,6 +149,7 @@ def contains_private_data(value: Any, *, extra_fields: Sequence[str] = ()) -> bo
     prohibited = PRIVATE_DATA_FIELDS | {field.casefold() for field in extra_fields}
 
     def visit(item: Any) -> bool:
+        """Visit nested JSON values while applying the sensitive-data scanner."""
         if isinstance(item, Mapping):
             if {str(key).casefold() for key in item} & prohibited:
                 return True
@@ -152,6 +166,7 @@ def enforce_sensitive_policy(
     *,
     allow_sensitive: bool,
 ) -> None:
+    """Raise before transport when findings are not explicitly allowed."""
     if not findings or allow_sensitive:
         return
     reasons = tuple(dict.fromkeys(item.reason for item in findings))

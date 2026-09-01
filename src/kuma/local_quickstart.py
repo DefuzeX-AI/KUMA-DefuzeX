@@ -20,7 +20,16 @@ QUICKSTART_INPUT_SHA256 = hashlib.sha256(QUICKSTART_INPUT.encode("utf-8")).hexdi
 
 @dataclass(frozen=True, slots=True)
 class LocalQuickstartResult:
-    """Stable beginner-facing result from one isolated local demonstration."""
+    """Summarize one deterministic credential-free local demonstration.
+
+    Attributes:
+        passed: Whether the transparent exact-match evaluator accepted output.
+        score: Deterministic integer score, currently ``0`` or ``100``.
+        reason: Human-readable evaluator explanation with no provider internals.
+        input_text: Fixed packaged demonstration input given to the fake Agent.
+        input_sha256: Stable SHA-256 digest proving the input is repeatable.
+        artifact_path: Absolute path of the locally written result JSON.
+    """
 
     passed: bool
     score: int
@@ -31,16 +40,16 @@ class LocalQuickstartResult:
 
 
 class _LocalCaseProvider:
+    """Provide the packaged deterministic Case without repository or network reads."""
+
     requirement_required = False
 
     def generate_case(self, _context: CaseGenerationContext) -> dict[str, Any]:
+        """Return the fixed local Case without reading a repository or network."""
         return {
             "case_id": "case_local_quickstart_v1",
             "input_type": "text",
-            "rubric": {
-                "rule": "exact_text_match",
-                "expected_output": QUICKSTART_EXPECTED_OUTPUT,
-            },
+            "rubric": {"rule": "exact_text_match"},
             "inputs": [
                 {
                     "input_id": "input_local_quickstart_v1",
@@ -52,6 +61,7 @@ class _LocalCaseProvider:
 
 
 def _local_judge(context: JudgeContext) -> dict[str, Any]:
+    """Score the quickstart output with a transparent deterministic rule."""
     output = context.history[0].submission.output
     passed = output == QUICKSTART_EXPECTED_OUTPUT
     reason = (
@@ -80,6 +90,7 @@ def _local_judge(context: JudgeContext) -> dict[str, Any]:
 
 
 def _write_artifact(*, output: str, score: int, reason: str) -> Path:
+    """Atomically write the local result JSON under the chosen output directory."""
     artifact_root = Path(tempfile.mkdtemp(prefix="kuma-local-result-")).resolve()
     artifact = artifact_root / "result.json"
     artifact.write_text(
@@ -121,7 +132,7 @@ def run_local_quickstart(*, demonstrate_failure: bool = False) -> LocalQuickstar
             repo_path=isolated_repo,
             case_provider=_LocalCaseProvider(),
             judge_provider=_local_judge,
-            max_inputs=1,
+            max_steps=1,
             judge=True,
             on_failure="stop",
             allow_local=True,

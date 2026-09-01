@@ -35,7 +35,7 @@ kuma quickstart
 
 - Synchronous, framework-neutral Case and Judge workflow.
 - Official or custom Providers, including fully local runs.
-- Bounded file, log, and optional trace Evidence, plus a canonical hash-only Runtime Evidence contract.
+- Bounded file, log, and optional trace Evidence. Runtime Evidence v1 remains hash-only; when the official service explicitly advertises v2, the completed step may include the final Agent output after strict JSON, size, and sensitive-data checks.
 
 ## Detailed documentation
 

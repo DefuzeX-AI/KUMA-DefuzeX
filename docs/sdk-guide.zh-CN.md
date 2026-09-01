@@ -154,7 +154,7 @@ print(report)
 | 自定义 | 自定义 | 完全本地 |
 | 任意 | `judge=False` | 最后一次提交后结束，不运行 Judge |
 
-自定义 Case Provider 必须设置 `max_inputs`。Provider 输出进入 Run 前会被归一化并验证。
+自定义 Case Provider 必须设置 `max_steps`；它是 Run 可接受的步骤数上限，不是要求生成的精确数量。官方模式可省略并采用公开服务上限。Provider 输出进入 Run 前会被归一化并验证；KUMA 会拒绝超限 Case，不会截断。
 
 ### Run 状态机
 
@@ -187,7 +187,7 @@ print(report)
 - `save_local=True` 将结构化记录写入 `.kuma/runs/<run_id>/submissions/`；本地记录不能替代官方提交。
 - `CaptureStatus`、`missing`、`dropped_count` 和 `runtime_warnings` 用于呈现采集不完整或降级。
 
-框架无关的运行时元数据遵循规范、仅含哈希的 [Runtime Evidence 合同](runtime-evidence.md)；其 schema 与隐私规则以该文档为准。
+框架无关的运行时元数据遵循 [Runtime Evidence 合同](runtime-evidence.md)。v1 仍仅含哈希；只有官方服务明确协商 v2 后，才会接收经过大小和敏感检查的 completed Agent 最终输出。该文档是 schema 与隐私规则的权威说明。
 
 上传到官方服务前，KUMA 会扫描 output、error、路径、diff、显式日志和自定义 Case 中的敏感内容。API Key 仅用于鉴权，不会加入 Evidence。`allow_sensitive=True` 只是普通 Evidence 的显式覆盖，不能替代隔离与 secret 管理。
 

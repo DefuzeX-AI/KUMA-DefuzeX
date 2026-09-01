@@ -40,11 +40,20 @@ _EXCLUDED_DIRECTORIES = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class RepoTreeEntry:
+    """Describe one public metadata-only repository tree entry.
+
+    Attributes:
+        path: Validated relative POSIX path; absolute and traversal paths fail.
+        type: ``file`` or ``directory``.
+        size_bytes: Non-negative file size, or ``None`` for directories.
+    """
+
     path: str
     type: str
     size_bytes: int | None = None
 
     def __post_init__(self) -> None:
+        """Validate one metadata-only repository entry and freeze its fields."""
         _validate_relative_path(self.path)
         if self.type not in {"file", "directory"}:
             raise ValidationError("Repo Meta entry type must be file or directory")
@@ -63,6 +72,7 @@ class RepoTreeEntry:
             )
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the validated metadata as a detached public-wire mapping."""
         result: dict[str, Any] = {"path": self.path, "type": self.type}
         if self.size_bytes is not None:
             result["size_bytes"] = self.size_bytes
@@ -71,7 +81,20 @@ class RepoTreeEntry:
 
 @dataclass(frozen=True, slots=True)
 class RepoMeta:
-    """Backend-compatible metadata with no source, README, Git, or host paths."""
+    """Carry bounded Backend-compatible repository metadata without file content.
+
+    Attributes:
+        repo_fingerprint: Stable ``sha256:<hex>`` digest of the canonical tree.
+        tree: Ordered immutable public file/directory metadata entries.
+        truncated: Whether the entry cap omitted additional paths.
+        omitted_sensitive_paths: Count of credential/private-looking paths that
+            were intentionally excluded.
+        schema_version: Exact public metadata schema version.
+
+    Security/Privacy:
+        The object contains no source, README contents, Git history, absolute
+        host paths, environment values, or credentials.
+    """
 
     repo_fingerprint: str
     tree: tuple[RepoTreeEntry, ...]
@@ -80,6 +103,7 @@ class RepoMeta:
     schema_version: str = REPO_META_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
+        """Validate fingerprint and freeze the bounded metadata tree."""
         if self.schema_version != REPO_META_SCHEMA_VERSION:
             raise ValidationError("Unsupported Repo Meta schema version")
         _normalize_fingerprint(self.repo_fingerprint)
@@ -104,6 +128,7 @@ class RepoMeta:
         return f"{_SHA256_PREFIX}{_normalize_fingerprint(self.repo_fingerprint)}"
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the validated metadata as a detached public-wire mapping."""
         extension: dict[str, Any] = {}
         if self.truncated:
             extension["truncated"] = True
@@ -120,6 +145,7 @@ class RepoMeta:
 
 
 def _normalize_fingerprint(value: Any) -> str:
+    """Normalize and validate a canonical SHA-256 repository fingerprint."""
     if not isinstance(value, str):
         raise ValidationError("repo_fingerprint must be a SHA-256 digest")
     normalized = value.removeprefix(_SHA256_PREFIX).lower()
@@ -131,6 +157,7 @@ def _normalize_fingerprint(value: Any) -> str:
 
 
 def _validate_relative_path(value: Any) -> str:
+    """Reject absolute, traversing, backslash, control-character, or oversized paths."""
     if (
         not isinstance(value, str)
         or not value
@@ -146,6 +173,7 @@ def _validate_relative_path(value: Any) -> str:
 
 
 def _entry_from_mapping(value: Any) -> RepoTreeEntry:
+    """Validate one public tree-entry mapping and normalize its relative path."""
     if not isinstance(value, Mapping):
         raise ValidationError("Repo Meta tree entries must be mappings")
     if set(value) - {"path", "type", "size_bytes"}:
@@ -158,7 +186,36 @@ def _entry_from_mapping(value: Any) -> RepoTreeEntry:
 
 
 def prepare_repo_meta_upload(value: Mapping[str, Any] | RepoMeta) -> dict[str, Any]:
-    """Validate and reduce arbitrary Repo Meta to the public Backend allowlist."""
+    """Validate and reduce repository metadata to the public Backend allowlist.
+
+    Official Case generation calls this boundary before network I/O. It retains
+    only the canonical fingerprint and bounded metadata-only tree; paths are
+    normalized and privacy-scanned, while file contents and unknown fields are
+    never projected to transport.
+
+    Args:
+        value: Untrusted metadata mapping or validated :class:`RepoMeta`.
+
+    Returns:
+        Detached closed-schema public mapping safe for official Case transport.
+
+    Raises:
+        ValidationError: If schema, fingerprint, tree entries, types, counts,
+            limits, or extension fields are invalid.
+        SensitiveDataError: If a path is classified as sensitive.
+
+    Preconditions:
+        The network request has not started; this is the final repository
+        metadata serialization boundary.
+
+    Postconditions:
+        Output contains only schema, fingerprint, bounded relative tree metadata,
+        and allowlisted truncation counters.
+
+    Security/Privacy:
+        Source/README content, Git data, absolute paths, environment values,
+        credentials, and arbitrary fields cannot pass the allowlist.
+    """
 
     raw = value.to_dict() if isinstance(value, RepoMeta) else dict(value)
     if raw.get("schema_version") != REPO_META_SCHEMA_VERSION:
@@ -215,10 +272,24 @@ def prepare_repo_meta_upload(value: Mapping[str, Any] | RepoMeta) -> dict[str, A
 def _scan_entry(
     entry: os.DirEntry[str], repo_path: Path
 ) -> tuple[RepoTreeEntry | None, Path | None, bool]:
-    relative = Path(entry.path).relative_to(repo_path).as_posix()
-    if scan_sensitive_path(relative, location="repo_meta_path"):
-        return None, None, True
+    """Privacy-scan one metadata entry without reading its file content.
+
+    Args:
+        entry: Directory entry obtained beneath the canonical repository root.
+        repo_path: Root used to derive a non-sensitive relative POSIX path.
+
+    Returns:
+        Public tree entry, optional child directory, and sensitive-omission flag.
+
+    Raises:
+        ValidationError: If entry metadata cannot be inspected safely; the raw
+            filesystem failure and absolute path are detached.
+    """
+    inspection_failed = False
     try:
+        relative = Path(entry.path).relative_to(repo_path).as_posix()
+        if scan_sensitive_path(relative, location="repo_meta_path"):
+            return None, None, True
         if entry.is_symlink():
             return None, None, False
         if entry.is_dir(follow_symlinks=False):
@@ -227,30 +298,48 @@ def _scan_entry(
             return RepoTreeEntry(relative, "directory"), Path(entry.path), False
         if entry.is_file(follow_symlinks=False):
             return RepoTreeEntry(relative, "file", entry.stat().st_size), None, False
-    except OSError as exc:
+    except (TypeError, ValueError, OSError):
+        inspection_failed = True
+    if inspection_failed:
         raise ValidationError(
             "Repository metadata could not inspect an entry", code="config_invalid"
-        ) from exc
+        ) from None
     return None, None, False
 
 
 def _scan_tree(
     repo_path: Path, max_entries: int
 ) -> tuple[list[RepoTreeEntry], bool, int]:
+    """Privacy-scan the bounded tree and return safe detached entries.
+
+    Args:
+        repo_path: Canonical repository root; files are never opened for content.
+        max_entries: Positive upper bound on retained metadata entries.
+
+    Returns:
+        Ordered entries, truncation flag, and sensitive-path omission count.
+
+    Raises:
+        ValidationError: If a directory or entry cannot be inspected without
+            exposing host filesystem diagnostics.
+    """
     tree: list[RepoTreeEntry] = []
     pending = [repo_path]
     omitted_sensitive_paths = 0
     while pending and len(tree) < max_entries:
         current = pending.pop()
+        directory_failed = False
         try:
             entries = sorted(
                 os.scandir(current), key=lambda entry: entry.name.casefold()
             )
-        except OSError as exc:
+        except OSError:
+            directory_failed = True
+        if directory_failed:
             raise ValidationError(
                 "Repository metadata could not read a directory",
                 code="config_invalid",
-            ) from exc
+            ) from None
         child_directories: list[Path] = []
         for entry in entries:
             if len(tree) >= max_entries:
@@ -273,11 +362,21 @@ def collect_repo_meta(
 ) -> RepoMeta:
     """Collect names, entry types, and file sizes without reading file contents."""
 
-    root = Path(repo_path).expanduser().resolve()
-    if not root.is_dir():
+    root_failed = False
+    try:
+        root = Path(repo_path).expanduser().resolve()
+        if not root.is_dir():
+            raise ValidationError(
+                "repo_path must be a readable directory", code="config_invalid"
+            )
+    except ValidationError:
+        raise
+    except (TypeError, ValueError, OSError, RuntimeError):
+        root_failed = True
+    if root_failed:
         raise ValidationError(
             "repo_path must be a readable directory", code="config_invalid"
-        )
+        ) from None
     if (
         isinstance(max_entries, bool)
         or not isinstance(max_entries, int)
@@ -286,12 +385,15 @@ def collect_repo_meta(
         raise ValidationError(
             "Repo Meta limits must be positive", code="config_invalid"
         )
+    readability_failed = False
     try:
         next(root.iterdir(), None)
-    except OSError as exc:
+    except OSError:
+        readability_failed = True
+    if readability_failed:
         raise ValidationError(
             "repo_path must be readable", code="config_invalid"
-        ) from exc
+        ) from None
 
     tree, truncated, omitted_sensitive_paths = _scan_tree(root, max_entries)
     fingerprint_source = {

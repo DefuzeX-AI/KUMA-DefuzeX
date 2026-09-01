@@ -1,9 +1,10 @@
-# Runtime Evidence v1
+# Runtime Evidence v1 and v2
 
 `Submission.extensions["runtime_evidence"]` is the canonical, bounded record of
 runtime facts the SDK observed between one `get_input()` and its matching
 `submit()`. Its closed schema is `defuzex.runtime_evidence.v1`; it does not
-change the public Run method signatures.
+change the public Run method signatures. Local history and `save_local=True`
+persistence continue to store this v1 form.
 
 ## Envelope and association
 
@@ -59,7 +60,7 @@ fields are limited to:
 | `test_result` | `suite_id`, `outcome` (`passed`, `failed`, `partial`), `passed`, `failed`, `skipped` |
 | `state_transition` | `state_id`, `outcome` (`succeeded`, `failed`, `unknown`), optional `before_sha256`, `after_sha256` |
 | `artifact_snapshot` | `artifact_id`, optional `path`, `sha256`, `size_bytes`, `media_type` |
-| `agent_response_claim` | `claim_id`, `claim` (`completed`, `refused`, `blocked`), `text_sha256` |
+| `agent_response_claim` | v1: `claim_id`, `claim` (`completed`, `refused`, `blocked`), `text_sha256`; negotiated v2: a completed claim additionally requires `agent_output` |
 
 The current framework-neutral SDK implementation always emits an
 `agent_response_claim`. File tracking can emit `file_change`. Explicit log files
@@ -79,16 +80,45 @@ Official Judge revalidates every envelope against its actual Run/Input/step and
 stable Submission identity before upload. It sends one public `EvidenceItem`
 per history item with:
 
-- `source`: `defuzex.runtime_evidence.v1`
+- `source`: the negotiated `defuzex.runtime_evidence.v1` or
+  `defuzex.runtime_evidence.v2`
 - `media_type`: `application/vnd.defuzex.runtime-evidence+json`
 - `content`: the canonical UTF-8 JSON above
 - `name`: display-only filename
 
 Transport is negotiated through the Backend's public Judge config. The SDK only
-sends typed items when `evidence_types` explicitly contains
-`defuzex.runtime_evidence.v1`. Otherwise it sends the existing
+sends v2 when `evidence_types` explicitly contains
+`defuzex.runtime_evidence.v2`; v2 wins when both versions are advertised. A
+v1-only service receives the existing byte-compatible hash-only envelope. When
+neither typed version is advertised, the SDK sends the existing
 `defuzex.run_evidence.v1` item, so an older Backend never receives an unknown
-schema.
+schema. The SDK does not use legacy raw logs to emulate v2.
+
+For a completed Submission, v2 adds exactly one field to its existing
+`agent_response_claim`:
+
+```json
+{
+  "kind": "agent_response_claim",
+  "claim_id": "submission-response",
+  "claim": "completed",
+  "text_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "agent_output": {"answer": "the final Agent result"}
+}
+```
+
+`agent_output` is the detached, finite JSON value accepted by `Run.submit()`.
+It is the Agent's final response claim—not a tool result, model event, log,
+trace span, prompt, completion, diff, or repository file. Failed, timed-out,
+aborted, refused, and blocked claims never include it. Explicit `submit(output)`
+still takes precedence over supported semantic OTel output extraction.
+
+The output's canonical JSON is limited to 32,768 UTF-8 bytes. JSON is never
+truncated because doing so could change its meaning or schema. Exceeding that
+limit, the complete 120,000-character envelope limit, or dynamic Judge file and
+total limits raises a stable `KumaError` before multipart POST. `text_sha256`
+keeps the v1 algorithm: strings hash raw UTF-8 with `surrogatepass`; other values
+hash key-sorted compact JSON with ASCII escapes and `allow_nan=false`.
 
 For Official Case generation, `create_run()` derives `evidence_capabilities`
 from the same configured capture boundaries. It only adds that optional public
@@ -100,12 +130,16 @@ the Run can actually produce. The SDK never declares framework-only kinds.
 
 ## Privacy and resource behavior
 
-The envelope contains hashes instead of Agent output, log bodies, trace bodies,
-stdout/stderr, tool arguments, prompts, or model responses. Paths must be safe,
-root-relative, and pass the existing sensitive-path scanner. Invalid, external,
-or sensitive observations are dropped before serialization and reflected in the
-Submission's existing `missing` and `dropped_count` fields. Component and total
-character limits are enforced while retaining the response claim.
+V1 contains hashes instead of Agent output. V2 contains only the bounded final
+Agent output described above; it does not add log bodies, trace bodies,
+stdout/stderr, tool arguments, prompts, model responses, or diff text. Before a
+v2 multipart POST, the SDK applies the existing canonical sensitive JSON scanner
+to `agent_output` with no `allow_sensitive` bypass. Credential findings therefore
+fail locally; the SDK stores neither the matched value nor raw diagnostic text.
+Paths must be safe, root-relative, and pass the existing sensitive-path scanner.
+Invalid, external, or sensitive observations are otherwise dropped before
+serialization and reflected in the Submission's existing `missing` and
+`dropped_count` fields.
 
 Preparation, `save_local=True` persistence, log offsets, and trace exporter
 state retain the existing transaction boundary: only an accepted Submission

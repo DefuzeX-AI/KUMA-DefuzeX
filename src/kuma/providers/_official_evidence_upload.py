@@ -8,14 +8,15 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..errors import LimitExceededError, ProviderError
-from ..evidence.runtime import runtime_submission_id
+from ..evidence.runtime import project_runtime_evidence_v2, runtime_submission_id
 from ..evidence.runtime_contract import (
     RUNTIME_EVIDENCE_MEDIA_TYPE,
-    RUNTIME_EVIDENCE_SCHEMA,
+    RUNTIME_EVIDENCE_SCHEMA_V1,
+    RUNTIME_EVIDENCE_SCHEMA_V2,
     runtime_evidence_json,
     validate_runtime_evidence,
 )
-from ..repository.privacy import scan_sensitive_json
+from ..repository.privacy import enforce_sensitive_policy, scan_sensitive_json
 from ..transport.backend import UploadPart
 from ._evidence_projection import project_run_evidence
 from ._official_wire import history_evidence, plain_json
@@ -26,6 +27,18 @@ _MAX_BATCH_ITEMS = 20
 
 @dataclass(frozen=True, slots=True)
 class JudgeUploadConfig:
+    """Hold the validated dynamic public Judge upload limits.
+
+    Attributes:
+        max_files: Maximum multipart Evidence files accepted per request.
+        max_file_bytes: Maximum bytes accepted for one Evidence part.
+        max_total_bytes: Maximum combined multipart Evidence bytes.
+        manifest_schema_version: Exact public manifest version to serialize.
+        max_batch_items: Maximum Runs accepted by synchronous batch Judge.
+        evidence_types: Closed public Evidence media/type identifiers advertised
+            by the Backend.
+    """
+
     max_files: int
     max_file_bytes: int
     max_total_bytes: int
@@ -79,8 +92,21 @@ def judge_upload_config(response: Mapping[str, Any]) -> JudgeUploadConfig:
 
 
 def _runtime_evidence_part(
-    item: Any, *, index: int, max_file_bytes: int, part_prefix: str
+    item: Any,
+    *,
+    index: int,
+    max_file_bytes: int,
+    part_prefix: str,
+    schema_version: str = RUNTIME_EVIDENCE_SCHEMA_V1,
 ) -> tuple[UploadPart, dict[str, Any], list[Any]] | None:
+    """Build one negotiated Runtime Evidence part from stored v1 history.
+
+    The local Submission extension remains v1. When the Backend explicitly
+    advertises v2, this boundary creates a detached v2 view and performs a
+    mandatory Agent-output sensitive scan that ignores ``allow_sensitive``.
+    No multipart object is returned until association, privacy, schema, and byte
+    limits pass.
+    """
     value = item.submission.extensions.get("runtime_evidence")
     if value is None:
         return None
@@ -94,7 +120,23 @@ def _runtime_evidence_part(
             input_id=item.submission.input_id,
             step_id=item.test_input.input_id,
             submission_id=submission_id,
+            schema_version=RUNTIME_EVIDENCE_SCHEMA_V1,
         )
+        if schema_version == RUNTIME_EVIDENCE_SCHEMA_V2:
+            if item.submission.status == "completed":
+                output_findings = scan_sensitive_json(
+                    item.submission.output, location="agent_output"
+                )
+                enforce_sensitive_policy(output_findings, allow_sensitive=False)
+            value = project_runtime_evidence_v2(
+                value,
+                run_id=item.submission.run_id,
+                input_id=item.submission.input_id,
+                step_id=item.test_input.input_id,
+                submission_id=submission_id,
+                status=item.submission.status,
+                output=item.submission.output,
+            )
     except ValueError as exc:
         raise ProviderError(
             "Runtime Evidence is invalid", code="runtime_evidence_invalid"
@@ -116,7 +158,7 @@ def _runtime_evidence_part(
         {
             "name": filename,
             "sha256": hashlib.sha256(encoded).hexdigest(),
-            "evidence_type": RUNTIME_EVIDENCE_SCHEMA,
+            "evidence_type": schema_version,
         },
         scan_sensitive_json(value, location="runtime_evidence"),
     )
@@ -125,7 +167,12 @@ def _runtime_evidence_part(
 def _runtime_evidence_parts(
     context: JudgeContext, config: JudgeUploadConfig, part_prefix: str
 ) -> tuple[list[UploadPart], list[dict[str, Any]], list[Any]]:
-    if RUNTIME_EVIDENCE_SCHEMA not in config.evidence_types:
+    """Collect the highest explicitly negotiated Runtime Evidence version."""
+    if RUNTIME_EVIDENCE_SCHEMA_V2 in config.evidence_types:
+        schema_version = RUNTIME_EVIDENCE_SCHEMA_V2
+    elif RUNTIME_EVIDENCE_SCHEMA_V1 in config.evidence_types:
+        schema_version = RUNTIME_EVIDENCE_SCHEMA_V1
+    else:
         return [], [], []
     parts: list[UploadPart] = []
     manifest: list[dict[str, Any]] = []
@@ -136,6 +183,7 @@ def _runtime_evidence_parts(
             index=index,
             max_file_bytes=config.max_file_bytes,
             part_prefix=part_prefix,
+            schema_version=schema_version,
         )
         if built is None:
             continue
@@ -152,6 +200,7 @@ def _typed_upload(
     findings: list[Any],
     config: JudgeUploadConfig,
 ) -> tuple[tuple[UploadPart, ...], dict[str, Any], list[Any]]:
+    """Enforce dynamic file and byte limits for canonical typed Evidence."""
     if len(parts) > config.max_files:
         raise LimitExceededError(
             "Runtime Evidence exceeds the Judge file-count limit",
@@ -172,6 +221,7 @@ def _typed_upload(
 def _legacy_upload(
     context: JudgeContext, config: JudgeUploadConfig, part_prefix: str
 ) -> tuple[tuple[UploadPart, ...], dict[str, Any], list[Any]]:
+    """Project complete history into one bounded legacy Evidence file."""
     evidence = {
         "schema_version": "defuzex.run_evidence.v1",
         "run_status": context.run_status,

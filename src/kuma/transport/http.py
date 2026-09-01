@@ -15,11 +15,19 @@ _RETRY_BACKOFF_MAX_SECONDS = 2.0
 
 @dataclass(frozen=True, slots=True)
 class WireResponse:
+    """Return a decoded public HTTP status and JSON object from a transport.
+
+    Attributes:
+        status: Integer HTTP status code.
+        payload: Decoded JSON object; scalar/list bodies are rejected earlier.
+    """
+
     status: int
     payload: Mapping[str, Any]
 
 
 def validate_request(method: str, path: str, idempotency_key: str | None) -> str:
+    """Reject an oversized serialized request before network I/O."""
     normalized_method = method.upper()
     if (
         not path.startswith("/sdk/")
@@ -37,6 +45,7 @@ def validate_request(method: str, path: str, idempotency_key: str | None) -> str
 
 
 def request_timeout(default: float, deadline: float | None) -> float:
+    """Clamp one HTTP attempt to both its timeout and remaining deadline."""
     if deadline is None:
         return default
     remaining = deadline - time.monotonic()
@@ -50,6 +59,7 @@ def request_timeout(default: float, deadline: float | None) -> float:
 
 
 def retry_delay(attempts: int, deadline: float | None) -> float:
+    """Return bounded exponential backoff for a transient HTTP attempt."""
     delay = min(
         _RETRY_BACKOFF_BASE_SECONDS * (2**attempts),
         _RETRY_BACKOFF_MAX_SECONDS,
@@ -63,6 +73,7 @@ def validated_response(
     response: Mapping[str, Any] | WireResponse,
     expected_status: int | None,
 ) -> Mapping[str, Any]:
+    """Validate response status, body size, JSON shape, and expected status."""
     if isinstance(response, WireResponse):
         if expected_status is not None and response.status != expected_status:
             raise ServiceError(

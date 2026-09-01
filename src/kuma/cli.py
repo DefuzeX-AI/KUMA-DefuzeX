@@ -12,10 +12,12 @@ from .local_quickstart import run_local_quickstart
 
 
 def _emit(data: Any) -> None:
+    """Write one JSON value to standard output for CLI callers."""
     print(json.dumps(data, ensure_ascii=False, indent=2))
 
 
 def cmd_whoami(args: argparse.Namespace) -> int:
+    """Fetch and print public entitlements for the configured API key."""
     base_url = args.base_url or os.environ.get("KUMA_BASE_URL", DEFAULT_BASE_URL)
     client = KumaClient(base_url=base_url, timeout=args.timeout)
     _emit(client.entitlements())
@@ -23,6 +25,7 @@ def cmd_whoami(args: argparse.Namespace) -> int:
 
 
 def cmd_quickstart(args: argparse.Namespace) -> int:
+    """Run the deterministic credential-free local quickstart command."""
     try:
         result = run_local_quickstart(demonstrate_failure=args.fail_demo)
     except Exception:
@@ -40,6 +43,7 @@ def cmd_quickstart(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the public CLI parser without performing I/O."""
     parser = argparse.ArgumentParser(prog="kuma")
     subparsers = parser.add_subparsers(dest="command", required=True)
     whoami = subparsers.add_parser(
@@ -62,6 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse CLI arguments, invoke the selected command, and return its exit code."""
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)

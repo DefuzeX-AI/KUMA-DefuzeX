@@ -52,7 +52,7 @@ Do not access the network or paths outside the temporary repository.
             repo_path=repo,
             requirement_path=requirement,
             case_provider=local_case,
-            max_inputs=1,
+            max_steps=1,
             judge=False,
             allow_local=True,
             track_files=False,

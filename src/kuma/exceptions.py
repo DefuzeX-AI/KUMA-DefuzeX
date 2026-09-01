@@ -1,4 +1,4 @@
-"""Status-code-oriented exceptions for HTTP client consumers.
+"""Backward-compatible v0.2 exception names.
 
 New code should import the stable v4 hierarchy from :mod:`kuma.errors`.
 """
@@ -19,6 +19,7 @@ class KumaAPIError(ServiceError):
     """The KUMA API returned an error response."""
 
     def __init__(self, status_code: int, message: str, body: Any = None) -> None:
+        """Retain legacy HTTP status and message for compatibility callers."""
         self.status_code = status_code
         self.body = body
         super().__init__(

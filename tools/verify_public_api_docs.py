@@ -25,6 +25,15 @@ class PublicApi:
     source: str
     qualified_name: str
     dataclass_fields: bool = False
+    required_docstring_sections: tuple[str, ...] = (
+        "Args",
+        "Returns",
+        "Raises",
+        "Preconditions",
+        "Postconditions",
+        "Side Effects",
+        "Security/Privacy",
+    )
 
 
 PUBLIC_APIS = (
@@ -33,7 +42,19 @@ PUBLIC_APIS = (
     PublicApi("get_input", "src/kuma/run.py", "Run.get_input"),
     PublicApi("submit", "src/kuma/run.py", "Run.submit"),
     PublicApi("judge", "src/kuma/run.py", "Run.judge"),
-    PublicApi("KumaClient", "src/kuma/client.py", "KumaClient.__init__"),
+    PublicApi(
+        "KumaClient",
+        "src/kuma/client.py",
+        "KumaClient.__init__",
+        required_docstring_sections=(
+            "Args",
+            "Raises",
+            "Preconditions",
+            "Postconditions",
+            "Side Effects",
+            "Security/Privacy",
+        ),
+    ),
     PublicApi(
         "configure_trace_evidence",
         "src/kuma/otel.py",
@@ -44,6 +65,13 @@ PUBLIC_APIS = (
         "src/kuma/evidence/trace.py",
         "TraceEvidenceLimits",
         dataclass_fields=True,
+        required_docstring_sections=(
+            "Args",
+            "Raises",
+            "Preconditions",
+            "Postconditions",
+            "Security/Privacy",
+        ),
     ),
 )
 
@@ -191,8 +219,9 @@ def _validate_document(
 def _validate_source_docstrings(
     source_contracts: dict[str, tuple[tuple[str, ...], str]],
 ) -> list[str]:
-    """Require source docstrings to mention every public parameter by name."""
+    """Require public parameters and applicable contract sections in source docs."""
     errors: list[str] = []
+    api_by_name = {api.name: api for api in PUBLIC_APIS}
     for name, (parameters, docstring) in source_contracts.items():
         if not docstring:
             errors.append(f"source docstring missing for {name}")
@@ -201,6 +230,16 @@ def _validate_source_docstrings(
             f"source docstring for {name} omits {parameter}"
             for parameter in parameters
             if parameter not in docstring
+        )
+        headings = {
+            line.strip()[:-1]
+            for line in docstring.splitlines()
+            if line.strip().endswith(":")
+        }
+        errors.extend(
+            f"source docstring for {name} omits {section} section"
+            for section in api_by_name[name].required_docstring_sections
+            if section not in headings
         )
     return errors
 

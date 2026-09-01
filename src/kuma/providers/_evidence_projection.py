@@ -15,6 +15,7 @@ _MAX_TRACE_DROPPED_COUNT = 999_999_999
 
 
 def _encode(evidence: Mapping[str, Any]) -> bytes:
+    """Serialize a value with the canonical compact UTF-8 JSON encoding."""
     return json.dumps(
         evidence,
         ensure_ascii=False,
@@ -24,19 +25,23 @@ def _encode(evidence: Mapping[str, Any]) -> bytes:
 
 
 def _fits(evidence: Mapping[str, Any], limit: int) -> bool:
+    """Return whether canonical serialization fits the negotiated byte limit."""
     return len(_encode(evidence)) <= limit
 
 
 def _submissions(evidence: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Return mutable Submission projections from ordered history entries."""
     return [item["submission"] for item in evidence["history"]]
 
 
 def _append_once(values: list[Any], reason: str) -> None:
+    """Append one stable degradation reason without duplicates."""
     if reason not in values:
         values.append(reason)
 
 
 def _mark_component(submission: dict[str, Any], name: str, reason: str) -> None:
+    """Mark a non-failed capture component partial for transport truncation."""
     component = submission["capture_status"][name]
     if component.get("status") != "failed":
         component["status"] = "partial"
@@ -46,6 +51,7 @@ def _mark_component(submission: dict[str, Any], name: str, reason: str) -> None:
 def _mark_submission_gap(
     submission: dict[str, Any], *, component: str, reason: str, dropped: int
 ) -> None:
+    """Record one Submission-level omission and its dropped item count."""
     _append_once(submission["missing"], reason)
     submission["dropped_count"] += dropped
     _mark_component(submission, component, reason)
@@ -54,6 +60,7 @@ def _mark_submission_gap(
 def _log_entries(
     evidence: Mapping[str, Any],
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Return ordered log entries paired with their owning Submission."""
     result: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for submission in _submissions(evidence):
         result.extend((submission, log) for log in submission["logs"])
@@ -72,6 +79,7 @@ def _retain_log_prefix(
     base_submission_drop: int,
     base_projection_drop: int,
 ) -> None:
+    """Replace log content with a UTF-8 prefix and account for dropped bytes."""
     prefix = content[:characters]
     retained_bytes = len(prefix.encode("utf-8"))
     log.update(
@@ -93,6 +101,7 @@ def _retain_log_prefix(
 def _truncate_log_content(
     evidence: dict[str, Any], limit: int, projection: dict[str, Any]
 ) -> None:
+    """Binary-search deterministic log prefixes until the upload fits."""
     for submission, log in reversed(_log_entries(evidence)):
         if _fits(evidence, limit):
             return
@@ -138,6 +147,7 @@ def _truncate_log_content(
 def _trace_entries(
     evidence: Mapping[str, Any],
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Return ordered Trace envelopes paired with their owning Submission."""
     result: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for submission in _submissions(evidence):
         trace = submission.get("trace_evidence")
@@ -158,6 +168,7 @@ def _retain_trace_prefix(
     base_submission_drop: int,
     base_projection_drop: int,
 ) -> None:
+    """Retain an ordered span prefix and account for all removed spans."""
     dropped = len(original_spans) - count
     trace["spans"] = original_spans[:count]
     trace["dropped_count"] = min(
@@ -173,6 +184,7 @@ def _retain_trace_prefix(
 def _truncate_trace_spans(
     evidence: dict[str, Any], limit: int, projection: dict[str, Any]
 ) -> None:
+    """Binary-search deterministic span prefixes until the upload fits."""
     for submission, trace in reversed(_trace_entries(evidence)):
         if _fits(evidence, limit):
             return

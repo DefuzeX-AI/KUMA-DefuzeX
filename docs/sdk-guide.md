@@ -154,7 +154,10 @@ print(report)
 | custom | custom | Fully local |
 | any | `judge=False` | Complete after the final submission without a Judge |
 
-Custom Case Providers require `max_inputs`. Provider outputs are normalized and validated before entering the Run.
+Custom Case Providers require `max_steps`, the maximum number of steps the Run
+will accept rather than an exact requested count. Official mode may omit it to
+use the public service limit. Provider outputs are normalized and validated;
+KUMA rejects an over-limit Case instead of truncating it.
 
 ### Run state machine
 
@@ -190,7 +193,7 @@ Each `get_input()` to `submit()` interval is one Evidence transaction. Evidence 
 - `save_local=True` writes structured records under `.kuma/runs/<run_id>/submissions/`; local persistence does not replace official submission.
 - `CaptureStatus`, `missing`, `dropped_count`, and `runtime_warnings` expose partial or degraded capture.
 
-Framework-neutral runtime metadata follows the canonical, hash-only [Runtime Evidence contract](runtime-evidence.md); that page is the authoritative schema and privacy reference.
+Framework-neutral runtime metadata follows the [Runtime Evidence contract](runtime-evidence.md). v1 remains hash-only; only an explicitly negotiated v2 official service receives a bounded, scanned completed Agent output. That page is the authoritative schema and privacy reference.
 
 Before official upload, KUMA scans output, errors, paths, diffs, explicit logs, and custom Cases for sensitive material. The API key is used for authorization and is not added to Evidence. `allow_sensitive=True` is an explicit ordinary-Evidence override, not a substitute for isolation or secret hygiene.
 

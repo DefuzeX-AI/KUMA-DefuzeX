@@ -207,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
             repo_path=repo,
             requirement_path=requirement,
             case_provider=None if use_official else _local_case,
-            max_inputs=None if use_official else 1,
+            max_steps=None if use_official else 1,
             judge=use_official,
             on_failure="stop",
             allow_local=_environment_flag("KUMA_ALLOW_LOCAL", default=not use_official),

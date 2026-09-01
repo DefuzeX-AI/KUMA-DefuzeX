@@ -13,22 +13,34 @@ from .snapshot import Snapshot, SnapshotEntry
 
 @dataclass(frozen=True, slots=True)
 class DiffResult:
+    """Return uploadable file Evidence and local-only text diffs together.
+
+    Attributes:
+        evidence: Public bounded metadata and any explicitly enabled diffs.
+        local_diffs: Read-only mapping of every safe available text diff, kept
+            for local persistence even when ``upload_diff`` excluded it from the
+            public Evidence object.
+    """
+
     evidence: FileEvidence
     local_diffs: Mapping[str, str]
 
     def __post_init__(self) -> None:
+        """Freeze ordered file changes and bounded comparison reasons."""
         object.__setattr__(
             self, "local_diffs", MappingProxyType(dict(self.local_diffs))
         )
 
 
 def _rename_key(entry: SnapshotEntry) -> tuple[str, int, str] | None:
+    """Return hash, size, and kind used to pair deterministic renames."""
     if not entry.hash_complete or entry.sha256 is None:
         return None
     return entry.file_type, entry.size, entry.sha256
 
 
 def _changed(before: SnapshotEntry, after: SnapshotEntry) -> bool:
+    """Return whether kind, size, digest, link target, or mode changed."""
     return any(
         (
             before.file_type != after.file_type,
@@ -43,6 +55,7 @@ def _changed(before: SnapshotEntry, after: SnapshotEntry) -> bool:
 
 
 def _reason(before: SnapshotEntry | None, after: SnapshotEntry | None) -> str | None:
+    """Return why text diff content is unavailable for a file change."""
     reasons: list[str] = []
     for entry in (before, after):
         if entry is not None and entry.scan_error and entry.scan_error not in reasons:
@@ -59,6 +72,7 @@ def _unified_diff(
     old_path: str,
     new_path: str,
 ) -> str | None:
+    """Build a bounded unified text diff when both Snapshots retained content."""
     before_text = "" if before is None else before.text_content
     after_text = "" if after is None else after.text_content
     if before_text is None or after_text is None:
@@ -78,6 +92,7 @@ def _unified_diff(
 def _renamed_changes(
     removed: dict[str, SnapshotEntry], added: dict[str, SnapshotEntry]
 ) -> list[FileChange]:
+    """Pair identical deleted and created entries as deterministic renames."""
     removed_by_key: dict[tuple[str, int, str], list[str]] = {}
     added_by_key: dict[tuple[str, int, str], list[str]] = {}
     for path, entry in removed.items():
@@ -119,6 +134,7 @@ def _renamed_changes(
 def _deleted_changes(
     removed: Mapping[str, SnapshotEntry], *, upload_diff: bool
 ) -> tuple[list[FileChange], dict[str, str]]:
+    """Build ordered deletion Evidence for unpaired baseline paths."""
     changes: list[FileChange] = []
     local_diffs: dict[str, str] = {}
     for path in sorted(removed):
@@ -145,6 +161,7 @@ def _deleted_changes(
 def _created_changes(
     added: Mapping[str, SnapshotEntry], *, upload_diff: bool
 ) -> tuple[list[FileChange], dict[str, str]]:
+    """Build ordered creation Evidence for unpaired current paths."""
     changes: list[FileChange] = []
     local_diffs: dict[str, str] = {}
     for path in sorted(added):
@@ -175,6 +192,7 @@ def _modified_changes(
     *,
     upload_diff: bool,
 ) -> tuple[list[FileChange], dict[str, str]]:
+    """Build ordered modification Evidence for changed shared paths."""
     changes: list[FileChange] = []
     local_diffs: dict[str, str] = {}
     for path in sorted(common):
@@ -210,6 +228,7 @@ def compare_snapshots(
     scope: str,
     upload_diff: bool,
 ) -> DiffResult:
+    """Return deterministic file changes between two bounded snapshots."""
     removed = {
         path: before.entries[path]
         for path in before.entries.keys() - after.entries.keys()

@@ -35,7 +35,7 @@ kuma quickstart
 
 - 同步且不绑定框架的 Case 与 Judge 流程。
 - 支持官方或自定义 Provider，也可完全本地运行。
-- 有界采集文件、日志和可选 Trace Evidence，并提供规范、仅含哈希的 Runtime Evidence 合同。
+- 有界采集文件、日志和可选 Trace Evidence。Runtime Evidence v1 仍仅含哈希；仅当官方服务明确声明支持 v2 时，已完成步骤才可在严格 JSON、大小和敏感数据检查后携带 Agent 最终输出。
 
 ## 详细文档
 

@@ -34,7 +34,24 @@ _FENCE_PATTERN = re.compile(r"```(?:json)?\s*\n(.*?)\n```", re.DOTALL | re.IGNOR
 
 @dataclass(frozen=True, slots=True)
 class RequirementSpec:
-    """Validated requirement content ready for Case Provider context creation."""
+    """Hold a parsed public requirement for Case Provider context creation.
+
+    Attributes:
+        path: Absolute path of the explicitly selected UTF-8 requirement file.
+        content: Complete validated public requirement text.
+        agent_description: Pure front-matter Agent description, kept separate
+            from the requirement body for official auto-strategy selection.
+        input_type: Required Case input kind, ``text`` or ``structured``.
+        body: Requirement body after front matter removal.
+        sections: Read-only named Markdown sections parsed from ``body``.
+        input_schema: Read-only validated JSON Schema for structured inputs.
+        input_schema_path: Absolute path of an explicitly referenced schema file,
+            or ``None`` when schema is inline/absent.
+
+    Security/Privacy:
+        Parsing does not make content safe to upload automatically. Official
+        providers apply their own public allowlist and sensitive scan.
+    """
 
     path: Path
     content: str
@@ -46,6 +63,7 @@ class RequirementSpec:
     input_schema_path: Path | None = None
 
     def __post_init__(self) -> None:
+        """Freeze parsed requirement metadata while retaining its explicit source path."""
         object.__setattr__(self, "path", self.path.resolve())
         object.__setattr__(self, "sections", MappingProxyType(dict(self.sections)))
         if self.input_schema is not None:
@@ -57,7 +75,10 @@ class RequirementSpec:
 
 
 def _freeze_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Recursively freeze parsed requirement mappings and sequences."""
+
     def freeze(item: Any) -> Any:
+        """Return an immutable copy of the parsed requirement metadata."""
         if isinstance(item, Mapping):
             return MappingProxyType(
                 {str(key): freeze(child) for key, child in item.items()}
@@ -70,6 +91,7 @@ def _freeze_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def _split_front_matter(content: str) -> tuple[str, str]:
+    """Separate optional YAML front matter from the Markdown requirement body."""
     lines = content.splitlines()
     if not lines or lines[0].strip() != _FRONT_MATTER_BOUNDARY:
         raise ValidationError(
@@ -93,6 +115,7 @@ def _split_front_matter(content: str) -> tuple[str, str]:
 
 
 def _parse_front_matter(source: str) -> Mapping[str, Any]:
+    """Parse bounded YAML metadata and require a string-keyed mapping."""
     try:
         parsed = yaml.safe_load(source)
     except yaml.YAMLError as exc:
@@ -115,6 +138,7 @@ def _parse_front_matter(source: str) -> Mapping[str, Any]:
 
 
 def _extract_sections(body: str) -> dict[str, str]:
+    """Extract uniquely named level-two Markdown sections as immutable text."""
     matches = list(_HEADING_PATTERN.finditer(body))
     sections_by_heading: dict[str, str] = {}
     for index, match in enumerate(matches):
@@ -148,6 +172,7 @@ def _extract_sections(body: str) -> dict[str, str]:
 
 
 def _load_schema_from_section(section: str) -> Mapping[str, Any]:
+    """Parse an inline fenced JSON Schema without external reference retrieval."""
     match = _FENCE_PATTERN.search(section)
     if match is None:
         raise ValidationError(
@@ -168,6 +193,7 @@ def _load_schema_from_section(section: str) -> Mapping[str, Any]:
 
 
 def _load_schema_file(path: Path) -> Mapping[str, Any]:
+    """Read a bounded local JSON Schema file selected by the requirement."""
     if not path.is_file():
         raise ValidationError(
             f"Input schema file does not exist: {path}",
@@ -187,6 +213,7 @@ def _load_schema_file(path: Path) -> Mapping[str, Any]:
 
 
 def _reject_undeclared_schema_references(value: Any) -> None:
+    """Reject external JSON Schema references so validation performs no network I/O."""
     if isinstance(value, Mapping):
         reference = value.get("$ref")
         if isinstance(reference, str) and not reference.startswith("#"):
@@ -228,7 +255,43 @@ def validate_structured_input(payload: Any, schema: Mapping[str, Any]) -> None:
 
 
 def parse_requirement(path: str | Path) -> RequirementSpec:
-    """Parse an explicitly selected requirement file and fail entirely offline."""
+    """Parse one explicitly selected requirement and its local Input schema.
+
+    Run construction invokes this offline boundary before Case Provider I/O. It
+    validates front matter, required behavior sections, and text/structured Input
+    declarations; schema files must be local and external references are rejected.
+    Read or validation failures raise stable ``ValidationError`` values.
+
+    Args:
+        path: Explicit UTF-8 Markdown requirement file selected by the caller.
+            A leading UTF-8 byte-order mark is accepted and removed before
+            front-matter parsing; other encodings remain invalid.
+
+    Returns:
+        Immutable :class:`RequirementSpec` containing front matter, body,
+        sections, and a validated optional structured-input schema.
+
+    Raises:
+        ValidationError: If file existence/encoding, front matter, Agent
+            description, input type, schema path, or JSON Schema is invalid.
+
+    Preconditions:
+        The caller authorizes reading this file and any relative schema path it
+        explicitly declares.
+
+    Postconditions:
+        Success returns detached immutable mappings and absolute source paths;
+        no Run or process configuration state changes.
+
+    Side Effects:
+        Reads the requirement and, when declared, one local schema file only.
+        Decoding uses ``utf-8-sig`` so an optional leading UTF-8 BOM is treated
+        as transport metadata rather than requirement content.
+
+    Security/Privacy:
+        Parsing does not transmit content. Official-provider allowlisting and
+        sensitive scanning remain mandatory before network use.
+    """
 
     requirement_path = Path(path).expanduser().resolve()
     if not requirement_path.is_file():
@@ -237,7 +300,7 @@ def parse_requirement(path: str | Path) -> RequirementSpec:
             code="requirement_required",
         )
     try:
-        content = requirement_path.read_text(encoding="utf-8")
+        content = requirement_path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeError) as exc:
         raise ValidationError(
             "Requirement file must be readable UTF-8 text",

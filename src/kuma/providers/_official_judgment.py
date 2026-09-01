@@ -18,6 +18,7 @@ from ._official_wire import (
 def _validated_collections(
     response: Mapping[str, Any],
 ) -> tuple[list[Any], list[Any], list[Any]]:
+    """Validate optional issue and step-result arrays without private fields."""
     issues = response.get("issues", [])
     step_results = response.get("step_results", [])
     evidence_gaps = response.get("evidence_gaps", [])
@@ -43,6 +44,7 @@ def _validated_collections(
 
 
 def _validated_confidence(value: Any) -> str | int | float | None:
+    """Accept bounded numeric confidence and legacy low/medium/high labels."""
     if value is None:
         return None
     if (isinstance(value, str) and value in {"low", "medium", "high"}) or (

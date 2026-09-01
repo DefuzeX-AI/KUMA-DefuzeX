@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import json
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from .._json_values import detach_json
 from ..contracts import Case, KumaInput, TestReport
 from ..errors import ProviderError, ValidationError
-from ..repository.privacy import PRIVATE_DATA_FIELDS, contains_private_data
+from ..repository.privacy import contains_private_data
 from ..repository.requirements import validate_schema, validate_structured_input
 
 _CASE_FIELDS = frozenset(
@@ -32,44 +32,122 @@ _REPORT_FIELDS = frozenset(
         "extensions",
     }
 )
+_PRIVATE_INPUT_FIELDS = ("rubric",)
+_PRIVATE_CASE_ERROR = "Custom Case contains prohibited private fields"
 
 
 def _new_id(prefix: str) -> str:
+    """Create a random local identifier for normalized custom Provider data."""
     return f"{prefix}_{uuid.uuid4().hex}"
 
 
 def _plain_json(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return {str(key): _plain_json(child) for key, child in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_plain_json(child) for child in value]
-    return value
+    """Detach bounded Provider JSON or raise one non-sensitive Provider error."""
+    try:
+        return detach_json(value)
+    except Exception:
+        raise ProviderError("Provider value must be JSON serializable") from None
 
 
 def _ensure_json(value: Any, description: str) -> None:
+    """Detach a Provider value and reject non-JSON or non-finite content."""
     try:
-        json.dumps(_plain_json(value), allow_nan=False)
-    except (TypeError, ValueError) as exc:
-        raise ProviderError(f"{description} must be JSON serializable") from exc
+        _plain_json(value)
+    except ProviderError:
+        raise ProviderError(f"{description} must be JSON serializable") from None
 
 
-def _bounded_inputs(value: Any, max_inputs: int) -> list[Any]:
+def _bounded_inputs(value: Any, max_steps: int) -> list[Any]:
+    """Accept only the documented single-input or list/tuple fallback shapes."""
     if isinstance(value, (str, bytes, Mapping, KumaInput)):
         return [value]
-    if not isinstance(value, Iterable):
-        raise ProviderError("Case Provider must return a Case or iterable Inputs")
-    iterator = iter(value)
+    if not isinstance(value, (list, tuple)):
+        raise ProviderError(
+            "Case Provider must return a Case, explicit Case mapping, single text "
+            "or KumaInput, or a list/tuple of Inputs"
+        )
     inputs: list[Any] = []
-    for item in iterator:
+    for item in value:
         inputs.append(item)
-        if len(inputs) > max_inputs:
-            raise ProviderError("Case Provider returned more than max_inputs")
+        if len(inputs) > max_steps:
+            raise ProviderError("Case Provider returned more than max_steps")
     return inputs
+
+
+def _public_input_value(value: Any) -> Any:
+    """Project a typed Input to the same public fields scanned on mapping inputs."""
+    if not isinstance(value, KumaInput):
+        return value
+    return {
+        "payload": value.payload,
+        "public_constraints": value.public_constraints,
+        "extensions": value.extensions,
+    }
+
+
+def _reject_private_case_data(value: Any) -> None:
+    """Reject private evaluation keys without retaining or echoing their values."""
+    if contains_private_data(value, extra_fields=_PRIVATE_INPUT_FIELDS):
+        raise ProviderError(_PRIVATE_CASE_ERROR)
+
+
+def _case_envelope_json(result: Mapping[Any, Any]) -> tuple[dict[str, Any], Any]:
+    """Validate Case metadata as JSON while preserving the typed Input field.
+
+    Args:
+        result: Custom Provider Case envelope. Its key that stringifies to
+            ``inputs`` may contain documented :class:`KumaInput` instances;
+            every other field must be ordinary bounded JSON.
+
+    Returns:
+        A detached JSON envelope whose ``inputs`` value is a harmless sentinel,
+        plus the original Input value for the dedicated Input normalizer.
+
+    Raises:
+        ProviderError: If mapping iteration, key conversion, envelope traversal,
+            cycle/depth validation, or the required ``inputs`` field fails.
+
+    Preconditions:
+        ``result`` came from a custom Case Provider and has not been exposed as
+        a public :class:`Case`.
+
+    Postconditions:
+        Success proves all non-Input metadata is bounded acyclic JSON. Input
+        contents remain untouched for typed projection and per-Input checks.
+
+    Side Effects:
+        Iterates the Provider mapping locally. It performs no persistence,
+        Evidence capture, network request, model call, or billing action.
+
+    Security/Privacy:
+        Traversal failures become stable Provider errors and never include a
+        key, value, object representation, or original exception.
+    """
+    missing = object()
+    raw_inputs: Any = missing
+    envelope: dict[str, Any] = {}
+    try:
+        for key, value in result.items():
+            normalized_key = str(key)
+            if normalized_key == "inputs":
+                raw_inputs = value
+                envelope[normalized_key] = None
+            else:
+                envelope[normalized_key] = value
+    except Exception:
+        raise ProviderError("Provider value must be JSON serializable") from None
+
+    plain = _plain_json(envelope)
+    if raw_inputs is missing:
+        _reject_private_case_data(plain)
+        raise ProviderError("Case Provider mapping must contain an 'inputs' field")
+    return plain, raw_inputs
 
 
 def _input_parts(
     value: Any,
 ) -> tuple[Any, str, str | None, Mapping[str, Any], Mapping[str, Any]]:
+    """Validate and detach one Input mapping into normalized public parts."""
     if isinstance(value, KumaInput):
         return (
             _plain_json(value.payload),
@@ -104,6 +182,18 @@ def _input_parts(
 
 @dataclass(frozen=True, slots=True)
 class _CaseParts:
+    """Detach the supported public fields from a raw Case Provider result.
+
+    Attributes:
+        inputs: Raw input value or sequence awaiting normalization.
+        case_id: Optional provider-supplied public Case identifier.
+        input_type: Optional declared ``text``/``structured`` payload kind.
+        input_schema: Optional public structured-input JSON Schema.
+        rubric: Optional public custom-provider rubric; official private rubric
+            content is forbidden here.
+        extensions: Optional public extension metadata awaiting validation.
+    """
+
     inputs: Any
     case_id: str | None = None
     input_type: str | None = None
@@ -113,7 +203,23 @@ class _CaseParts:
 
 
 def _case_parts(result: Any) -> _CaseParts:
+    """Detach one supported Case shape without serializing typed Inputs.
+
+    Mapping envelopes are split at the public ``inputs`` boundary. Non-Input
+    metadata is validated as one bounded JSON graph, while typed Inputs retain
+    their public type until the normalizer projects and scans their payload,
+    constraints, and extensions. This preserves the documented Case mapping
+    contract without allowing opaque objects in metadata.
+    """
     if isinstance(result, Case):
+        _reject_private_case_data(
+            {
+                "inputs": [_public_input_value(item) for item in result.inputs],
+                "input_schema": result.input_schema,
+                "extensions": result.extensions,
+            }
+        )
+        _reject_private_case_data(result.rubric)
         return _CaseParts(
             inputs=result.inputs,
             case_id=result.case_id,
@@ -122,23 +228,20 @@ def _case_parts(result: Any) -> _CaseParts:
             rubric=result.rubric,
             extensions=result.extensions,
         )
-    if not isinstance(result, Mapping) or "inputs" not in result:
+    if not isinstance(result, Mapping):
         return _CaseParts(inputs=result)
+    result, raw_inputs = _case_envelope_json(result)
 
-    private = {str(key) for key in result if str(key).casefold() in PRIVATE_DATA_FIELDS}
-    if private:
-        fields = ", ".join(sorted(private))
-        raise ProviderError(f"Custom Case contains prohibited private fields: {fields}")
     public_case = {key: value for key, value in result.items() if key != "rubric"}
-    if contains_private_data(public_case):
-        raise ProviderError("Custom Case contains nested private fields")
+    _reject_private_case_data(public_case)
+    _reject_private_case_data(result.get("rubric"))
     supplied_extensions = result.get("extensions", {})
     if not isinstance(supplied_extensions, Mapping):
         raise ProviderError("Case extensions must be a mapping")
     extensions = dict(supplied_extensions)
     extensions.update({str(key): result[key] for key in set(result) - _CASE_FIELDS})
     return _CaseParts(
-        inputs=result["inputs"],
+        inputs=raw_inputs,
         case_id=result.get("case_id"),
         input_type=result.get("input_type"),
         input_schema=result.get("input_schema"),
@@ -153,6 +256,7 @@ def _resolved_input_type(
     declared: str | None,
     required: str | None,
 ) -> str:
+    """Resolve Case input type while enforcing the requirement's declared type."""
     inferred_types = {item[1] for item in parsed}
     if len(inferred_types) != 1:
         raise ProviderError("A Case cannot mix text and structured Inputs")
@@ -172,6 +276,7 @@ def _resolved_input_schema(
     declared: Mapping[str, Any] | None,
     required: Mapping[str, Any] | None,
 ) -> Mapping[str, Any] | None:
+    """Resolve and validate the schema required for structured Inputs."""
     resolved = required if required is not None else declared
     if (
         required is not None
@@ -193,6 +298,7 @@ def _validate_structured_payloads(
     parsed: list[tuple[Any, str, str | None, Mapping[str, Any], Mapping[str, Any]]],
     schema: Mapping[str, Any] | None,
 ) -> None:
+    """Validate every structured Input against the accepted JSON Schema."""
     if schema is None:
         return
     for payload, *_ in parsed:
@@ -210,6 +316,7 @@ def _normalized_inputs(
     run_id: str,
     case_id: str,
 ) -> tuple[KumaInput, ...]:
+    """Create immutable Inputs with unique IDs and validated payload shapes."""
     inputs: list[KumaInput] = []
     input_ids: set[str] = set()
     for index, parts in enumerate(parsed):
@@ -245,14 +352,49 @@ def normalize_case(
     result: Any,
     *,
     run_id: str,
-    max_inputs: int,
+    max_steps: int,
     required_input_type: str | None,
     required_input_schema: Mapping[str, Any] | None,
 ) -> Case:
-    """Normalize one complete custom Case before exposing any Input."""
+    """Validate and freeze one Provider Case before any Input is exposed.
 
-    if max_inputs <= 0:
-        raise ProviderError("max_inputs must be positive")
+    ``create_run`` calls this boundary for both official normalized mappings and
+    custom Provider output. It enforces the Run's Input limit, requirement type
+    and schema, unique identities, JSON safety, and reserved-extension rules,
+    returning the immutable public ``Case`` contract or raising ``ProviderError``.
+
+    Args:
+        result: Provider result as a :class:`Case`, Case mapping with required
+            ``inputs``, one text/:class:`KumaInput`, or a ``list``/``tuple`` of
+            public Inputs. Other mappings and iterables are rejected.
+        run_id: Owning Run identifier assigned to every normalized input.
+        max_steps: Positive maximum number of inputs accepted; fewer are valid.
+        required_input_type: Required ``text``/``structured`` type from the
+            requirement, or ``None`` when provider declaration decides.
+        required_input_schema: Required structured JSON Schema, or ``None``.
+
+    Returns:
+        New immutable :class:`Case` with correlated IDs and detached JSON values.
+
+    Raises:
+        ProviderError: If shape, count, identifiers, schema, payload, rubric, or
+            extensions violate the public Provider contract.
+
+    Preconditions:
+        ``run_id`` identifies the Run being assembled and ``max_steps`` is the
+        selected provider boundary.
+
+    Postconditions:
+        Success contains one through ``max_steps`` inputs, all sharing Run/Case
+        identity and payload type. Caller-owned objects cannot mutate it.
+
+    Security/Privacy:
+        Private fields and forged official provenance from custom providers fail
+        closed; normalization never manufactures official status.
+    """
+
+    if max_steps <= 0:
+        raise ProviderError("max_steps must be positive")
     parts = _case_parts(result)
     if parts.case_id is not None and (
         not isinstance(parts.case_id, str) or not parts.case_id.strip()
@@ -264,10 +406,19 @@ def normalize_case(
     if parts.input_schema is not None and not isinstance(parts.input_schema, Mapping):
         raise ProviderError("Case input_schema must be a mapping")
 
-    raw_sequence = _bounded_inputs(parts.inputs, max_inputs)
+    raw_sequence = _bounded_inputs(parts.inputs, max_steps)
     if not raw_sequence:
         raise ProviderError("Case Provider returned no Inputs")
-    parsed = [_input_parts(value) for value in raw_sequence]
+    parsed = []
+    for value in raw_sequence:
+        public_value = _public_input_value(value)
+        scanned_value = (
+            public_value if isinstance(value, KumaInput) else _plain_json(public_value)
+        )
+        _reject_private_case_data(scanned_value)
+        parsed.append(
+            _input_parts(value if isinstance(value, KumaInput) else public_value)
+        )
     resolved_type = _resolved_input_type(
         parsed,
         declared=parts.input_type,
@@ -295,6 +446,7 @@ def normalize_case(
 
 
 def normalize_report(result: Any, *, run_id: str) -> TestReport:
+    """Normalize custom Judge output into the stable public Report contract."""
     if isinstance(result, TestReport):
         if result.run_id != run_id:
             raise ProviderError("Judge Provider returned a report for another Run")

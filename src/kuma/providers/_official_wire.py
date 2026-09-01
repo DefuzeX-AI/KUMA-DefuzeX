@@ -59,6 +59,7 @@ _SPAN_FIELDS = frozenset(
 
 
 def plain_json(value: Any) -> Any:
+    """Return a detached JSON value after rejecting unsupported objects."""
     if is_dataclass(value) and not isinstance(value, type):
         return {
             field.name: plain_json(getattr(value, field.name))
@@ -74,6 +75,7 @@ def plain_json(value: Any) -> Any:
 
 
 def canonical_sha256(value: Any) -> str:
+    """Return a deterministic SHA-256 digest of a JSON-compatible value."""
     raw = json.dumps(
         plain_json(value),
         ensure_ascii=False,
@@ -85,10 +87,12 @@ def canonical_sha256(value: Any) -> str:
 
 
 def contains_private_fields(value: Any) -> bool:
+    """Return whether private fields satisfies the official public-wire validation contract."""
     return contains_private_data(value, extra_fields=("rubric",))
 
 
 def required_text(value: Any, label: str) -> str:
+    """Require a non-empty public text field from an official response."""
     if not isinstance(value, str) or not value.strip():
         raise ProviderError(
             f"The Backend returned an invalid {label}", code="invalid_response"
@@ -121,6 +125,7 @@ def validate_official_case_provenance(value: Any) -> dict[str, str]:
 
 
 def valid_judgment_issue(value: Mapping[str, Any]) -> bool:
+    """Return whether judgment issue satisfies the official public-wire validation contract."""
     return (
         isinstance(value.get("issue_id"), str)
         and bool(value["issue_id"])
@@ -131,6 +136,7 @@ def valid_judgment_issue(value: Mapping[str, Any]) -> bool:
 
 
 def valid_step_result(value: Mapping[str, Any]) -> bool:
+    """Return whether step result satisfies the official public-wire validation contract."""
     return (
         isinstance(value.get("step_id"), str)
         and bool(value["step_id"])
@@ -141,6 +147,7 @@ def valid_step_result(value: Mapping[str, Any]) -> bool:
 
 
 def _valid_trace_attributes(value: Any, *, resource: bool = False) -> bool:
+    """Return whether trace attributes satisfies the official public-wire validation contract."""
     return isinstance(value, Mapping) and all(
         isinstance(key, str) and attribute_key_allowed(key, resource=resource)
         for key in value
@@ -148,6 +155,7 @@ def _valid_trace_attributes(value: Any, *, resource: bool = False) -> bool:
 
 
 def _valid_trace_event(value: Any) -> bool:
+    """Return whether trace event satisfies the official public-wire validation contract."""
     return (
         isinstance(value, Mapping)
         and set(value) == {"name", "time_unix_nano", "attributes"}
@@ -158,10 +166,12 @@ def _valid_trace_event(value: Any) -> bool:
 
 
 def _valid_non_negative_int(value: Any) -> bool:
+    """Return whether non negative int satisfies the official public-wire validation contract."""
     return not isinstance(value, bool) and isinstance(value, int) and value >= 0
 
 
 def _valid_trace_span(value: Any) -> bool:
+    """Return whether trace span satisfies the official public-wire validation contract."""
     if not isinstance(value, Mapping) or set(value) != _SPAN_FIELDS:
         return False
     parent = value["parent_span_id"]
@@ -197,6 +207,7 @@ def _valid_trace_span(value: Any) -> bool:
 def valid_trace_evidence(
     value: Any, *, run_id: str, case_id: str, input_id: str
 ) -> bool:
+    """Return whether trace evidence satisfies the official public-wire validation contract."""
     if not isinstance(value, Mapping) or set(value) != _TRACE_FIELDS:
         return False
     spans = value["spans"]

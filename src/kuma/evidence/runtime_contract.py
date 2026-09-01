@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-RUNTIME_EVIDENCE_SCHEMA = "defuzex.runtime_evidence.v1"
+from .._json_values import JsonStructureError, detach_json
+
+RUNTIME_EVIDENCE_SCHEMA_V1 = "defuzex.runtime_evidence.v1"
+RUNTIME_EVIDENCE_SCHEMA_V2 = "defuzex.runtime_evidence.v2"
+# Preserve the original import as the v1 name used by existing integrations.
+RUNTIME_EVIDENCE_SCHEMA = RUNTIME_EVIDENCE_SCHEMA_V1
 RUNTIME_EVIDENCE_MEDIA_TYPE = "application/vnd.defuzex.runtime-evidence+json"
 RUNTIME_EVIDENCE_MAX_CHARS = 120_000
+RUNTIME_AGENT_OUTPUT_MAX_BYTES = 32_768
 CASEGEN_FRAMEWORK_SCHEMA = "defuzex.casegen.ita.v1"
 CASEGEN_EVIDENCE_CAPABILITY_ORDER = (
     "file_change",
@@ -76,6 +83,7 @@ def runtime_evidence_json(value: Mapping[str, Any]) -> str:
 
 
 def _json_value(value: Any) -> Any:
+    """Detach mappings and sequences into plain JSON containers for serialization."""
     if isinstance(value, Mapping):
         return {str(key): _json_value(child) for key, child in value.items()}
     if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
@@ -122,19 +130,23 @@ def casegen_framework_is_advertised(entitlements: Mapping[str, Any]) -> bool:
 
 
 def _text(value: Any, maximum: int) -> bool:
+    """Return whether text is non-empty and within its contract length."""
     return isinstance(value, str) and 1 <= len(value) <= maximum
 
 
 def _optional_hash(component: Mapping[str, Any], name: str) -> bool:
+    """Accept an omitted digest or require canonical lowercase SHA-256."""
     return name not in component or normalize_sha256(component[name]) == component[name]
 
 
 def _required_hash(component: Mapping[str, Any], name: str) -> bool:
+    """Require a present canonical lowercase SHA-256 field."""
     value = component.get(name)
     return isinstance(value, str) and normalize_sha256(value) == value
 
 
 def _relative_wire_path(value: Any) -> bool:
+    """Reject absolute, parent-traversing, or oversized public paths."""
     if not _text(value, 1024):
         return False
     normalized = value.replace("\\", "/")
@@ -146,19 +158,131 @@ def _relative_wire_path(value: Any) -> bool:
 
 
 def _non_negative(value: Any) -> bool:
+    """Accept non-negative integers while rejecting booleans."""
     return not isinstance(value, bool) and isinstance(value, int) and value >= 0
 
 
-def _valid_component_fields(component: Mapping[str, Any]) -> bool:
+def _valid_component_fields(
+    component: Mapping[str, Any], *, schema_version: str = RUNTIME_EVIDENCE_SCHEMA_V1
+) -> bool:
+    """Enforce the closed component fields for the selected wire version.
+
+    Runtime Evidence v2 changes only ``agent_response_claim``: a completed claim
+    carries ``agent_output`` while v1 remains hash-only. Required conditional
+    semantics are checked by :func:`_valid_component_value`.
+    """
     kind = component.get("kind")
     if kind not in _KINDS:
         return False
     allowed = _COMMON_FIELDS | _KIND_FIELDS[kind]
+    if schema_version == RUNTIME_EVIDENCE_SCHEMA_V2 and kind == "agent_response_claim":
+        allowed |= {"agent_output"}
     required = allowed - _KIND_OPTIONAL_FIELDS[kind]
+    if kind == "agent_response_claim":
+        required -= {"agent_output"}
     return required <= set(component) <= allowed
 
 
-def _valid_component_value(component: Mapping[str, Any]) -> bool:
+def runtime_claim_bytes(value: Any) -> bytes:
+    """Return bytes used by the frozen Runtime Evidence claim digest.
+
+    Strings retain the historical raw UTF-8 ``surrogatepass`` encoding. Every
+    other value uses finite, detached, key-sorted compact JSON with ASCII escapes.
+    This function performs no I/O and never embeds a rejected value in an error.
+    """
+
+    if isinstance(value, str):
+        return value.encode("utf-8", "surrogatepass")
+    plain = detach_json(value)
+    return json.dumps(
+        plain,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def runtime_agent_output_bytes(value: Any) -> bytes:
+    """Serialize one non-null finite Agent output using canonical JSON bytes.
+
+    Unlike :func:`runtime_claim_bytes`, strings include their JSON quotes because
+    this byte count governs the actual v2 ``agent_output`` value on the wire.
+    Invalid, cyclic, unsupported, or null values raise ``JsonStructureError``.
+    """
+
+    if value is None:
+        raise JsonStructureError("agent output must not be null")
+    plain = detach_json(value)
+    return json.dumps(
+        plain,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def runtime_claim_sha256(value: Any) -> str:
+    """Return the frozen lowercase digest for one Agent response claim."""
+
+    return hashlib.sha256(runtime_claim_bytes(value)).hexdigest()
+
+
+def _valid_claim_component(
+    component: Mapping[str, Any], *, schema_version: str
+) -> bool:
+    """Validate version-dependent Agent claim fields, hash, and output budget."""
+
+    valid_claim = (
+        _text(component["claim_id"], 128)
+        and component["claim"] in {"completed", "refused", "blocked"}
+        and normalize_sha256(component["text_sha256"]) == component["text_sha256"]
+    )
+    if not valid_claim:
+        return False
+    if schema_version == RUNTIME_EVIDENCE_SCHEMA_V1:
+        return "agent_output" not in component
+    if component["claim"] != "completed":
+        return "agent_output" not in component
+    if "agent_output" not in component:
+        return False
+    try:
+        encoded = runtime_agent_output_bytes(component["agent_output"])
+        digest = runtime_claim_sha256(component["agent_output"])
+    except (JsonStructureError, TypeError, ValueError):
+        return False
+    return (
+        len(encoded) <= RUNTIME_AGENT_OUTPUT_MAX_BYTES
+        and digest == component["text_sha256"]
+    )
+
+
+def _valid_component_value(
+    component: Mapping[str, Any], *, schema_version: str
+) -> bool:
+    """Validate values for exactly one kind in the frozen Core component union.
+
+    Args:
+        component: Closed-field mapping that already passed
+            :func:`_valid_component_fields`.
+
+    Returns:
+        ``True`` only when kind-specific enums, hashes, identifiers, paths,
+        counts, sizes, and required values satisfy the canonical v1 contract.
+
+    Preconditions:
+        ``kind`` and every required field exist; callers must run the closed-field
+        check first because this function indexes required keys directly.
+
+    Postconditions:
+        The mapping is not mutated. ``False`` identifies an invalid public
+        component before official upload/model use.
+
+    Security/Privacy:
+        Hash fields must be canonical SHA-256 and paths must be bounded relative
+        wire paths; raw tool arguments/stdout/log/prompt values are not accepted.
+    """
     kind = component["kind"]
     if kind == "file_change":
         return (
@@ -210,10 +334,9 @@ def _valid_component_value(component: Mapping[str, Any]) -> bool:
             and _non_negative(component["size_bytes"])
             and _text(component["media_type"], 128)
         )
-    return (
-        _text(component["claim_id"], 128)
-        and component["claim"] in {"completed", "refused", "blocked"}
-        and normalize_sha256(component["text_sha256"]) == component["text_sha256"]
+    return _valid_claim_component(
+        component,
+        schema_version=schema_version,
     )
 
 
@@ -224,7 +347,9 @@ def _validate_association(
     input_id: str,
     step_id: str,
     submission_id: str,
+    schema_version: str,
 ) -> None:
+    """Require exact Run, Input, step, and Submission correlation before upload."""
     actual = (
         value["run_id"],
         value["input_id"],
@@ -232,7 +357,7 @@ def _validate_association(
         value["submission_id"],
     )
     if (
-        value["schema_version"] != RUNTIME_EVIDENCE_SCHEMA
+        value["schema_version"] != schema_version
         or actual != (run_id, input_id, step_id, submission_id)
         or not _text(value["run_id"], 128)
         or not _text(value["input_id"], 128)
@@ -242,7 +367,10 @@ def _validate_association(
         raise ValueError("runtime evidence association is invalid")
 
 
-def _validate_components(components: Any) -> None:
+def _validate_components(
+    components: Any, *, schema_version: str = RUNTIME_EVIDENCE_SCHEMA_V1
+) -> None:
+    """Require versioned closed components in strictly increasing order."""
     if (
         not isinstance(components, Sequence)
         or isinstance(components, str | bytes | bytearray)
@@ -252,7 +380,9 @@ def _validate_components(components: Any) -> None:
     component_ids: set[str] = set()
     previous_sequence = -1
     for component in components:
-        if not isinstance(component, Mapping) or not _valid_component_fields(component):
+        if not isinstance(component, Mapping) or not _valid_component_fields(
+            component, schema_version=schema_version
+        ):
             raise ValueError("runtime evidence component is invalid")
         component_id, sequence = component["component_id"], component["sequence"]
         if (
@@ -260,7 +390,7 @@ def _validate_components(components: Any) -> None:
             or component_id in component_ids
             or not _non_negative(sequence)
             or sequence <= previous_sequence
-            or not _valid_component_value(component)
+            or not _valid_component_value(component, schema_version=schema_version)
         ):
             raise ValueError("runtime evidence component is invalid")
         component_ids.add(component_id)
@@ -274,8 +404,20 @@ def validate_runtime_evidence(
     input_id: str,
     step_id: str,
     submission_id: str,
+    schema_version: str = RUNTIME_EVIDENCE_SCHEMA_V1,
 ) -> None:
-    """Fail closed on malformed, duplicate, or mis-associated public evidence."""
+    """Fail closed on malformed, duplicate, or mis-associated public evidence.
+
+    ``schema_version`` is the exact version negotiated with the Backend. Omitting
+    it preserves v1 validation for existing callers; unknown versions are never
+    inferred from untrusted content.
+    """
+
+    if schema_version not in {
+        RUNTIME_EVIDENCE_SCHEMA_V1,
+        RUNTIME_EVIDENCE_SCHEMA_V2,
+    }:
+        raise ValueError("runtime evidence schema version is unsupported")
 
     fields = {
         "schema_version",
@@ -293,8 +435,9 @@ def validate_runtime_evidence(
         input_id=input_id,
         step_id=step_id,
         submission_id=submission_id,
+        schema_version=schema_version,
     )
-    _validate_components(value["components"])
+    _validate_components(value["components"], schema_version=schema_version)
     if len(runtime_evidence_json(value)) > RUNTIME_EVIDENCE_MAX_CHARS:
         raise ValueError("runtime evidence exceeds the character limit")
 
@@ -302,12 +445,18 @@ def validate_runtime_evidence(
 __all__ = [
     "CASEGEN_EVIDENCE_CAPABILITY_ORDER",
     "CASEGEN_FRAMEWORK_SCHEMA",
+    "RUNTIME_AGENT_OUTPUT_MAX_BYTES",
     "RUNTIME_EVIDENCE_MAX_CHARS",
     "RUNTIME_EVIDENCE_MEDIA_TYPE",
     "RUNTIME_EVIDENCE_SCHEMA",
+    "RUNTIME_EVIDENCE_SCHEMA_V1",
+    "RUNTIME_EVIDENCE_SCHEMA_V2",
     "casegen_framework_is_advertised",
     "derive_casegen_evidence_capabilities",
     "normalize_sha256",
+    "runtime_agent_output_bytes",
+    "runtime_claim_bytes",
+    "runtime_claim_sha256",
     "runtime_evidence_json",
     "validate_runtime_evidence",
 ]
