@@ -15,6 +15,12 @@
 
 KUMA is the public Python SDK for testing Agent behavior through a strict `Run` protocol and bounded Evidence capture. Official services are reached only through public HTTPS; the SDK does not run Agents, execute models, or expose private evaluation logic.
 
+## Core capabilities
+
+- Synchronous, framework-neutral Case and Judge workflow.
+- Official or custom Providers, including fully local runs.
+- Bounded file, log, and optional trace Evidence.
+
 ## Install
 
 Python 3.10 or newer is required:
@@ -31,30 +37,9 @@ Run the deterministic local check without an account, API key, Docker, or networ
 kuma quickstart
 ```
 
-## Real end-to-end example
+## Full-stack user-flow example
 
-The runnable [Docker example](examples/full_stack/docker_user_flow.py) performs the real flow: obtain an official Case, run each step with mini-SWE-agent, submit Evidence, receive the official Judgment, and save it as `.kuma/mini-swe-agent/judge-report.json`.
-
-Prepare a disposable Agent workspace using the [short guide](examples/full_stack/USER_GUIDE.md), set `KUMA_BASE_URL`, `KUMA_API_KEY`, and `DEEPSEEK_API_KEY`, then run from this repository:
-
-```bash
-docker build -f examples/full_stack/Dockerfile.user-flow -t kuma-user-flow .
-workspace=/absolute/path/to/prepared-workspace
-docker run --rm \
-  --env KUMA_BASE_URL \
-  --env KUMA_API_KEY \
-  --env DEEPSEEK_API_KEY \
-  --mount "type=bind,source=$workspace,target=/workspace" \
-  kuma-user-flow
-```
-
-This calls real services and may use service credit and model budget. KUMA needs only the public Backend URL and user keys—never a private Core address.
-
-## Core capabilities
-
-- Synchronous, framework-neutral Case and Judge workflow.
-- Official or custom Providers, including fully local runs.
-- Bounded file, log, and optional trace Evidence. Runtime Evidence v1 remains hash-only; when the official service explicitly advertises v2, the completed step may include the final Agent output after strict JSON, size, and sensitive-data checks.
+Follow the [full-stack user-flow guide](examples/full_stack/README.md) to run KUMA with mini-SWE-agent in Docker. This path calls external services and may use service credit and model budget.
 
 ## Detailed documentation
 

@@ -1,6 +1,8 @@
 # KUMA full-stack user-flow example
 
-This file covers only the supplied mini-SWE-agent example. General SDK installation, API key setup, requirement format, Run protocol, Evidence, OpenTelemetry, Docker boundaries, and troubleshooting live in the canonical [English guide](../../docs/sdk-guide.md) and [简体中文指南](../../docs/sdk-guide.zh-CN.md).
+[English](README.md) | [简体中文](README.zh-CN.md)
+
+This guide covers only the supplied mini-SWE-agent example. General SDK installation, API key setup, requirement format, Run protocol, Evidence, OpenTelemetry, Docker boundaries, and troubleshooting live in the canonical [English guide](../../docs/sdk-guide.md) and [简体中文指南](../../docs/sdk-guide.zh-CN.md).
 
 ## What this example runs
 
@@ -28,6 +30,7 @@ Export these values before running the example:
 - `DEEPSEEK_API_KEY`
 
 Do not place populated credentials in the workspace or repository.
+Configure only the public KUMA Backend URL; this example never needs a private Core address.
 
 ## Build the image
 

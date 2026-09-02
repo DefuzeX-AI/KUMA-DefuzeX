@@ -15,6 +15,12 @@
 
 KUMA 是公开 Python SDK，通过严格的 `Run` 协议和有界 Evidence 采集测试 Agent 行为。官方服务仅通过公开 HTTPS 访问；SDK 不运行 Agent、不执行模型，也不暴露私有评估逻辑。
 
+## 核心能力
+
+- 同步且不绑定框架的 Case 与 Judge 流程。
+- 支持官方或自定义 Provider，也可完全本地运行。
+- 有界采集文件、日志和可选 Trace Evidence。
+
 ## 安装
 
 需要 Python 3.10 或更高版本：
@@ -31,30 +37,9 @@ python -m pip install "kuma-defuzex==0.1.0"
 kuma quickstart
 ```
 
-## 真实全流程示例
+## 全栈用户流程示例
 
-可运行的 [Docker 示例](examples/full_stack/docker_user_flow.py)会完成真实流程：获取官方 Case、用 mini-SWE-agent 执行每个步骤、提交 Evidence、取得官方 Judgment，并保存为 `.kuma/mini-swe-agent/judge-report.json`。
-
-按照[简短指南](examples/full_stack/USER_GUIDE.md)准备一次性 Agent 工作区，设置 `KUMA_BASE_URL`、`KUMA_API_KEY` 和 `DEEPSEEK_API_KEY`，然后在本仓库执行：
-
-```bash
-docker build -f examples/full_stack/Dockerfile.user-flow -t kuma-user-flow .
-workspace=/absolute/path/to/prepared-workspace
-docker run --rm \
-  --env KUMA_BASE_URL \
-  --env KUMA_API_KEY \
-  --env DEEPSEEK_API_KEY \
-  --mount "type=bind,source=$workspace,target=/workspace" \
-  kuma-user-flow
-```
-
-该流程会调用真实服务，可能消耗服务 Credit 和模型预算。KUMA 只需要公网 Backend 地址和用户密钥，不需要私有 Core 地址。
-
-## 核心能力
-
-- 同步且不绑定框架的 Case 与 Judge 流程。
-- 支持官方或自定义 Provider，也可完全本地运行。
-- 有界采集文件、日志和可选 Trace Evidence。Runtime Evidence v1 仍仅含哈希；仅当官方服务明确声明支持 v2 时，已完成步骤才可在严格 JSON、大小和敏感数据检查后携带 Agent 最终输出。
+按照[全栈用户流程指南](examples/full_stack/README.zh-CN.md)，可在 Docker 中组合运行 KUMA 与 mini-SWE-agent。该流程会调用外部服务，可能消耗服务 Credit 和模型预算。
 
 ## 详细文档
 

@@ -267,7 +267,7 @@ span 数量、属性、事件、文本和整个 Run 的字节数均有上限。�
 docker build -f examples/full_stack/Dockerfile.user-flow -t kuma-user-flow .
 ```
 
-示例所需的工作区和运行参数见[完整流程示例指南](../examples/full_stack/USER_GUIDE.md)。
+示例所需的工作区和运行参数见[全栈用户流程指南](../examples/full_stack/README.zh-CN.md)。
 
 ## 错误、重试与超时
 
@@ -309,6 +309,6 @@ operation 超时只保留有界恢复元数据，不保存凭证、请求正文�
 - [Runtime Evidence 合同](runtime-evidence.md)
 - [最小本地示例](../examples/minimal_local.py)
 - [Single Agent 模板](../examples/single_agent_template/README.md)
-- [完整流程示例](../examples/full_stack/USER_GUIDE.md)
+- [全栈用户流程示例](../examples/full_stack/README.zh-CN.md)
 - [安全策略](../SECURITY.md)
 - [贡献说明](../CONTRIBUTING.md)

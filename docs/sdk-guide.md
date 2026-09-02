@@ -273,7 +273,7 @@ Build the supplied user-flow example:
 docker build -f examples/full_stack/Dockerfile.user-flow -t kuma-user-flow .
 ```
 
-See the [full-stack example guide](../examples/full_stack/USER_GUIDE.md) for its exact workspace and runtime requirements.
+See the [full-stack user-flow guide](../examples/full_stack/README.md) for its exact workspace and runtime requirements.
 
 ## Errors, retries, and timeouts
 
@@ -315,6 +315,6 @@ An operation timeout retains bounded recovery metadata without storing credentia
 - [Runtime Evidence contract](runtime-evidence.md)
 - [Minimal local example](../examples/minimal_local.py)
 - [Single Agent template](../examples/single_agent_template/README.md)
-- [Full-stack example](../examples/full_stack/USER_GUIDE.md)
+- [Full-stack user-flow example](../examples/full_stack/README.md)
 - [Security policy](../SECURITY.md)
 - [Contributing](../CONTRIBUTING.md)
