@@ -112,6 +112,19 @@ Do not read credentials or access paths outside the repository.
 
 `agent_description`、`input_type` 和三个标题均为必填。官方 Case 当前接受文本 Input；结构化 Input 需要自定义 Case Provider，并通过 `input_schema` 声明本地验证的 JSON Schema。
 
+### 策略组与 Agent 能力
+
+已鉴权用户可在编辑 Requirement 前查询并校验当前公共策略组目录：
+
+```bash
+kuma strategies list
+kuma strategies list --output strategy-groups.json
+```
+
+通过 closed `strategy_group` front matter 写入选定组的 `id` 和精确 `version`。省略时使用目录中的精确默认组；显式选择无效或缺少所需 Evidence 能力时会直接拒绝。`scan_strategy_group=True` 只是明确启用本地保守建议，默认保持关闭。Requirement schema、CLI 参数、类型化 Python API、默认行为和隐私边界详见[策略组](strategy-groups.zh-CN.md)。
+
+可选的 `tool_capabilities` 相对路径可以关联经审查的本地能力文档。可用 `kuma tools scan` / `kuma tools validate` 创建或校验，也可使用等价 Python helper。该文件不会上传；它是用户可控声明，只有 closed Evidence 能力集合可以参与本地建议。Schema、边界、CLI、Python API 和路径规则详见 [Agent 工具能力](agent-tool-capabilities.zh-CN.md)。
+
 ### 接入 Agent
 
 用户负责执行 Agent，KUMA 负责同步 `Run` 协议。将下面的确定性函数体替换为现有 Agent 调用：
@@ -305,6 +318,8 @@ operation 超时只保留有界恢复元数据，不保存凭证、请求正文�
 
 - [架构](architecture.md)
 - [Python API 参考](api-reference.zh-CN.md)
+- [策略组](strategy-groups.zh-CN.md)
+- [Agent 工具能力](agent-tool-capabilities.zh-CN.md)
 - [公开 API Contract](api-contract.md)
 - [Runtime Evidence 合同](runtime-evidence.md)
 - [最小本地示例](../examples/minimal_local.py)

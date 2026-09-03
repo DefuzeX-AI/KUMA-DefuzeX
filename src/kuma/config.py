@@ -110,6 +110,8 @@ class CreateRunConfig:
             accepted asynchronous Case or Judge operation.
         max_retries: Number of bounded transient HTTP retries after the first
             attempt, from ``0`` through :data:`MAX_RETRIES`.
+        scan_strategy_group: Explicit opt-in to conservative local Strategy
+            Group selection from declared and intrinsic Evidence capabilities.
 
     Raises:
         ConfigurationError: During construction when any field violates its
@@ -128,6 +130,7 @@ class CreateRunConfig:
     timeout: float = 300.0
     operation_wait_timeout: float = DEFAULT_OPERATION_WAIT_TIMEOUT
     max_retries: int = 2
+    scan_strategy_group: bool = False
 
     def __post_init__(self) -> None:
         """Reject invalid Run options before filesystem or network effects.
@@ -168,6 +171,7 @@ class CreateRunConfig:
             "upload_diff",
             "save_local",
             "allow_sensitive",
+            "scan_strategy_group",
         ):
             if not isinstance(getattr(self, name), bool):
                 raise ConfigurationError(f"{name} must be a boolean")

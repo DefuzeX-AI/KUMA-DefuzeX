@@ -53,6 +53,12 @@ class CaseGenerationContext:
         requirement_sections: Read-only named sections parsed from the public
             requirement. Values remain local unless the selected provider's
             documented public contract transmits an allowlisted subset.
+        tool_capabilities: Canonical local capability document linked by the
+            requirement, or ``None``. Custom providers may inspect this
+            user-authoritative declaration. Official providers do not serialize
+            it on the current wire.
+        strategy_group_selection: Resolved closed public Strategy Group wire
+            object, or ``None`` for legacy/custom Provider behavior.
 
     Security/Privacy:
         This context never contains a private rubric, hidden answer, provider
@@ -69,6 +75,8 @@ class CaseGenerationContext:
     max_steps: int
     agent_description: str | None = None
     requirement_sections: Mapping[str, str] = field(default_factory=dict)
+    tool_capabilities: Mapping[str, Any] | None = None
+    strategy_group_selection: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         """Resolve and freeze provider inputs before the provider is invoked.
@@ -81,7 +89,7 @@ class CaseGenerationContext:
             requirement file; this method does not read repository contents.
 
         Postconditions:
-            ``repo_path`` is absolute and the three mapping attributes are
+            ``repo_path`` is absolute and all mapping attributes are
             detached, read-only snapshots. A failure leaves no external state.
 
         Side Effects:
@@ -102,6 +110,18 @@ class CaseGenerationContext:
         if self.input_schema is not None:
             object.__setattr__(
                 self, "input_schema", _immutable_mapping(self.input_schema)
+            )
+        if self.tool_capabilities is not None:
+            object.__setattr__(
+                self,
+                "tool_capabilities",
+                _immutable_mapping(self.tool_capabilities),
+            )
+        if self.strategy_group_selection is not None:
+            object.__setattr__(
+                self,
+                "strategy_group_selection",
+                _immutable_mapping(self.strategy_group_selection),
             )
         object.__setattr__(
             self,

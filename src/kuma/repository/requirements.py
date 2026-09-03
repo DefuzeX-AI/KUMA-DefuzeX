@@ -8,17 +8,28 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
-from jsonschema import SchemaError as JsonSchemaSchemaError
-from jsonschema import ValidationError as JsonSchemaValidationError
-from jsonschema.validators import validator_for
 
 from ..errors import ValidationError
+from .json_schema import validate_schema, validate_structured_input
 
 _FRONT_MATTER_BOUNDARY = "---"
-_ALLOWED_FRONT_MATTER = frozenset({"agent_description", "input_type", "input_schema"})
+if TYPE_CHECKING:
+    from .strategy_groups import StrategyGroupDeclaration
+    from .tool_capabilities import AgentCapabilities
+
+
+_ALLOWED_FRONT_MATTER = frozenset(
+    {
+        "agent_description",
+        "input_type",
+        "input_schema",
+        "strategy_group",
+        "tool_capabilities",
+    }
+)
 _SECTION_ALIASES = {
     "production_scenario": ("生产使用场景", "Production Use Scenario"),
     "behaviors_to_test": ("希望测试的行为", "Behaviors to Test"),
@@ -47,6 +58,13 @@ class RequirementSpec:
         input_schema: Read-only validated JSON Schema for structured inputs.
         input_schema_path: Absolute path of an explicitly referenced schema file,
             or ``None`` when schema is inline/absent.
+        tool_capabilities: Validated local Agent tool capability document, or
+            ``None`` when the requirement does not link one. It is not uploaded
+            by the current Official Case wire.
+        tool_capabilities_path: Absolute path of the linked capability file, or
+            ``None`` when absent.
+        strategy_group: Exact user-selected Strategy Group coordinate, or
+            ``None`` to let Run configuration choose scanner/default behavior.
 
     Security/Privacy:
         Parsing does not make content safe to upload automatically. Official
@@ -61,6 +79,9 @@ class RequirementSpec:
     sections: Mapping[str, str]
     input_schema: Mapping[str, Any] | None = None
     input_schema_path: Path | None = None
+    tool_capabilities: AgentCapabilities | None = None
+    tool_capabilities_path: Path | None = None
+    strategy_group: StrategyGroupDeclaration | None = None
 
     def __post_init__(self) -> None:
         """Freeze parsed requirement metadata while retaining its explicit source path."""
@@ -71,6 +92,12 @@ class RequirementSpec:
         if self.input_schema_path is not None:
             object.__setattr__(
                 self, "input_schema_path", self.input_schema_path.resolve()
+            )
+        if self.tool_capabilities_path is not None:
+            object.__setattr__(
+                self,
+                "tool_capabilities_path",
+                self.tool_capabilities_path.resolve(),
             )
 
 
@@ -212,46 +239,79 @@ def _load_schema_file(path: Path) -> Mapping[str, Any]:
     return schema
 
 
-def _reject_undeclared_schema_references(value: Any) -> None:
-    """Reject external JSON Schema references so validation performs no network I/O."""
-    if isinstance(value, Mapping):
-        reference = value.get("$ref")
-        if isinstance(reference, str) and not reference.startswith("#"):
-            raise ValidationError(
-                "Input schema may only use internal $ref values",
-                code="schema_invalid",
-            )
-        for child in value.values():
-            _reject_undeclared_schema_references(child)
-    elif isinstance(value, (list, tuple)):
-        for child in value:
-            _reject_undeclared_schema_references(child)
+def _resolve_tool_capabilities_path(requirement_path: Path, declared_path: Any) -> Path:
+    """Resolve one requirement-owned capability file without directory escape.
 
+    Args:
+        requirement_path: Already resolved requirement file that owns the link.
+        declared_path: Relative path string from YAML front matter.
 
-def validate_schema(schema: Mapping[str, Any]) -> None:
-    """Validate schema syntax locally without retrieving external references."""
+    Returns:
+        Absolute path contained by the requirement file's directory.
 
-    _reject_undeclared_schema_references(schema)
-    validator = validator_for(schema)
-    try:
-        validator.check_schema(schema)
-    except JsonSchemaSchemaError as exc:
+    Raises:
+        ValidationError: If the declaration is empty, absolute, or resolves
+            outside the requirement directory through ``..`` or a symlink.
+
+    Security/Privacy:
+        Restricting the implicit read prevents a requirement from selecting an
+        unrelated credential/configuration file elsewhere on the host.
+    """
+    if not isinstance(declared_path, str) or not declared_path.strip():
         raise ValidationError(
-            "Input schema is not a valid JSON Schema", code="schema_invalid"
-        ) from exc
-
-
-def validate_structured_input(payload: Any, schema: Mapping[str, Any]) -> None:
-    """Validate a generated structured Input before it can be delivered."""
-
-    validator = validator_for(schema)
-    try:
-        validator(schema).validate(payload)
-    except JsonSchemaValidationError as exc:
+            "tool_capabilities must be a relative file path",
+            code="tool_capabilities_invalid",
+        )
+    relative = Path(declared_path)
+    if relative.is_absolute():
         raise ValidationError(
-            "Structured input does not satisfy the accepted JSON Schema",
-            code="schema_invalid",
+            "tool_capabilities must be a relative file path",
+            code="tool_capabilities_invalid",
+        )
+    root = requirement_path.parent.resolve()
+    resolved = (root / relative).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise ValidationError(
+            "tool_capabilities must stay inside the requirement directory",
+            code="tool_capabilities_invalid",
         ) from exc
+    return resolved
+
+
+def _load_declared_tool_capabilities(
+    requirement_path: Path, declared_path: Any
+) -> tuple[AgentCapabilities | None, Path | None]:
+    """Load the optional local capability link through its dedicated boundary.
+
+    Args:
+        requirement_path: Resolved requirement file that owns the reference.
+        declared_path: Front-matter value, or ``None`` when no file is linked.
+
+    Returns:
+        ``(document, absolute_path)`` when declared; otherwise ``(None, None)``.
+
+    Raises:
+        ValidationError: If the path or capability document is invalid.
+        SensitiveDataError: If the selected file path/content is sensitive.
+
+    Side Effects:
+        Reads only the explicitly linked file when present.
+    """
+    if declared_path is None:
+        return None, None
+    from .tool_capability_io import load_agent_capabilities
+
+    path = _resolve_tool_capabilities_path(requirement_path, declared_path)
+    return load_agent_capabilities(path), path
+
+
+def _declared_strategy_group(value: Any) -> StrategyGroupDeclaration:
+    """Validate a present Strategy Group object without service lookup."""
+    from .strategy_groups import validate_strategy_group_declaration
+
+    return validate_strategy_group_declaration(value)
 
 
 def parse_requirement(path: str | Path) -> RequirementSpec:
@@ -273,7 +333,8 @@ def parse_requirement(path: str | Path) -> RequirementSpec:
 
     Raises:
         ValidationError: If file existence/encoding, front matter, Agent
-            description, input type, schema path, or JSON Schema is invalid.
+        description, input type, schema path, tool capability link, or JSON
+        Schema is invalid.
 
     Preconditions:
         The caller authorizes reading this file and any relative schema path it
@@ -284,9 +345,10 @@ def parse_requirement(path: str | Path) -> RequirementSpec:
         no Run or process configuration state changes.
 
     Side Effects:
-        Reads the requirement and, when declared, one local schema file only.
-        Decoding uses ``utf-8-sig`` so an optional leading UTF-8 BOM is treated
-        as transport metadata rather than requirement content.
+        Reads the requirement and, when declared, one local schema file and one
+        local tool capability file only. Decoding uses ``utf-8-sig`` so an
+        optional leading UTF-8 BOM is treated as transport metadata rather than
+        requirement content.
 
     Security/Privacy:
         Parsing does not transmit content. Official-provider allowlisting and
@@ -348,6 +410,15 @@ def parse_requirement(path: str | Path) -> RequirementSpec:
             )
         validate_schema(schema)
 
+    tool_capabilities, tool_capabilities_path = _load_declared_tool_capabilities(
+        requirement_path, front_matter.get("tool_capabilities")
+    )
+    strategy_group = (
+        _declared_strategy_group(front_matter["strategy_group"])
+        if "strategy_group" in front_matter
+        else None
+    )
+
     return RequirementSpec(
         path=requirement_path,
         content=content,
@@ -357,6 +428,9 @@ def parse_requirement(path: str | Path) -> RequirementSpec:
         sections=sections,
         input_schema=schema,
         input_schema_path=schema_path,
+        tool_capabilities=tool_capabilities,
+        tool_capabilities_path=tool_capabilities_path,
+        strategy_group=strategy_group,
     )
 
 

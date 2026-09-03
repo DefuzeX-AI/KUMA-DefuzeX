@@ -55,10 +55,10 @@ run = create_run(
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
 | `repo_path` | `str \| os.PathLike[str]` | `"."` | Chooses the repository being tested. KUMA reads bounded metadata and, when enabled, observes file changes below this directory. Use `"."` when your Python process already runs at the repository root. |
-| `requirement_path` | `str \| os.PathLike[str] \| None` | `None` | Points to the UTF-8 file that describes what the Agent should do and which behaviors KUMA should test. Supply it for official Case generation. Omit it only when your custom Case Provider does not need a requirement file. |
+| `requirement_path` | `str \| os.PathLike[str] \| None` | `None` | Points to the UTF-8 file that describes what the Agent should do and which behaviors KUMA should test. Supply it for official Case generation. Front matter may contain a closed `strategy_group` coordinate and a relative `tool_capabilities` file; both are validated before Provider I/O. Omit the path only when your custom Case Provider does not need a Requirement. |
 | `case_provider` | `CaseProvider \| callable \| None` | `None` | Chooses who creates the test Inputs. Leave `None` to request an official Case from KUMA; pass a callable when your application supplies its own local Case. |
 | `judge_provider` | `JudgeProvider \| callable \| None` | `None` | Chooses who evaluates all submitted results and builds the final report. Leave `None` for the official Judge, or pass a callable for your own local evaluation. Ignored when `judge=False`. |
-| `strategy` | `str` | `"auto"` | Controls how the official service chooses its Case-generation method. Keep `"auto"` unless the service has given you a specific strategy ID; an invalid ID fails instead of silently choosing something else. |
+| `strategy` | `str` | `"auto"` | Preserves compatibility with services that use an unversioned strategy ID. For current Strategy Groups, put the exact `id` and `version` in Requirement front matter. Combining a structured declaration with a non-default legacy value fails instead of creating ambiguous intent. |
 | `max_steps` | `int \| None` | `None` | Limits how many test steps this Run may contain. For example, `3` allows one, two, or three steps—it does not force exactly three. `None` uses the official service limit; custom Case Providers require an explicit positive value. An explicit official value above the advertised limit fails before Case generation, and KUMA never truncates a returned Case. |
 | `judge` | `bool` | `True` | Controls whether KUMA evaluates the Run after the last Input. Keep `True` to receive a `TestReport`; use `False` when you only want to execute and record the Case, in which case `run.report` remains `None`. |
 | `on_failure` | `str` | `"continue"` | Decides what happens after you submit a step as `failed`, `timeout`, or `aborted`. `"continue"` delivers the next Input; `"stop"` ends the Run immediately. |
@@ -72,6 +72,7 @@ run = create_run(
 | `max_retries` | `int` | `2` | Sets how many additional attempts KUMA may make after a transient HTTP failure; accepted values are 0–5. Retries reuse the same idempotency key and do not intentionally create another Case or Judge operation. |
 | `api_key` | `str \| None` | `None` | Supplies the official-service credential for this Run only. Use it to override the environment or saved credential. With `None`, KUMA checks `KUMA_API_KEY` and then the user credential file. Fully local Provider combinations need no key. |
 | `trace_evidence` | `TraceEvidenceCapture \| None` | `None` | Supplies a specific in-process OTel capture and its limits for this Run. Pass the object returned by `configure_trace_evidence()` when you need explicit control. With `None`, KUMA safely reuses a compatible global Provider when available; otherwise the Run continues without Trace Evidence and records a warning. |
+| `scan_strategy_group` | `bool` | `False` | Explicitly enables conservative local Strategy Group suggestion for an official Case. KUMA compares only closed declared and intrinsic Runtime Evidence capabilities; it never executes tools or guesses from names, descriptions, schemas, resources, access, or side effects. A unique reliable match is selected; ties and no-match results use the catalog's exact default. An explicit Requirement selection always has priority. |
 
 <!-- api-parameters:create_run:end -->
 
@@ -209,6 +210,8 @@ removes validated temporary runtime files but does not submit or invoke Judge.
 | `history` | `tuple[HistoryItem, ...]` | Contains every successfully committed Input and its matching Submission in execution order. It does not include an in-progress step. |
 | `report` | `TestReport \| None` | Holds the final Judge result after state becomes `report_ready`; it stays `None` before Judgment or when `judge=False`. |
 | `runtime_warnings` | `tuple[str, ...]` | Lists stable warning codes for non-fatal Evidence gaps, such as unavailable automatic Trace capture. The Run can still complete. |
+| `tool_capabilities_path` | `Path \| None` | Holds the absolute local path of the capability document linked by the Requirement. The path is retained for caller inspection and is never uploaded. |
+| `tool_capabilities_provenance` | `str \| None` | Reports `user_declared`, `scanner_generated`, or `None` for the linked local capability document. It describes origin, not verified Agent behavior. |
 
 ## `KumaClient`
 
@@ -229,8 +232,8 @@ Use `KumaClient` for authenticated configuration reads without opening a Run.
 key but makes no request. Authenticated read methods require a valid key.
 
 **Postconditions:** a constructed client is reusable. `entitlements()`,
-`strategies()`, and `judge_config()` return validated public mappings and do not
-create a Run.
+`strategies()`, and `judge_config()` return validated public mappings;
+`strategy_group_catalog()` returns a strict typed catalog. None creates a Run.
 
 **Raises and side effects:** construction raises `ConfigurationError` for local
 configuration errors. Read methods make one public Backend GET and may raise
@@ -238,6 +241,48 @@ configuration errors. Read methods make one public Backend GET and may raise
 Credential discovery may read the environment or user credential file; the key
 is never included in `repr(client)`, and no method contacts MCP, a model, or a
 database directly.
+
+### `strategy_group_catalog`
+
+`strategy_group_catalog()` takes no arguments.
+
+**Returns:** immutable `StrategyGroupCatalog` containing `catalog_release`, the exact `default` declaration, and canonically ordered `groups`. Each `StrategyGroup` exposes `id`, `version`, `display_name`, `description`, `required_capabilities`, `available`, and `limits`; limits contain `max_steps` and `supported_difficulties`.
+
+**Preconditions:** the client has an accepted official credential.
+
+**Postconditions:** the complete public catalog has passed the closed schema, bounds, ordering, uniqueness, and safe-default checks. Callers can use `group(declaration)` for an exact coordinate lookup and `to_dict()` for detached canonical JSON.
+
+**Raises and side effects:** performs one authenticated public catalog read. Authentication, permission, or quota failures preserve their `KumaError` subclasses; malformed or legacy data raises `ValidationError`. It does not create a Case or run local suggestion.
+
+## Strategy Group API
+
+Use the [Strategy Groups guide](strategy-groups.md) for the CLI and Requirement workflow.
+
+| Public name | Accepted input / exposed fields | Result and failure behavior |
+| --- | --- | --- |
+| `StrategyGroupDeclaration` | Exact `id` and `version`; `to_dict()` adds `kuma.strategy_group_selection.v1`. | Immutable Requirement-ready coordinate. |
+| `StrategyGroup` | `id`, `version`, `display_name`, `description`, `required_capabilities`, `available`, and group `limits`. | Immutable validated catalog entry; `coordinate` returns `(id, version)` and `to_dict()` returns detached JSON. |
+| `StrategyGroupCatalog` | `catalog_release`, exact `default`, and ordered `groups`. | `group(declaration)` returns the exact entry or `None`; `to_dict()` returns canonical catalog JSON. |
+| `ResolvedStrategyGroup` | Selected `group`, `selection_source`, and `catalog_release`. | `to_declaration()` returns the Requirement object; `to_wire()` returns the closed resolved public selection. |
+| `validate_strategy_group_declaration(value)` | Plain mapping with exactly `schema_version`, `id`, and `version`. | Returns `StrategyGroupDeclaration`; unknown fields, versions, or invalid text raise `ValidationError(code="strategy_group_invalid")`. |
+| `validate_strategy_group_catalog(value)` | Complete closed catalog mapping. | Returns `StrategyGroupCatalog`; malformed fields, ordering, limits, coordinates, or default fail closed. |
+| `validate_strategy_group_wire_selection(value)` | Complete resolved mapping with schema version, group ID/version, source, and catalog release. | Returns a detached public mapping; invalid or extra fields fail closed. Intended for advanced Provider boundaries. |
+
+The schema constants `STRATEGY_GROUP_SELECTION_SCHEMA_VERSION` and `STRATEGY_GROUP_CATALOG_SCHEMA_VERSION` expose the two accepted versions. These value objects and validators perform no network, filesystem, Agent, or model operation.
+
+## Agent capability API
+
+Use the [Agent tool capabilities guide](agent-tool-capabilities.md) for the closed JSON schema, CLI workflow, Requirement path rules, and privacy boundary.
+
+| Public name | Input | Return value and side effects |
+| --- | --- | --- |
+| `scan_agent_tools(tools)` | A list or tuple of 1–100 plain tool mappings. | Returns immutable `AgentCapabilities` with `scanner_generated` provenance. Does not inspect framework objects or execute tools. |
+| `validate_agent_capabilities(value)` | A complete plain `kuma.agent_tool_capabilities.v1` mapping. | Returns validated, canonically ordered `AgentCapabilities`; invalid, oversized, or sensitive data fails closed. |
+| `load_agent_capabilities(path)` | UTF-8 JSON file up to the documented bound. | Reads and validates one file; returns `AgentCapabilities`. |
+| `save_agent_capabilities(document, path)` | A mapping or `AgentCapabilities` plus an explicit destination whose parent already exists. | Revalidates and atomically writes canonical JSON; returns the resolved `Path`. |
+| `scan_agent_tool_manifest(path)` | Explicit UTF-8 scanner-input JSON manifest. | Reads only that file and returns generated `AgentCapabilities`; no Agent import, repository traversal, tool execution, or network. |
+
+`AgentCapabilities`, `ToolCapability`, and `ResourceScope` are immutable public values with detached `to_dict()` output. `AGENT_CAPABILITIES_SCHEMA_VERSION` identifies the accepted document version. Loading or saving may raise `ValidationError` or `SensitiveDataError`; none of these APIs uploads the document.
 
 ## OpenTelemetry
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import threading
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, Literal
 
 from ._json_values import detach_json
@@ -181,6 +182,10 @@ class Run:
         strategy: Requested/selected public Case strategy identifier.
         max_steps: Actual number of inputs in this validated Case. This is not
             the configured upper bound when the provider returned fewer steps.
+        tool_capabilities_path: Absolute local path of the capability document
+            linked by the requirement, or ``None``. The path is never uploaded.
+        tool_capabilities_provenance: ``scanner_generated``, ``user_declared``,
+            or ``None`` when no capability document is linked.
     """
 
     def __init__(
@@ -194,6 +199,8 @@ class Run:
         on_failure: str,
         strategy: str,
         evidence: EvidenceCollector | None = None,
+        tool_capabilities_path: Path | None = None,
+        tool_capabilities_provenance: str | None = None,
     ) -> None:
         """Initialize one validated Run and take ownership of its runtime lease.
 
@@ -209,6 +216,10 @@ class Run:
             strategy: Public Case strategy recorded for introspection.
             evidence: Step Evidence collector, or ``None`` when capture is not
                 configured.
+            tool_capabilities_path: Local reviewed capability file linked by the
+                requirement, or ``None``. Run retains the association only.
+            tool_capabilities_provenance: Low-sensitivity origin label for the
+                linked file, or ``None``.
 
         Preconditions:
             ``case`` has at least one correlated input and ``runtime`` is open
@@ -225,6 +236,8 @@ class Run:
         self.case_id = case.case_id or ""
         self.strategy = strategy
         self.max_steps = len(case.inputs)
+        self.tool_capabilities_path = tool_capabilities_path
+        self.tool_capabilities_provenance = tool_capabilities_provenance
         self._case = case
         self._runtime = runtime
         self._judge_provider = judge_provider

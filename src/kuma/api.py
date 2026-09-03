@@ -32,6 +32,13 @@ from .providers.base import CaseGenerationContext, CaseProvider, JudgeProvider
 from .providers.normalization import normalize_case
 from .repository.metadata import collect_repo_meta
 from .repository.requirements import RequirementSpec, parse_requirement
+from .repository.strategy_groups import (
+    ResolvedStrategyGroup,
+    available_evidence_capabilities,
+    is_legacy_strategy_catalog,
+    resolve_strategy_group,
+    validate_strategy_group_catalog,
+)
 from .run import Run
 from .runtime import RuntimeSession
 from .transport.backend import DEFAULT_BASE_URL, BackendClient
@@ -229,7 +236,14 @@ def _adapted_providers(
     api_key: str | None,
     repo_path: Path,
     trace_evidence: TraceEvidenceCapture | None,
-) -> tuple[CaseProvider, JudgeProvider | None, bool, bool]:
+    requirement: RequirementSpec | None = None,
+) -> tuple[
+    CaseProvider,
+    JudgeProvider | None,
+    bool,
+    bool,
+    ResolvedStrategyGroup | None,
+]:
     """Resolve local or official Providers and negotiate safe Evidence capability.
 
     Official Case plus Judge may read entitlements for Evidence negotiation. An
@@ -288,10 +302,21 @@ def _adapted_providers(
             timeout=config.timeout,
             max_retries=config.max_retries,
         )
-    evidence_capabilities = derive_casegen_evidence_capabilities(
+    intrinsic_capabilities = derive_casegen_evidence_capabilities(
         track_files=config.track_files,
         trace_evidence_configured=trace_evidence is not None,
     )
+    available_capabilities = available_evidence_capabilities(
+        None if requirement is None else requirement.tool_capabilities,
+        intrinsic_capabilities,
+    )
+    resolved_strategy_group = _resolve_official_strategy_group(
+        backend=backend if official_case else None,
+        config=config,
+        requirement=requirement,
+        available_capabilities=available_capabilities,
+    )
+    evidence_capabilities = intrinsic_capabilities
     can_negotiate = bool(official_case and official_judge and evidence_capabilities)
     entitlements = None
     if can_negotiate and backend is not None:
@@ -323,7 +348,50 @@ def _adapted_providers(
         )
     else:
         adapted_judge = adapt_judge_provider(judge_provider)
-    return adapted_case, adapted_judge, official_case, official_judge
+    return (
+        adapted_case,
+        adapted_judge,
+        official_case,
+        official_judge,
+        resolved_strategy_group,
+    )
+
+
+def _resolve_official_strategy_group(
+    *,
+    backend: BackendClient | None,
+    config: CreateRunConfig,
+    requirement: RequirementSpec | None,
+    available_capabilities: tuple[str, ...],
+) -> ResolvedStrategyGroup | None:
+    """Fetch and resolve the Strategy Group contract for an official Case.
+
+    New catalogs always produce one exact selection. A bounded legacy catalog
+    keeps the old Case wire only when the user did not explicitly declare a
+    Strategy Group; explicit intent cannot be silently downgraded.
+    """
+    if backend is None:
+        return None
+    catalog_value = backend.json("GET", "/sdk/strategies/")
+    explicit = None if requirement is None else requirement.strategy_group
+    if is_legacy_strategy_catalog(catalog_value):
+        if explicit is not None:
+            raise ValidationError(
+                "The public service does not support Strategy Groups",
+                code="strategy_group_unsupported",
+            )
+        return None
+    if config.strategy != "auto" and explicit is None:
+        raise ValidationError(
+            "Use requirement strategy_group for an explicit Strategy Group",
+            code="strategy_group_invalid",
+        )
+    return resolve_strategy_group(
+        validate_strategy_group_catalog(catalog_value),
+        explicit=explicit,
+        scan=config.scan_strategy_group,
+        available_capabilities=available_capabilities,
+    )
 
 
 def create_run(
@@ -346,6 +414,7 @@ def create_run(
     max_retries: int = 2,
     api_key: str | None = None,
     trace_evidence: TraceEvidenceCapture | None = None,
+    scan_strategy_group: bool = False,
 ) -> Run:
     """Create one complete Case and return its synchronous strict-handshake Run.
 
@@ -355,6 +424,9 @@ def create_run(
             are rejected before runtime creation.
         requirement_path: UTF-8 requirement file used for Case generation.
             Official Case generation requires it; a custom Provider may opt out.
+            Front matter may link a reviewed local capability JSON through the
+            relative ``tool_capabilities`` field. The linked file is validated
+            before Provider I/O and remains local on the current official wire.
         case_provider: :class:`CaseProvider` or compatible callable. ``None``
             selects the official authenticated provider.
         judge_provider: :class:`JudgeProvider` or compatible callable. ``None``
@@ -395,6 +467,10 @@ def create_run(
             :func:`kuma.otel.configure_trace_evidence`. ``None`` attempts to
             reuse a compatible configured global OTel provider; unavailable OTel
             becomes a non-blocking ``runtime_warnings`` entry.
+        scan_strategy_group: Explicitly enable conservative local Strategy Group
+            suggestion. KUMA compares only canonical Evidence capabilities from
+            the reviewed tool declaration and Run configuration; it never runs
+            tools or guesses from names, schemas, resources, or descriptions.
 
     Returns:
         A synchronous :class:`Run` in ``ready`` state. Use ``get_input`` and
@@ -418,10 +494,11 @@ def create_run(
         runtime resources are closed before the exception escapes.
 
     Side Effects:
-        Reads the requirement and bounded repository metadata; may create the
-        repository ``.kuma`` runtime area; may call the public Backend for
-        official Case generation. The caller must call ``cancel`` when abandoning
-        an unfinished Run so resources are released promptly.
+        Reads the requirement, its explicitly linked local schema/capability
+        files, and bounded repository metadata; may create the repository
+        ``.kuma`` runtime area; may call the public Backend for official Case
+        generation. The caller must call ``cancel`` when abandoning an unfinished
+        Run so resources are released promptly.
 
     Security/Privacy:
         Official providers communicate only with the public Backend. The SDK
@@ -444,6 +521,7 @@ def create_run(
             "timeout": timeout,
             "operation_wait_timeout": operation_wait_timeout,
             "max_retries": max_retries,
+            "scan_strategy_group": scan_strategy_group,
         }
     )
     if config.upload_diff and not config.track_files:
@@ -460,6 +538,7 @@ def create_run(
         adapted_judge_provider,
         official_case,
         official_judge,
+        resolved_strategy_group,
     ) = _adapted_providers(
         config=config,
         case_provider=adapted_case_input,
@@ -467,6 +546,7 @@ def create_run(
         api_key=api_key,
         repo_path=resolved_repo,
         trace_evidence=trace_evidence,
+        requirement=requirement,
     )
 
     run_id = f"run_{uuid.uuid4().hex}"
@@ -489,10 +569,20 @@ def create_run(
                 None if requirement is None else requirement.agent_description
             ),
             requirement_sections=({} if requirement is None else requirement.sections),
+            tool_capabilities=(
+                None
+                if requirement is None or requirement.tool_capabilities is None
+                else requirement.tool_capabilities.to_dict()
+            ),
             input_type="auto" if requirement is None else requirement.input_type,
             input_schema=None if requirement is None else requirement.input_schema,
             strategy=config.strategy,
             max_steps=effective_max_steps,
+            strategy_group_selection=(
+                None
+                if resolved_strategy_group is None
+                else resolved_strategy_group.to_wire()
+            ),
         )
         try:
             raw_case = adapted_case_provider.generate_case(context)
@@ -555,8 +645,20 @@ def create_run(
             judge_provider=adapted_judge_provider,
             judge_enabled=config.judge,
             on_failure=config.on_failure,
-            strategy=config.strategy,
+            strategy=(
+                config.strategy
+                if resolved_strategy_group is None
+                else resolved_strategy_group.group.id
+            ),
             evidence=evidence,
+            tool_capabilities_path=(
+                None if requirement is None else requirement.tool_capabilities_path
+            ),
+            tool_capabilities_provenance=(
+                None
+                if requirement is None or requirement.tool_capabilities is None
+                else requirement.tool_capabilities.provenance
+            ),
         )
     except BaseException:
         runtime.close()

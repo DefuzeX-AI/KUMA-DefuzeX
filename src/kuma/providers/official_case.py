@@ -16,6 +16,7 @@ from ..errors import (
 from ..evidence.runtime_contract import CASEGEN_EVIDENCE_CAPABILITY_ORDER
 from ..repository.metadata import prepare_repo_meta_upload
 from ..repository.privacy import enforce_sensitive_policy, scan_sensitive_json
+from ..repository.strategy_groups import validate_strategy_group_wire_selection
 from ..transport.backend import BackendClient, new_idempotency_key
 from ..transport.operations import (
     PendingOperationStore,
@@ -163,6 +164,7 @@ def _official_case_response(
     *,
     max_steps: int,
     requested_strategy_id: str,
+    requested_strategy_version: str | None,
     repo_fingerprint: str,
 ) -> tuple[str, str, str, str, Mapping[str, Any], list[dict[str, str]]]:
     """Validate an official Case result and return its normalized public parts."""
@@ -172,6 +174,7 @@ def _official_case_response(
     strategy_id, strategy_version = _selected_strategy(
         batch,
         requested_strategy_id=requested_strategy_id,
+        requested_strategy_version=requested_strategy_version,
     )
     if not _case_matches_request(
         raw_case,
@@ -221,7 +224,10 @@ def _case_response_envelope(
 
 
 def _selected_strategy(
-    batch: Mapping[str, Any], *, requested_strategy_id: str
+    batch: Mapping[str, Any],
+    *,
+    requested_strategy_id: str,
+    requested_strategy_version: str | None,
 ) -> tuple[str, str]:
     """Validate the Backend's actual strategy selection against an explicit request."""
     selected_strategy_id = required_text(
@@ -241,6 +247,14 @@ def _selected_strategy(
     ):
         raise ProviderError(
             "The Backend Case strategy does not match the explicit request",
+            code="invalid_response",
+        )
+    if (
+        requested_strategy_version is not None
+        and selected_strategy_version != requested_strategy_version
+    ):
+        raise ProviderError(
+            "The Backend Case strategy version does not match the request",
             code="invalid_response",
         )
     return selected_strategy_id, selected_strategy_version
@@ -356,11 +370,15 @@ def _safe_case_payload(
             "The official Case service currently supports text Inputs only"
         )
     repo_meta = prepare_repo_meta_upload(context.repo_meta)
-    safe_fields = {
+    safe_fields: dict[str, Any] = {
         "repo_meta": repo_meta,
         "agent_description": _agent_description(context),
         "behavior_spec": _behavior_spec(context),
     }
+    if context.strategy_group_selection is not None:
+        safe_fields["strategy_group_selection"] = (
+            validate_strategy_group_wire_selection(context.strategy_group_selection)
+        )
     findings = scan_sensitive_json(safe_fields, location="case_generation_request")
     enforce_sensitive_policy(findings, allow_sensitive=allow_sensitive)
     payload: dict[str, Any] = {
@@ -421,11 +439,31 @@ def _normalized_case(
         The result contains the complete Case; it is never truncated to fit the
         requested upper bound.
     """
+    requested_strategy_id = context.strategy
+    requested_strategy_version = None
+    if context.strategy_group_selection is not None:
+        selected_id = context.strategy_group_selection.get("strategy_group_id")
+        selected_version = context.strategy_group_selection.get(
+            "strategy_group_version"
+        )
+        if (
+            not isinstance(selected_id, str)
+            or not selected_id
+            or not isinstance(selected_version, str)
+            or not selected_version
+        ):
+            raise ProviderError(
+                "The resolved Strategy Group selection is invalid",
+                code="strategy_group_invalid",
+            )
+        requested_strategy_id = selected_id
+        requested_strategy_version = selected_version
     case_id, batch_id, strategy_id, strategy_version, raw_case, inputs = (
         _official_case_response(
             response,
             max_steps=max_steps,
-            requested_strategy_id=context.strategy,
+            requested_strategy_id=requested_strategy_id,
+            requested_strategy_version=requested_strategy_version,
             repo_fingerprint=repo_fingerprint,
         )
     )

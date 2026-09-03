@@ -10,8 +10,8 @@ from typing import Any
 from .._json_values import detach_json
 from ..contracts import Case, KumaInput, TestReport
 from ..errors import ProviderError, ValidationError
+from ..repository.json_schema import validate_schema, validate_structured_input
 from ..repository.privacy import contains_private_data
-from ..repository.requirements import validate_schema, validate_structured_input
 
 _CASE_FIELDS = frozenset(
     {"case_id", "inputs", "input_type", "input_schema", "rubric", "extensions"}

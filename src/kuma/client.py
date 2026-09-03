@@ -16,6 +16,10 @@ from .exceptions import (
     KumaPermissionError,
     KumaRateLimitError,
 )
+from .repository.strategy_groups import (
+    StrategyGroupCatalog,
+    validate_strategy_group_catalog,
+)
 from .transport.backend import (
     DEFAULT_BASE_URL,
     BackendClient,
@@ -190,6 +194,25 @@ class KumaClient:
         """
 
         return self._read("/sdk/strategies/")
+
+    def strategy_group_catalog(self) -> StrategyGroupCatalog:
+        """Fetch and validate the versioned public Strategy Group catalog.
+
+        Returns:
+            Immutable catalog with exact group coordinates, capability
+            requirements, limits, availability, and semantic default.
+
+        Raises:
+            KumaAuthenticationError: No usable key or rejected authentication.
+            KumaPermissionError: Key cannot read strategy configuration.
+            KumaRateLimitError: Account quota prevents the read.
+            ValidationError: The service returned a legacy or malformed catalog.
+
+        Side Effects:
+            Performs one public Backend GET. It does not generate a Case or run
+            local scanner selection.
+        """
+        return validate_strategy_group_catalog(self._read("/sdk/strategies/"))
 
     def judge_config(self) -> Mapping[str, Any]:
         """Fetch current public Judge upload limits and Evidence types.

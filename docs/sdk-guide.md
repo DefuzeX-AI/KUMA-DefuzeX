@@ -112,6 +112,19 @@ Do not read credentials or access paths outside the repository.
 
 `agent_description`, `input_type`, and all three headings are required. Official Cases currently accept text Inputs. Structured Inputs require a custom Case Provider plus a locally validated JSON Schema declared through `input_schema`.
 
+### Strategy Groups and Agent capabilities
+
+Authenticated users can inspect the current validated public Strategy Group catalog before editing a Requirement:
+
+```bash
+kuma strategies list
+kuma strategies list --output strategy-groups.json
+```
+
+Add the selected group `id` and exact `version` through the closed `strategy_group` front-matter object. Omitting it uses the catalog's exact default; an invalid explicit selection or missing Evidence capability fails closed. `scan_strategy_group=True` explicitly enables conservative local suggestion and remains off by default. See [Strategy Groups](strategy-groups.md) for the Requirement schema, CLI options, typed Python API, default behavior, and privacy boundary.
+
+An optional `tool_capabilities` relative path can link a reviewed local capability document. Create or validate it with `kuma tools scan` / `kuma tools validate`, or use the equivalent Python helpers. The file is not uploaded; it is a user-controlled claim that may contribute only its closed Evidence capability set to local suggestion. See [Agent tool capabilities](agent-tool-capabilities.md) for its schema, bounds, CLI, Python API, and path rules.
+
 ### Agent integration
 
 The user owns Agent execution; KUMA owns the synchronous `Run` protocol. Replace the deterministic function body with the existing Agent call:
@@ -311,6 +324,8 @@ An operation timeout retains bounded recovery metadata without storing credentia
 
 - [Architecture](architecture.md)
 - [Python API reference](api-reference.md)
+- [Strategy Groups](strategy-groups.md)
+- [Agent tool capabilities](agent-tool-capabilities.md)
 - [Public API contract](api-contract.md)
 - [Runtime Evidence contract](runtime-evidence.md)
 - [Minimal local example](../examples/minimal_local.py)
