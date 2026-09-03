@@ -12,13 +12,19 @@ Configure the official key through `KUMA_API_KEY`, then run:
 kuma strategies list
 ```
 
-The command performs an authenticated catalog read, validates the complete response, and prints canonical JSON. Each group contains:
+The command performs an authenticated catalog read, validates the complete response, and prints canonical JSON. Each `groups[]` entry is one exact selectable coordinate and contains:
 
 - `id` and `version`: the exact coordinate used in a Requirement;
 - `display_name` and `description`: its public name and purpose;
 - `available`: whether it accepts new selections;
 - `required_capabilities`: Runtime Evidence capabilities the Run must support;
 - `limits.max_steps` and `limits.supported_difficulties`: public execution bounds.
+
+Versions are not grouped into a nested list. If one group ID has multiple
+selectable versions, the response contains multiple `groups[]` entries with the
+same `id` and different `version` values. Always choose an entry whose
+`available` value is `true`. In the current catalog, for example, `BASE-01` is
+available at version `"1"`.
 
 The top-level `default.id` and `default.version` identify the exact default group. Save the same validated JSON atomically when you need a reviewable local copy:
 
@@ -30,7 +36,9 @@ kuma strategies list --output strategy-groups.json
 
 ## Select a group in a Requirement
 
-Copy one available catalog coordinate into the YAML front matter:
+Choose one available `groups[]` entry and copy its machine-readable `id` and
+`version` exactly into the YAML front matter. For example, the current Security
+group is `CAND-007@1`:
 
 ```yaml
 ---
@@ -38,12 +46,17 @@ agent_description: A repository maintenance agent
 input_type: text
 strategy_group:
   schema_version: kuma.strategy_group_selection.v1
-  id: <catalog group id>
-  version: "<catalog version>"
+  id: CAND-007
+  version: "1"
 ---
 ```
 
-The object is closed: only `schema_version`, `id`, and `version` are accepted. `selection_source` and `catalog_release` describe validated runtime facts, so KUMA fills them after resolving the current catalog; they must not be placed in the Requirement.
+Here `id` means the exact `groups[].id` value. Do not use `display_name`, a
+numbered list position, or the member strategy that the group runs internally,
+and never leave placeholder text in a real Requirement. The object is closed:
+only `schema_version`, `id`, and `version` are accepted. `selection_source` and
+`catalog_release` describe validated runtime facts, so KUMA fills them after
+resolving the current catalog; they must not be placed in the Requirement.
 
 An explicit coordinate has priority. An unknown or unavailable group fails closed with `strategy_group_invalid`; a group whose `required_capabilities` are not available fails with `strategy_capability_mismatch` and lists the missing capabilities. KUMA never silently substitutes another group for an explicit choice.
 

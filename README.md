@@ -37,33 +37,13 @@ Run the deterministic local check without an account, API key, Docker, or networ
 kuma quickstart
 ```
 
-## Choose a Strategy Group
-
-For official runs, configure `KUMA_API_KEY`, then fetch the current public catalog:
-
-```bash
-kuma strategies list
-kuma strategies list --output strategy-groups.json
-```
-
-KUMA validates the catalog before showing or saving its group `id`/`version`, `display_name`, `description`, `available`, `required_capabilities`, `limits.max_steps`, `limits.supported_difficulties`, and exact `default` coordinate. Copy a selected coordinate into the Requirement front matter:
-
-```yaml
-strategy_group:
-  schema_version: kuma.strategy_group_selection.v1
-  id: <catalog group id>
-  version: "<catalog version>"
-```
-
-Only these three fields are user-owned; KUMA fills `selection_source` and `catalog_release`. An unknown, unavailable, or capability-incompatible explicit selection fails closed. Omitting `strategy_group` uses the catalog's `default.id` and `default.version`; “general” is its meaning, not a fixed ID. `scan_strategy_group=True` is an explicit opt-in to conservative local suggestion. See [Strategy Groups](docs/strategy-groups.md).
-
 ## Full-stack user-flow example
 
 Follow the [full-stack user-flow guide](examples/full_stack/README.md) to run KUMA with mini-SWE-agent in Docker. This path calls external services and may use service credit and model budget.
 
 ## Detailed documentation
 
-[English SDK guide](docs/sdk-guide.md) · [Python API reference](docs/api-reference.md) · [简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [中文 API 参考](docs/api-reference.zh-CN.md) · [Runtime Evidence contract](docs/runtime-evidence.md)
+[English SDK guide](docs/sdk-guide.md) · [Strategy Groups](docs/strategy-groups.md) · [Python API reference](docs/api-reference.md) · [简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [中文 API 参考](docs/api-reference.zh-CN.md) · [Runtime Evidence contract](docs/runtime-evidence.md)
 
 ## Project
 

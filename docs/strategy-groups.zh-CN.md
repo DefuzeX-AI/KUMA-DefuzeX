@@ -12,13 +12,17 @@
 kuma strategies list
 ```
 
-该命令执行带鉴权的目录读取，校验完整响应后输出规范 JSON。每个策略组包含：
+该命令执行带鉴权的目录读取，校验完整响应后输出规范 JSON。每个 `groups[]` 条目代表一个可以精确选择的坐标，包含：
 
 - `id` 与 `version`：写入 Requirement 的精确坐标；
 - `display_name` 与 `description`：公开名称和用途；
 - `available`：是否允许新选择；
 - `required_capabilities`：Run 必须支持的 Runtime Evidence 能力；
 - `limits.max_steps` 与 `limits.supported_difficulties`：公开执行边界。
+
+版本不会嵌套为单独列表。如果同一个策略组 ID 有多个可选版本，响应会
+用多条 `groups[]` 记录表示：它们的 `id` 相同、`version` 不同。只能选择
+`available: true` 的条目。例如当前目录中的 `BASE-01` 可用版本为 `"1"`。
 
 顶层 `default.id` 与 `default.version` 指向精确默认组。需要可审查的本地副本时，可原子保存同一份已校验 JSON：
 
@@ -30,7 +34,9 @@ kuma strategies list --output strategy-groups.json
 
 ## 在 Requirement 中选择策略组
 
-把一个可用的目录坐标写入 YAML front matter：
+从一个 `available: true` 的 `groups[]` 条目中，原样复制机器可读的 `id`
+和 `version` 到 YAML front matter。例如当前 Security 策略组是
+`CAND-007@1`：
 
 ```yaml
 ---
@@ -38,12 +44,16 @@ agent_description: A repository maintenance agent
 input_type: text
 strategy_group:
   schema_version: kuma.strategy_group_selection.v1
-  id: <目录中的策略组 ID>
-  version: "<目录中的版本>"
+  id: CAND-007
+  version: "1"
 ---
 ```
 
-该对象是 closed schema，只接受 `schema_version`、`id` 和 `version`。`selection_source` 与 `catalog_release` 描述校验后的运行时事实，由 KUMA 在解析当前目录后填充；不要把它们写入 Requirement。
+这里的 `id` 必须是 `groups[].id` 的精确值，不能填写 `display_name`、列表
+序号或策略组内部实际执行的 member strategy；真实 Requirement 中也不能
+保留占位符。该对象是 closed schema，只接受 `schema_version`、`id` 和
+`version`。`selection_source` 与 `catalog_release` 描述校验后的运行时事实，
+由 KUMA 在解析当前目录后填充；不要把它们写入 Requirement。
 
 显式坐标优先。未知或不可用的策略组会以 `strategy_group_invalid` 直接拒绝；如果 Run 缺少该组 `required_capabilities` 所需能力，则以 `strategy_capability_mismatch` 拒绝并列出缺失项。KUMA 不会为显式选择静默替换其他组。
 
