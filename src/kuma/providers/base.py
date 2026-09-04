@@ -22,7 +22,7 @@ class CaseGenerationContext:
     """Describe exactly what a Case Provider may use to create one public Case.
 
     A custom provider receives this object in ``generate_case``. It may inspect
-    the explicitly selected repository and requirement data, then must return a
+    the explicitly selected repository and Agent Profile data, then must return a
     public :class:`~kuma.contracts.Case` (or a supported mapping) containing no
     private rubric or hidden answer. The object is immutable so provider code
     cannot change the values used by later normalization and judging.
@@ -35,9 +35,11 @@ class CaseGenerationContext:
             bounded tree and repository fingerprint. It is not repository file
             content. Official providers reduce it to the public HTTP allowlist
             before transmission.
-        requirement: Requirement body supplied by the caller, or ``None`` when
-            no requirement file was selected. Custom providers that declare
-            ``requirement_required=False`` may support the omitted case.
+        agent_profile: Agent Profile body supplied by the caller, or ``None`` when
+            no Agent Profile file was selected. Custom providers that declare
+            ``agent_profile_required=False`` may support the omitted case. The
+            body describes the Agent and scenario; it must not be treated as a
+            Strategy Group selector or private evaluation rubric.
         input_type: Required public input payload kind: ``"text"`` or
             ``"structured"``. Returned Case inputs must use this kind.
         input_schema: Read-only JSON Schema for structured inputs, or ``None``
@@ -49,16 +51,18 @@ class CaseGenerationContext:
             may return. It is a maximum, not a request for exactly that many
             steps; returning any non-empty sequence up to this value is valid.
         agent_description: Front-matter description of the Agent under test, or
-            ``None``. It deliberately excludes the requirement body and secrets.
-        requirement_sections: Read-only named sections parsed from the public
-            requirement. Values remain local unless the selected provider's
+            ``None``. It deliberately excludes the Agent Profile body and secrets.
+        agent_profile_sections: Read-only named sections parsed from the public
+            Agent Profile. Values remain local unless the selected provider's
             documented public contract transmits an allowlisted subset.
         tool_capabilities: Canonical local capability document linked by the
-            requirement, or ``None``. Custom providers may inspect this
+            Agent Profile, or ``None``. Custom providers may inspect this
             user-authoritative declaration. Official providers do not serialize
             it on the current wire.
         strategy_group_selection: Resolved closed public Strategy Group wire
-            object, or ``None`` for legacy/custom Provider behavior.
+            object, or ``None`` for custom Provider behavior. This coordinate is
+            authoritative for the testing capability, domain, and method. Agent
+            Profile prose must not override it.
 
     Security/Privacy:
         This context never contains a private rubric, hidden answer, provider
@@ -68,13 +72,13 @@ class CaseGenerationContext:
 
     repo_path: Path
     repo_meta: Mapping[str, Any]
-    requirement: str | None
+    agent_profile: str | None
     input_type: str
     input_schema: Mapping[str, Any] | None
     strategy: str
     max_steps: int
     agent_description: str | None = None
-    requirement_sections: Mapping[str, str] = field(default_factory=dict)
+    agent_profile_sections: Mapping[str, str] = field(default_factory=dict)
     tool_capabilities: Mapping[str, Any] | None = None
     strategy_group_selection: Mapping[str, Any] | None = None
 
@@ -86,7 +90,7 @@ class CaseGenerationContext:
 
         Preconditions:
             The caller has already chosen the repository and parsed any
-            requirement file; this method does not read repository contents.
+            Agent Profile file; this method does not read repository contents.
 
         Postconditions:
             ``repo_path`` is absolute and all mapping attributes are
@@ -125,8 +129,8 @@ class CaseGenerationContext:
             )
         object.__setattr__(
             self,
-            "requirement_sections",
-            MappingProxyType(dict(self.requirement_sections)),
+            "agent_profile_sections",
+            MappingProxyType(dict(self.agent_profile_sections)),
         )
         if self.max_steps <= 0:
             raise ConfigurationError(
@@ -187,7 +191,7 @@ class CaseProvider(Protocol):
         """Produce one public Case for a validated generation context.
 
         Args:
-            context: Immutable repository, requirement, strategy, and step-limit
+            context: Immutable repository, Agent Profile, strategy, and step-limit
                 inputs described by :class:`CaseGenerationContext`.
 
         Returns:
@@ -239,13 +243,13 @@ class CallableCaseProvider:
     Attributes:
         callback: Function called once with :class:`CaseGenerationContext`; its
             return value follows :meth:`CaseProvider.generate_case`.
-        requirement_required: Whether :func:`kuma.create_run` must receive a
-            requirement before invoking this callback. Set ``False`` only when
-            the callback intentionally supports requirement-free generation.
+        agent_profile_required: Whether :func:`kuma.create_run` must receive a
+            Agent Profile before invoking this callback. Set ``False`` only when
+            the callback intentionally supports Agent Profile-free generation.
     """
 
     callback: Callable[[CaseGenerationContext], Any]
-    requirement_required: bool = True
+    agent_profile_required: bool = True
 
     def generate_case(self, context: CaseGenerationContext) -> Any:
         """Invoke the callback while preserving only safe public failures.

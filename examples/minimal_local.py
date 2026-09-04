@@ -29,8 +29,8 @@ def main() -> None:
         (repo / "README.md").write_text(
             "# Temporary example repository\n", encoding="utf-8"
         )
-        requirement = repo / "requirement.md"
-        requirement.write_text(
+        agent_profile = repo / "agent-profile.md"
+        agent_profile.write_text(
             """---
 agent_description: A deterministic local example agent
 input_type: text
@@ -50,7 +50,7 @@ Do not access the network or paths outside the temporary repository.
 
         run = create_run(
             repo_path=repo,
-            requirement_path=requirement,
+            agent_profile_path=agent_profile,
             case_provider=local_case,
             max_steps=1,
             judge=False,

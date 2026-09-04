@@ -35,7 +35,7 @@ credential_path = configure(api_key="dfx_your_key_here")
 ```python
 from kuma import create_run
 
-run = create_run(repo_path=".", requirement_path="requirement.md")
+run = create_run(repo_path=".", agent_profile_path="agent-profile.md")
 ```
 
 <!-- api-parameters:create_run:start -->
@@ -43,10 +43,10 @@ run = create_run(repo_path=".", requirement_path="requirement.md")
 | 参数 | 类型 | 必填/默认值 | 它控制什么、什么时候填写 |
 | --- | --- | --- | --- |
 | `repo_path` | `str \| os.PathLike[str]` | `"."` | 指定“这次要测试哪个仓库”。KUMA 会读取该目录下的有界元数据，并在启用文件追踪时观察其中的文件变化。如果 Python 正在仓库根目录运行，保留 `"."` 即可。 |
-| `requirement_path` | `str \| os.PathLike[str] \| None` | `None` | 指向描述“Agent 要做什么、KUMA 要测试哪些行为”的 UTF-8 文件。官方 Case 必须提供。Front matter 可包含 closed `strategy_group` 坐标和相对路径 `tool_capabilities` 文件，两者都会在 Provider I/O 前校验。只有自定义 Case Provider 明确不需要 Requirement 时才可省略。 |
+| `agent_profile_path` | `str \| os.PathLike[str] \| None` | `None` | 指向描述被测 Agent、生产场景、预期行为和禁止边界的 UTF-8 文件。官方 Case 必须提供。选定的策略组仍决定测试能力、领域和方法，Profile 自然语言不能选组或覆盖该选择。Front matter 可包含 closed `strategy_group` 坐标和相对路径 `tool_capabilities` 文件，两者都会在 Provider I/O 前校验。只有自定义 Case Provider 明确不需要 Agent Profile 时才可省略。 |
 | `case_provider` | `CaseProvider \| callable \| None` | `None` | 决定由谁生成测试步骤。保留 `None` 会向 KUMA 官方服务申请 Case；传入 callable 表示由你的程序在本地提供 Case。 |
 | `judge_provider` | `JudgeProvider \| callable \| None` | `None` | 决定由谁评估全部步骤并生成最终报告。保留 `None` 使用官方 Judge；传入 callable 使用你自己的本地评估逻辑。`judge=False` 时不会使用它。 |
-| `strategy` | `str` | `"auto"` | 保留仅使用未版本化 strategy ID 的服务兼容性。当前策略组应在 Requirement front matter 中填写精确 `id` 与 `version`。结构化声明与非默认旧值同时出现时会直接失败，避免产生歧义。 |
+| `strategy` | `str` | `"auto"` | 保留仅使用未版本化 strategy ID 的服务兼容性。当前策略组应在 Agent Profile front matter 中填写精确 `id` 与 `version`。结构化声明与非默认旧值同时出现时会直接失败，避免产生歧义。 |
 | `max_steps` | `int \| None` | `None` | 限制本次 Run 最多包含多少个测试步骤。例如填 `3`，Case 可以有 1、2 或 3 个步骤，并不保证一定生成 3 个。`None` 采用官方服务上限；自定义 Case Provider 必须填写正整数。显式值超过服务端公开上限会在生成 Case 前报错，KUMA 不会截断已返回的 Case。 |
 | `judge` | `bool` | `True` | 控制最后一个 Input 提交后是否进行评估。保持 `True` 才会得到 `TestReport`；设为 `False` 只执行并记录 Case，`run.report` 会保持 `None`。 |
 | `on_failure` | `str` | `"continue"` | 决定某一步被提交为 `failed`、`timeout` 或 `aborted` 后怎么办。`"continue"` 会继续交付下一个 Input；`"stop"` 会立即结束整个 Run。 |
@@ -60,19 +60,19 @@ run = create_run(repo_path=".", requirement_path="requirement.md")
 | `max_retries` | `int` | `2` | 设置一次瞬态 HTTP 失败后最多再尝试几次，允许 0–5。重试会复用同一个幂等键，不会故意创建第二个 Case/Judge operation。 |
 | `api_key` | `str \| None` | `None` | 为“这一个 Run”提供官方服务凭证，用于临时覆盖环境变量或已保存凭证。`None` 时依次读取 `KUMA_API_KEY` 和用户凭证文件；Case/Judge 都是本地 Provider 时不需要 Key。 |
 | `trace_evidence` | `TraceEvidenceCapture \| None` | `None` | 为本次 Run 指定一份 OTel Trace 采集器及其资源上限。需要显式控制时传入 `configure_trace_evidence()` 的返回值；`None` 时 KUMA 会尝试复用兼容的全局 Provider，没有则继续运行并记录非阻断 warning。 |
-| `scan_strategy_group` | `bool` | `False` | 明确启用官方 Case 的本地保守策略组建议。KUMA 只比较 closed 声明能力与本次 Run 的内在 Runtime Evidence 能力，不执行工具，也不根据名称、描述、Schema、资源、访问方式或副作用猜测。只有唯一可靠匹配时才选择非默认组；同分或无匹配时使用目录精确默认组。Requirement 中的显式选择始终优先。 |
+| `scan_strategy_group` | `bool` | `False` | 明确启用官方 Case 的本地保守策略组建议。KUMA 只比较 closed 声明能力与本次 Run 的内在 Runtime Evidence 能力，不执行工具，也不根据名称、描述、Schema、资源、访问方式或副作用猜测。只有唯一可靠匹配时才选择非默认组；同分或无匹配时使用目录精确默认组。Agent Profile 中的显式选择始终优先。 |
 
 <!-- api-parameters:create_run:end -->
 
 **返回值：** 处于 `ready` 状态的同步 `Run`。
 
-**前置条件：** `repo_path` 必须是调用方明确允许 KUMA 检查的仓库。官方 Case 需要可读的 Requirement 和有效 Key。除非设置 `allow_local=True`，进程必须运行在支持的容器环境中；同一本地运行环境一次只能有一个 Run 持有 active-Run 锁。
+**前置条件：** `repo_path` 必须是调用方明确允许 KUMA 检查的仓库。官方 Case 需要可读的 Agent Profile 和有效 Key。除非设置 `allow_local=True`，进程必须运行在支持的容器环境中；同一本地运行环境一次只能有一个 Run 持有 active-Run 锁。
 
 **后置条件：** 返回的 Run 已持有该锁，并装入一个通过校验的 Case。若 `max_steps=N`，Case 可以有 1 到 N 个 Input，而不是必须恰好 N 个。获取运行资源后若初始化失败，KUMA 会先关闭资源并释放锁，再把异常抛给调用方。
 
 **异常：** 配置、凭证、隔离、Provider、Case 或公网服务失败会抛出具体 `KumaError` 子类，并提供稳定的 `code`、`retryable` 和可选 `request_id`。
 
-**副作用与安全：** 读取 Requirement 和有界仓库元数据，可能创建 `.kuma/`，官方 Provider 只调用公开 Backend。SDK 不直连 MCP、模型或数据库；自定义 Provider 在调用方进程内运行并继承该进程权限。
+**副作用与安全：** 读取 Agent Profile 和有界仓库元数据，可能创建 `.kuma/`，官方 Provider 只调用公开 Backend。SDK 不直连 MCP、模型或数据库；自定义 Provider 在调用方进程内运行并继承该进程权限。
 
 ### 自定义 Case 边界
 
@@ -81,6 +81,29 @@ run = create_run(repo_path=".", requirement_path="requirement.md")
 上传前以 `custom_rubric_not_supported` 拒绝。官方 Judge 评估自定义 Case
 时，KUMA 直接发送 closed 公共 Case，不创建或传输调用方编写的 criteria、
 Rubric ID 或私有 revision ID。
+
+## Agent Profile 解析
+
+```python
+from kuma.repository import AgentProfileSpec, parse_agent_profile
+
+profile = parse_agent_profile("agent-profile.md")
+```
+
+<!-- api-parameters:parse_agent_profile:start -->
+
+| 参数 | 类型 | 必填/默认值 | 它控制什么、什么时候填写 |
+| --- | --- | --- | --- |
+| `path` | `str \| Path` | 必填 | 指定要校验的 UTF-8 Markdown Agent Profile。应传入本次 Run 实际使用的文件；相对路径从进程工作目录解析，因此应用应优先使用明确的仓库相对路径或绝对路径。 |
+
+<!-- api-parameters:parse_agent_profile:end -->
+
+`parse_agent_profile(path)` 只读取调用方明确选择的 UTF-8 Markdown 文件，接受可选
+BOM，校验 closed front matter 和三个必需行为章节，并返回不可变
+`AgentProfileSpec`。它最多额外读取 Profile 目录内显式关联的一个 input schema 和
+一个工具能力文件；不联网，也不上传原始 Profile。文件缺失使用
+`agent_profile_required`，内容无效使用 `agent_profile_invalid`。返回的
+`strategy_group` 是精确坐标声明，不是从 Profile 正文推断的结果。
 
 ## `Run`
 
@@ -167,7 +190,7 @@ Rubric ID 或私有 revision ID。
 | `history` | `tuple[HistoryItem, ...]` | 按执行顺序保存所有已成功提交的 Input 及对应 Submission；正在处理但尚未提交的步骤不在其中。 |
 | `report` | `TestReport \| None` | `state` 变为 `report_ready` 后保存最终 Judge 结果；Judge 尚未完成或 `judge=False` 时为 `None`。 |
 | `runtime_warnings` | `tuple[str, ...]` | 保存不会阻断 Run 的 Evidence 缺口代码，例如自动 Trace 不可用；可用它向用户提示采集不完整。 |
-| `tool_capabilities_path` | `Path \| None` | 保存 Requirement 关联的本地能力文档绝对路径，供调用方检查；该路径永不上传。 |
+| `tool_capabilities_path` | `Path \| None` | 保存 Agent Profile 关联的本地能力文档绝对路径，供调用方检查；该路径永不上传。 |
 | `tool_capabilities_provenance` | `str \| None` | 表示本地能力文档来源为 `user_declared`、`scanner_generated` 或 `None`；它不是对 Agent 行为的验证。 |
 
 ## `KumaClient`
@@ -205,14 +228,14 @@ Rubric ID 或私有 revision ID。
 
 ## 策略组 API
 
-CLI 与 Requirement 工作流见[策略组指南](strategy-groups.zh-CN.md)。
+CLI 与 Agent Profile 工作流见[策略组指南](strategy-groups.zh-CN.md)。
 
 | 公开名称 | 接受输入或暴露字段 | 结果与失败行为 |
 | --- | --- | --- |
-| `StrategyGroupDeclaration` | 精确 `id` 和 `version`；`to_dict()` 会加入 `kuma.strategy_group_selection.v1`。 | 不可变、可直接写入 Requirement 的坐标。 |
+| `StrategyGroupDeclaration` | 精确 `id` 和 `version`；`to_dict()` 会加入 `kuma.strategy_group_selection.v1`。 | 不可变、可直接写入 Agent Profile 的坐标。 |
 | `StrategyGroup` | `id`、`version`、`display_name`、`description`、`required_capabilities`、`available` 和组 `limits`。 | 不可变目录条目；`coordinate` 返回 `(id, version)`，`to_dict()` 返回分离 JSON。 |
 | `StrategyGroupCatalog` | `catalog_release`、精确 `default` 和排序后的 `groups`。 | `group(declaration)` 返回精确条目或 `None`；`to_dict()` 返回规范目录 JSON。 |
-| `ResolvedStrategyGroup` | 选中的 `group`、`selection_source` 和 `catalog_release`。 | `to_declaration()` 返回 Requirement 对象；`to_wire()` 返回 closed 公共解析结果。 |
+| `ResolvedStrategyGroup` | 选中的 `group`、`selection_source` 和 `catalog_release`。 | `to_declaration()` 返回 Agent Profile 对象；`to_wire()` 返回 closed 公共解析结果。 |
 | `validate_strategy_group_declaration(value)` | 只含 `schema_version`、`id` 和 `version` 的普通 mapping。 | 返回 `StrategyGroupDeclaration`；未知字段、版本或无效文本抛 `ValidationError(code="strategy_group_invalid")`。 |
 | `validate_strategy_group_catalog(value)` | 完整 closed 目录 mapping。 | 返回 `StrategyGroupCatalog`；字段、排序、边界、坐标或默认组畸形时直接拒绝。 |
 | `validate_strategy_group_wire_selection(value)` | 含 schema 版本、组 ID/版本、来源与目录版本标识的完整解析 mapping。 | 返回分离后的公共 mapping；无效或多余字段直接拒绝，主要用于高级 Provider 边界。 |
@@ -221,7 +244,7 @@ CLI 与 Requirement 工作流见[策略组指南](strategy-groups.zh-CN.md)。
 
 ## Agent 能力 API
 
-Closed JSON schema、CLI 流程、Requirement 路径规则和隐私边界见 [Agent 工具能力指南](agent-tool-capabilities.zh-CN.md)。
+Closed JSON schema、CLI 流程、Agent Profile 路径规则和隐私边界见 [Agent 工具能力指南](agent-tool-capabilities.zh-CN.md)。
 
 | 公开名称 | 输入 | 返回值与副作用 |
 | --- | --- | --- |

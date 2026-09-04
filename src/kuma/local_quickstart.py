@@ -42,7 +42,7 @@ class LocalQuickstartResult:
 class _LocalCaseProvider:
     """Provide the packaged deterministic Case without repository or network reads."""
 
-    requirement_required = False
+    agent_profile_required = False
 
     def generate_case(self, _context: CaseGenerationContext) -> dict[str, Any]:
         """Return the fixed local Case without reading a repository or network."""

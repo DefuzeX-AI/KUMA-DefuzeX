@@ -388,7 +388,7 @@ def _validate_response_strategy_group(
 
 
 def _agent_description(context: CaseGenerationContext) -> str:
-    """Return only bounded front-matter Agent description, never requirement text."""
+    """Return only bounded front-matter Agent description, never Profile prose."""
     value = (
         context.agent_description.strip()
         if isinstance(context.agent_description, str)
@@ -404,24 +404,24 @@ def _agent_description(context: CaseGenerationContext) -> str:
 
 def _behavior_spec(context: CaseGenerationContext) -> dict[str, str]:
     """Validate the three required public behavior sections within UTF-8 budgets."""
-    sections = context.requirement_sections
+    sections = context.agent_profile_sections
     if set(sections) != set(_BEHAVIOR_SPEC_FIELDS):
         raise ValidationError(
             "Official Case generation requires the three parsed behavior sections",
-            code="requirement_invalid",
+            code="agent_profile_invalid",
         )
     behavior_spec: dict[str, str] = {}
     for name in _BEHAVIOR_SPEC_FIELDS:
         value = sections.get(name)
         if not isinstance(value, str) or not value.strip():
             raise ValidationError(
-                f"Requirement behavior section is invalid: {name}",
-                code="requirement_invalid",
+                f"Agent Profile behavior section is invalid: {name}",
+                code="agent_profile_invalid",
             )
         normalized = value.strip()
         if len(normalized) > _MAX_BEHAVIOR_FIELD_CHARS:
             raise LimitExceededError(
-                f"Requirement behavior section exceeds "
+                f"Agent Profile behavior section exceeds "
                 f"{_MAX_BEHAVIOR_FIELD_CHARS} Unicode characters: {name}",
                 code="behavior_spec_too_large",
             )
@@ -429,12 +429,12 @@ def _behavior_spec(context: CaseGenerationContext) -> dict[str, str]:
             encoded = normalized.encode("utf-8")
         except UnicodeEncodeError as exc:
             raise ValidationError(
-                f"Requirement behavior section is not valid UTF-8: {name}",
-                code="requirement_invalid",
+                f"Agent Profile behavior section is not valid UTF-8: {name}",
+                code="agent_profile_invalid",
             ) from exc
         if len(encoded) > _MAX_BEHAVIOR_FIELD_BYTES:
             raise LimitExceededError(
-                f"Requirement behavior section exceeds {_MAX_BEHAVIOR_FIELD_BYTES} "
+                f"Agent Profile behavior section exceeds {_MAX_BEHAVIOR_FIELD_BYTES} "
                 f"UTF-8 bytes: {name}",
                 code="behavior_spec_too_large",
             )
@@ -466,7 +466,7 @@ def _safe_case_payload(
     payload can start a paid operation; Backend validation remains authoritative.
 
     Args:
-        context: Validated requirement, repository metadata, strategy, and local
+        context: Validated Agent Profile, repository metadata, strategy, and local
             Case normalization ceiling for this Run.
         allow_sensitive: Whether ordinary allowlisted metadata may pass the
             scanner. Secrets and private fields remain forbidden.
@@ -486,7 +486,7 @@ def _safe_case_payload(
         SensitiveDataError: If the upload scanner rejects the public fields.
 
     Postconditions:
-        The payload contains no raw requirement body, repository contents,
+        The payload contains no raw Agent Profile body, repository contents,
         private rubric, service key, or model configuration.
 
     Side Effects:
@@ -636,7 +636,7 @@ class OfficialCaseProvider:
     or a database directly.
     """
 
-    requirement_required = True
+    agent_profile_required = True
 
     def __init__(
         self,
@@ -650,7 +650,7 @@ class OfficialCaseProvider:
 
         Args:
             client: Authenticated public Backend client.
-            allow_sensitive: Whether ordinary requirement metadata accepted by
+            allow_sensitive: Whether ordinary Agent Profile metadata accepted by
                 the scanner may be transmitted. Private fields/secrets remain
                 forbidden regardless of this value.
             operation_wait_timeout: Total positive seconds allowed for POST plus
@@ -764,7 +764,7 @@ class OfficialCaseProvider:
         """Generate or resume one official Case and return validated public data.
 
         Args:
-            context: Immutable requirement, repository metadata, strategy, and
+            context: Immutable Agent Profile, repository metadata, strategy, and
                 maximum-step inputs prepared by ``create_run``.
 
         Returns:
@@ -779,7 +779,7 @@ class OfficialCaseProvider:
                 bounded wait timeout.
 
         Preconditions:
-            Requirement is present and ``context.max_steps`` is positive.
+            Agent Profile is present and ``context.max_steps`` is positive.
 
         Postconditions:
             Success has one through ``max_steps`` complete inputs. A terminal
@@ -791,7 +791,7 @@ class OfficialCaseProvider:
             POST/GET requests. It never truncates a valid Case.
 
         Security/Privacy:
-            Only allowlisted public requirement/repository metadata is sent. No
+            Only allowlisted public Agent Profile/repository metadata is sent. No
             private rubric, hidden answer, provider key, MCP address, or model
             configuration enters the SDK result.
         """

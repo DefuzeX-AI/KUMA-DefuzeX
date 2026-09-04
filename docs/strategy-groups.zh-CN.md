@@ -4,6 +4,8 @@
 
 策略组是带版本的公开 Case 生成行为族。创建官方 Case 前，KUMA 会从当前公共目录解析出一个精确策略组；私有计划、Rubric、Prompt 和模型设置不会对外暴露。
 
+选定的策略组决定主要测试能力、领域和方法。Agent Profile 只提供在该选择下使用的被测 Agent 与场景上下文；Profile 中的自然语言不会选择、替换或覆盖策略组。若未声明策略组，KUMA 会解析目录中的精确默认组。
+
 ## 查询公共目录
 
 先通过 `KUMA_API_KEY` 配置官方 Key，再运行：
@@ -14,7 +16,7 @@ kuma strategies list
 
 该命令执行带鉴权的目录读取，校验完整响应后输出规范 JSON。每个 `groups[]` 条目代表一个可以精确选择的坐标，包含：
 
-- `id` 与 `version`：写入 Requirement 的精确坐标；
+- `id` 与 `version`：写入 Agent Profile 的精确坐标；
 - `display_name` 与 `description`：公开名称和用途；
 - `available`：是否允许新选择；
 - `required_capabilities`：Run 必须支持的 Runtime Evidence 能力；
@@ -32,7 +34,7 @@ kuma strategies list --output strategy-groups.json
 
 `--timeout` 设置公共目录请求的秒级超时，默认 `30.0`。`--base-url` 仅用于获准的公共服务或 loopback 联调；普通用户应保留已配置的默认值。凭证缺失或被拒绝、目录畸形、输出目录无效或写入失败时，命令返回非零退出码。
 
-## 在 Requirement 中选择策略组
+## 在 Agent Profile 中选择策略组
 
 从一个 `available: true` 的 `groups[]` 条目中，原样复制机器可读的 `id`
 和 `version` 到 YAML front matter。例如当前 Security 策略组是
@@ -50,10 +52,10 @@ strategy_group:
 ```
 
 这里的 `id` 必须是 `groups[].id` 的精确值，不能填写 `display_name`、列表
-序号或策略组内部实际执行的 member strategy；真实 Requirement 中也不能
+序号或策略组内部实际执行的 member strategy；真实 Agent Profile 中也不能
 保留占位符。该对象是 closed schema，只接受 `schema_version`、`id` 和
 `version`。`selection_source` 与 `catalog_release` 描述校验后的运行时事实，
-由 KUMA 在解析当前目录后填充；不要把它们写入 Requirement。
+由 KUMA 在解析当前目录后填充；不要把它们写入 Agent Profile。
 
 显式坐标优先。未知或不可用的策略组会以 `strategy_group_invalid` 直接拒绝；如果 Run 缺少该组 `required_capabilities` 所需能力，则以 `strategy_capability_mismatch` 拒绝并列出缺失项。KUMA 不会为显式选择静默替换其他组。
 
@@ -68,7 +70,7 @@ from kuma import create_run
 
 run = create_run(
     repo_path=".",
-    requirement_path="requirement.md",
+    agent_profile_path="agent-profile.md",
     scan_strategy_group=True,
 )
 ```
@@ -84,7 +86,7 @@ kuma strategies suggest \
   --output strategy-group.json
 ```
 
-`--catalog` 和 `--capabilities` 为必填；`--output` 可省略，省略后会在终端输出可直接用于 Requirement 的 `{schema_version, id, version}` 对象。选择前会校验本地目录与能力文档。能力文件格式见 [Agent 工具能力](agent-tool-capabilities.zh-CN.md)。
+`--catalog` 和 `--capabilities` 为必填；`--output` 可省略，省略后会在终端输出可直接用于 Agent Profile 的 `{schema_version, id, version}` 对象。选择前会校验本地目录与能力文档。能力文件格式见 [Agent 工具能力](agent-tool-capabilities.zh-CN.md)。
 
 ## Python API
 
@@ -106,6 +108,6 @@ for group in catalog.groups:
 
 ## 隐私与兼容性
 
-查询目录和解析官方策略组均需要鉴权。本地建议不会上传能力文件、工具名称、参数 Schema、资源范围、路径、Agent 配置或原始 Requirement。创建官方 Case 时只发送解析后的公开坐标、目录版本标识和低敏感度选择来源。
+查询目录和解析官方策略组均需要鉴权。本地建议不会上传能力文件、工具名称、参数 Schema、资源范围、路径、Agent 配置或原始 Agent Profile。创建官方 Case 时只发送解析后的公开坐标、目录版本标识和低敏感度选择来源。
 
 如果旧版公共服务不支持带版本策略组，显式声明会直接失败，不会改变用户意图。省略选择时，可以使用 SDK 严格校验后支持的旧版兼容行为。

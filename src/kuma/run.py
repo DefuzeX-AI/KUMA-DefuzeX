@@ -214,7 +214,7 @@ class Run:
         max_steps: Actual number of inputs in this validated Case. This is not
             the configured upper bound when the provider returned fewer steps.
         tool_capabilities_path: Absolute local path of the capability document
-            linked by the requirement, or ``None``. The path is never uploaded.
+            linked by the Agent Profile, or ``None``. The path is never uploaded.
         tool_capabilities_provenance: ``scanner_generated``, ``user_declared``,
             or ``None`` when no capability document is linked.
     """
@@ -248,7 +248,7 @@ class Run:
             evidence: Step Evidence collector, or ``None`` when capture is not
                 configured.
             tool_capabilities_path: Local reviewed capability file linked by the
-                requirement, or ``None``. Run retains the association only.
+                Agent Profile, or ``None``. Run retains the association only.
             tool_capabilities_provenance: Low-sensitivity origin label for the
                 linked file, or ``None``.
 

@@ -39,6 +39,11 @@ class PublicApi:
 PUBLIC_APIS = (
     PublicApi("configure", "src/kuma/api.py", "configure"),
     PublicApi("create_run", "src/kuma/api.py", "create_run"),
+    PublicApi(
+        "parse_agent_profile",
+        "src/kuma/repository/agent_profiles.py",
+        "parse_agent_profile",
+    ),
     PublicApi("get_input", "src/kuma/run.py", "Run.get_input"),
     PublicApi("submit", "src/kuma/run.py", "Run.submit"),
     PublicApi("judge", "src/kuma/run.py", "Run.judge"),

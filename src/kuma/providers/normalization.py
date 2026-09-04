@@ -304,7 +304,7 @@ def _resolved_input_type(
     declared: str | None,
     required: str | None,
 ) -> str:
-    """Resolve Case input type while enforcing the requirement's declared type."""
+    """Resolve Case input type while enforcing the Agent Profile declaration."""
     inferred_types = {item[1] for item in parsed}
     if len(inferred_types) != 1:
         raise ProviderError("A Case cannot mix text and structured Inputs")
@@ -313,7 +313,7 @@ def _resolved_input_type(
     if resolved not in {"text", "structured"}:
         raise ProviderError("Case input_type must be 'text' or 'structured'")
     if declared is not None and declared != resolved:
-        raise ProviderError("Case input_type conflicts with the accepted requirement")
+        raise ProviderError("Case input_type conflicts with the accepted Agent Profile")
     if inferred != resolved:
         raise ProviderError("Case Input payloads conflict with input_type")
     return resolved
@@ -331,7 +331,9 @@ def _resolved_input_schema(
         and declared is not None
         and _plain_json(required) != _plain_json(declared)
     ):
-        raise ProviderError("Case input_schema conflicts with the accepted requirement")
+        raise ProviderError(
+            "Case input_schema conflicts with the accepted Agent Profile"
+        )
     if resolved is not None:
         try:
             validate_schema(resolved)
@@ -407,7 +409,7 @@ def normalize_case(
     """Validate and freeze one Provider Case before any Input is exposed.
 
     ``create_run`` calls this boundary for both official normalized mappings and
-    custom Provider output. It enforces the Run's Input limit, requirement type
+    custom Provider output. It enforces the Run's Input limit, Agent Profile type
     and schema, unique identities, JSON safety, and reserved-extension rules,
     returning the immutable public ``Case`` contract or raising ``ProviderError``.
 
@@ -418,7 +420,7 @@ def normalize_case(
         run_id: Owning Run identifier assigned to every normalized input.
         max_steps: Positive maximum number of inputs accepted; fewer are valid.
         required_input_type: Required ``text``/``structured`` type from the
-            requirement, or ``None`` when provider declaration decides.
+            Agent Profile, or ``None`` when provider declaration decides.
         required_input_schema: Required structured JSON Schema, or ``None``.
 
     Returns:

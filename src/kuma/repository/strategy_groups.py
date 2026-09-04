@@ -57,7 +57,7 @@ _LEGACY_STRATEGY_FIELDS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class StrategyGroupDeclaration:
-    """Represent a user-selected Strategy Group coordinate from a requirement.
+    """Represent a user-selected Strategy Group coordinate from an Agent Profile.
 
     Attributes:
         id: Stable catalog group identifier.
@@ -68,7 +68,7 @@ class StrategyGroupDeclaration:
     version: str
 
     def to_dict(self) -> dict[str, str]:
-        """Return the closed requirement-front-matter JSON projection."""
+        """Return the closed Agent Profile front-matter JSON projection."""
         return {
             "schema_version": STRATEGY_GROUP_SELECTION_SCHEMA_VERSION,
             "id": self.id,
@@ -105,7 +105,8 @@ class StrategyGroup:
         version: Exact compiled version.
         display_name: Human-readable catalog label.
         description: Public explanation of the behavior family.
-        required_capabilities: Canonically ordered Runtime Evidence requirements.
+        required_capabilities: Canonically ordered Runtime Evidence capabilities
+            that the Run must be able to produce before this group can be used.
         available: Whether the current service permits new selections.
         limits: Group-specific public step and difficulty limits.
     """
@@ -197,7 +198,7 @@ class ResolvedStrategyGroup:
         }
 
     def to_declaration(self) -> dict[str, str]:
-        """Return an editable requirement-compatible selection declaration."""
+        """Return an editable Agent Profile selection declaration."""
         return StrategyGroupDeclaration(self.group.id, self.group.version).to_dict()
 
 
@@ -225,7 +226,7 @@ def _text(value: Any, *, label: str, maximum: int) -> str:
 
 
 def validate_strategy_group_declaration(value: Any) -> StrategyGroupDeclaration:
-    """Validate the closed requirement ``strategy_group`` declaration.
+    """Validate the closed Agent Profile ``strategy_group`` declaration.
 
     The user may provide only an exact group ID and version. Catalog release and
     selection provenance are service/runtime facts and are therefore rejected in
@@ -464,7 +465,7 @@ def resolve_strategy_group(
 
     Explicit user choice has priority. Scanner mode considers only available
     non-default groups whose required capabilities are a subset of the derived
-    capability set, keeps those with maximum requirement cardinality, and uses
+    capability set, keeps those with maximum required-capability cardinality, and uses
     one only when that maximum is unique. It never guesses from tool names,
     schemas, descriptions, resources, access, or side effects.
     """

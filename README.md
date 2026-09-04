@@ -20,6 +20,8 @@ KUMA is the public Python SDK for testing Agent behavior through a strict `Run` 
 - Synchronous, framework-neutral Case and Judge workflow.
 - Official or custom Providers, including fully local runs.
 - Bounded file, log, and optional trace Evidence.
+- Strategy Groups choose the testing method; an Agent Profile supplies only the
+  Agent, scenario, expected-behavior, and prohibited-boundary context.
 
 ## Install
 
@@ -43,7 +45,7 @@ Follow the [full-stack user-flow guide](examples/full_stack/README.md) to run KU
 
 ## Detailed documentation
 
-[English SDK guide](docs/sdk-guide.md) · [Strategy Groups](docs/strategy-groups.md) · [Python API reference](docs/api-reference.md) · [简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [中文 API 参考](docs/api-reference.zh-CN.md) · [Runtime Evidence contract](docs/runtime-evidence.md)
+[English SDK guide](docs/sdk-guide.md) · [Strategy Groups](docs/strategy-groups.md) · [Agent tool capabilities](docs/agent-tool-capabilities.md) · [Python API reference](docs/api-reference.md) · [Agent Profile migration](docs/migration-agent-profile.md) · [简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [中文 API 参考](docs/api-reference.zh-CN.md) · [Runtime Evidence contract](docs/runtime-evidence.md)
 
 ## Project
 

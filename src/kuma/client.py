@@ -200,7 +200,7 @@ class KumaClient:
 
         Returns:
             Immutable catalog with exact group coordinates, capability
-            requirements, limits, availability, and semantic default.
+            capabilities, limits, availability, and semantic default.
 
         Raises:
             KumaAuthenticationError: No usable key or rejected authentication.

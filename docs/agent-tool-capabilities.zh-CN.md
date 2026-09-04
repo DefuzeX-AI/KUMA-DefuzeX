@@ -2,7 +2,7 @@
 
 [English](agent-tool-capabilities.md) | [简体中文](agent-tool-capabilities.zh-CN.md)
 
-KUMA 可以把 Agent 显式导出的工具元数据规范化为本地、带版本、可编辑的 JSON 文档。此功能可选：你也可以手写同一格式。无论采用哪种方式，最终由用户审查并在 Requirement 中引用该文件。
+KUMA 可以把 Agent 显式导出的工具元数据规范化为本地、带版本、可编辑的 JSON 文档。此功能可选：你也可以手写同一格式。无论采用哪种方式，最终由用户审查并在 Agent Profile 中引用该文件。
 
 能力文档始终留在本地。KUMA 不上传工具名称、参数 Schema、资源范围、本地路径或工具配置。明确启用本地策略组建议时，只有已声明 `evidence_types` 的规范并集参与匹配。详见[策略组](strategy-groups.zh-CN.md)。
 
@@ -85,9 +85,9 @@ path = save_agent_capabilities(editable, "agent-capabilities.json")
 
 公开值类型包括 `AgentCapabilities`、`ToolCapability` 和 `ResourceScope`，均提供分离后的 `to_dict()` 表示。所有操作都只在本地进行，绝不执行 Agent 工具。
 
-## 从 Requirement 引用
+## 从 Agent Profile 引用
 
-能力文件必须位于 Requirement 所在目录内，并通过相对路径引用：
+能力文件必须位于 Agent Profile 所在目录内，并通过相对路径引用：
 
 ```yaml
 ---
@@ -97,6 +97,6 @@ tool_capabilities: agent-capabilities.json
 ---
 ```
 
-KUMA 会在 Provider I/O 前校验能力文档。绝对路径、父目录逃逸，以及解析到 Requirement 目录外的链接都会直接拒绝。生成的 `Run` 通过 `run.tool_capabilities_path` 和 `run.tool_capabilities_provenance` 暴露本地关联；自定义 Case Provider 可从 `CaseGenerationContext.tool_capabilities` 取得规范 mapping。
+KUMA 会在 Provider I/O 前校验能力文档。绝对路径、父目录逃逸，以及解析到 Agent Profile 目录外的链接都会直接拒绝。生成的 `Run` 通过 `run.tool_capabilities_path` 和 `run.tool_capabilities_provenance` 暴露本地关联；自定义 Case Provider 可从 `CaseGenerationContext.tool_capabilities` 取得规范 mapping。
 
 能力文件属于用户声明。KUMA 会校验语法、边界和隐私，但不会确认工具真实存在、确实只读或能够产生所声明的 Evidence。

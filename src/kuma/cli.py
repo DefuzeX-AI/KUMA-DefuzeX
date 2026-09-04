@@ -231,7 +231,9 @@ def build_parser() -> argparse.ArgumentParser:
     suggest.add_argument(
         "--capabilities", required=True, help="local Agent capability JSON"
     )
-    suggest.add_argument("--output", help="optional requirement-ready JSON destination")
+    suggest.add_argument(
+        "--output", help="optional Agent Profile-ready JSON destination"
+    )
     suggest.set_defaults(func=cmd_strategies_suggest)
     requests = subparsers.add_parser(
         "requests", help="inspect or resume official asynchronous requests"

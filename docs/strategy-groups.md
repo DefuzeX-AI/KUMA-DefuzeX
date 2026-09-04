@@ -4,6 +4,8 @@
 
 Strategy Groups are versioned public Case-generation behavior families. KUMA resolves one exact group from the current public catalog before an official Case is created; private plans, rubrics, prompts, and model settings are not exposed.
 
+The selected Strategy Group controls the main testing capability, domain, and method. An Agent Profile supplies only the Agent and scenario context used within that choice; profile prose never selects, replaces, or overrides the group. If no group is declared, KUMA resolves the catalog's exact default.
+
 ## Query the public catalog
 
 Configure the official key through `KUMA_API_KEY`, then run:
@@ -14,7 +16,7 @@ kuma strategies list
 
 The command performs an authenticated catalog read, validates the complete response, and prints canonical JSON. Each `groups[]` entry is one exact selectable coordinate and contains:
 
-- `id` and `version`: the exact coordinate used in a Requirement;
+- `id` and `version`: the exact coordinate used in an Agent Profile;
 - `display_name` and `description`: its public name and purpose;
 - `available`: whether it accepts new selections;
 - `required_capabilities`: Runtime Evidence capabilities the Run must support;
@@ -34,7 +36,7 @@ kuma strategies list --output strategy-groups.json
 
 `--timeout` sets the public catalog request timeout in seconds and defaults to `30.0`. `--base-url` is intended only for an authorized public service or loopback integration; ordinary users should keep the configured default. A missing or rejected credential, malformed catalog, invalid output parent directory, or failed write returns a non-zero exit code.
 
-## Select a group in a Requirement
+## Select a group in an Agent Profile
 
 Choose one available `groups[]` entry and copy its machine-readable `id` and
 `version` exactly into the YAML front matter. For example, the current Security
@@ -53,10 +55,10 @@ strategy_group:
 
 Here `id` means the exact `groups[].id` value. Do not use `display_name`, a
 numbered list position, or the member strategy that the group runs internally,
-and never leave placeholder text in a real Requirement. The object is closed:
+and never leave placeholder text in a real Agent Profile. The object is closed:
 only `schema_version`, `id`, and `version` are accepted. `selection_source` and
 `catalog_release` describe validated runtime facts, so KUMA fills them after
-resolving the current catalog; they must not be placed in the Requirement.
+resolving the current catalog; they must not be placed in the Agent Profile.
 
 An explicit coordinate has priority. An unknown or unavailable group fails closed with `strategy_group_invalid`; a group whose `required_capabilities` are not available fails with `strategy_capability_mismatch` and lists the missing capabilities. KUMA never silently substitutes another group for an explicit choice.
 
@@ -71,7 +73,7 @@ from kuma import create_run
 
 run = create_run(
     repo_path=".",
-    requirement_path="requirement.md",
+    agent_profile_path="agent-profile.md",
     scan_strategy_group=True,
 )
 ```
@@ -87,7 +89,7 @@ kuma strategies suggest \
   --output strategy-group.json
 ```
 
-`--catalog` and `--capabilities` are required. `--output` is optional; without it, the requirement-ready `{schema_version, id, version}` object is printed. The local catalog and capability document are validated before selection. See [Agent tool capabilities](agent-tool-capabilities.md) for the capability-file schema.
+`--catalog` and `--capabilities` are required. `--output` is optional; without it, the Agent Profile-ready `{schema_version, id, version}` object is printed. The local catalog and capability document are validated before selection. See [Agent tool capabilities](agent-tool-capabilities.md) for the capability-file schema.
 
 ## Python API
 
@@ -109,6 +111,6 @@ Public immutable types include `StrategyGroupDeclaration`, `StrategyGroup`, `Str
 
 ## Privacy and compatibility
 
-Catalog discovery and official group resolution require authentication. The local suggestion path does not upload the capability file, tool names, argument schemas, resource scopes, paths, Agent configuration, or raw Requirement. Official Case creation sends only the resolved public coordinate, catalog release, and low-sensitivity selection source.
+Catalog discovery and official group resolution require authentication. The local suggestion path does not upload the capability file, tool names, argument schemas, resource scopes, paths, Agent configuration, or raw Agent Profile. Official Case creation sends only the resolved public coordinate, catalog release, and low-sensitivity selection source.
 
 If an older public service does not support versioned Strategy Groups, an explicit declaration fails rather than changing user intent. Omitted selection may use the strictly validated legacy behavior supported by the SDK.

@@ -30,9 +30,9 @@ from .providers import (
 from .providers._official_wire import validate_official_case_provenance
 from .providers.base import CaseGenerationContext, CaseProvider, JudgeProvider
 from .providers.normalization import normalize_case
+from .repository.agent_profiles import AgentProfileSpec, parse_agent_profile
 from .repository.metadata import collect_repo_meta
 from .repository.privacy import enforce_sensitive_policy, scan_sensitive_text
-from .repository.requirements import RequirementSpec, parse_requirement
 from .repository.strategy_groups import (
     ResolvedStrategyGroup,
     available_evidence_capabilities,
@@ -166,32 +166,32 @@ def _resolve_trace_evidence(
         return None, "trace_auto_attach_failed"
 
 
-def _prepare_case_requirement(
+def _prepare_case_agent_profile(
     case_provider: CaseProvider | Callable[[CaseGenerationContext], Any] | None,
-    requirement_path: str | os.PathLike[str] | None,
-) -> tuple[CaseProvider | None, RequirementSpec | None]:
-    """Validate the Case Provider requirement precondition before side effects.
+    agent_profile_path: str | os.PathLike[str] | None,
+) -> tuple[CaseProvider | None, AgentProfileSpec | None]:
+    """Validate the Case Provider Agent Profile precondition before side effects.
 
     ``create_run`` invokes this local boundary immediately after pure option
     validation. It adapts a custom Provider only far enough to read its declared
-    ``requirement_required`` policy, then delegates all requirement parsing to
-    :func:`parse_requirement`. Official mode is represented by a ``None``
-    Provider and always requires a requirement.
+    ``agent_profile_required`` policy, then delegates all Agent Profile parsing to
+    :func:`parse_agent_profile`. Official mode is represented by a ``None``
+    Provider and always requires an Agent Profile.
 
     Args:
         case_provider: User-supplied Case Provider/callable, or ``None`` to select
             the official Provider.
-        requirement_path: Explicit requirement file to parse. ``None`` is valid
+        agent_profile_path: Explicit Agent Profile file to parse. ``None`` is valid
             only when the adapted custom Provider declares
-            ``requirement_required=False``.
+            ``agent_profile_required=False``.
 
     Returns:
         The adapted custom Provider (or ``None`` for official mode) and the parsed
-        requirement (or ``None`` for an opted-out custom Provider).
+        Agent Profile (or ``None`` for an opted-out custom Provider).
 
     Raises:
         ConfigurationError: If a custom Provider cannot be adapted.
-        ValidationError: With ``requirement_required`` when a required path is
+        ValidationError: With ``agent_profile_required`` when a required path is
             absent, or with the existing parser code when the selected file is
             missing or invalid.
 
@@ -200,57 +200,57 @@ def _prepare_case_requirement(
         no credential, repository, Runtime, Evidence, or transport setup has run.
 
     Postconditions:
-        Success proves the selected Provider's requirement precondition and, when
+        Success proves the selected Provider's Agent Profile precondition and, when
         a path was supplied, returns the one canonical parsed representation.
         Failure leaves Backend, Runtime, Evidence, and repository state untouched.
 
     Side Effects:
-        May read only the explicitly selected requirement and its explicitly
-        referenced local schema through :func:`parse_requirement`. It performs no
+        May read only the explicitly selected Agent Profile and its explicitly
+        referenced local schema through :func:`parse_agent_profile`. It performs no
         credential lookup, repository scan, OTel attachment, or network request.
 
     Security/Privacy:
-        Requirement content remains local at this stage and is never sent by this
+        Agent Profile content remains local at this stage and is never sent by this
         helper. Later official-wire allowlisting and sensitive scanning still own
         the upload boundary.
     """
     adapted = None if case_provider is None else adapt_case_provider(case_provider)
-    requirement_required = adapted is None or bool(
-        getattr(adapted, "requirement_required", True)
+    agent_profile_required = adapted is None or bool(
+        getattr(adapted, "agent_profile_required", True)
     )
-    if requirement_required and requirement_path is None:
+    if agent_profile_required and agent_profile_path is None:
         raise ValidationError(
-            "This Case Provider requires an explicit requirement_path",
-            code="requirement_required",
+            "This Case Provider requires an Agent Profile via agent_profile_path",
+            code="agent_profile_required",
         )
-    requirement = (
-        None if requirement_path is None else parse_requirement(requirement_path)
+    agent_profile = (
+        None if agent_profile_path is None else parse_agent_profile(agent_profile_path)
     )
-    return adapted, requirement
+    return adapted, agent_profile
 
 
-def _preflight_official_requirement_privacy(
-    requirement: RequirementSpec | None,
+def _preflight_official_agent_profile_privacy(
+    agent_profile: AgentProfileSpec | None,
     *,
     official_case: bool,
     allow_sensitive: bool,
 ) -> None:
-    """Reject sensitive official requirement text before public discovery calls.
+    """Reject sensitive official Agent Profile text before public discovery calls.
 
     Args:
-        requirement: Parsed local requirement, or ``None`` for a custom Provider
-            that explicitly opted out of requirement input.
-        official_case: Whether the Run will send requirement-derived fields to
+        agent_profile: Parsed local Agent Profile, or ``None`` for a custom Provider
+            that explicitly opted out of Agent Profile input.
+        official_case: Whether the Run will send Agent Profile-derived fields to
             the public Case service.
         allow_sensitive: Existing explicit ordinary-Evidence policy override.
 
     Raises:
-        SensitiveDataError: If an official requirement contains a recognized
+        SensitiveDataError: If an official Agent Profile contains a recognized
             credential or private-data shape and the existing policy disallows
             it.
 
     Preconditions:
-        Requirement parsing and pure Run option validation have completed, but
+        AgentProfile parsing and pure Run option validation have completed, but
         credentials, Backend discovery, repository scanning, and Runtime setup
         have not started.
 
@@ -259,16 +259,16 @@ def _preflight_official_requirement_privacy(
         repository state, OTel, Runtime, and billing untouched.
 
     Side Effects:
-        None. The function scans only the already-read requirement string.
+        None. The function scans only the already-read Agent Profile string.
 
     Security/Privacy:
-        Findings retain only a stable rule ID and the safe ``requirement``
+        Findings retain only a stable rule ID and the safe ``agent_profile``
         location; the matched text is never copied into an exception.
     """
-    if not official_case or requirement is None:
+    if not official_case or agent_profile is None:
         return
     enforce_sensitive_policy(
-        scan_sensitive_text(requirement.content, location="requirement"),
+        scan_sensitive_text(agent_profile.content, location="agent_profile"),
         allow_sensitive=allow_sensitive,
     )
 
@@ -281,7 +281,7 @@ def _adapted_providers(
     api_key: str | None,
     repo_path: Path,
     trace_evidence: TraceEvidenceCapture | None,
-    requirement: RequirementSpec | None = None,
+    agent_profile: AgentProfileSpec | None = None,
 ) -> tuple[
     CaseProvider,
     JudgeProvider | None,
@@ -299,7 +299,7 @@ def _adapted_providers(
     Args:
         config: Validated options controlling Judge, privacy, timeout, retry, and
             current Evidence capture abilities.
-        case_provider: Provider already adapted by the requirement preflight, or
+        case_provider: Provider already adapted by the Agent Profile preflight, or
             ``None`` for official Case.
         judge_provider: User provider/callback, or ``None`` for official Judge.
         api_key: Optional explicit public Backend credential.
@@ -317,7 +317,7 @@ def _adapted_providers(
 
     Preconditions:
         ``config`` and ``repo_path`` have passed local validation, and a custom
-        Case Provider has already passed requirement preflight adaptation.
+        Case Provider has already passed Agent Profile preflight adaptation.
 
     Postconditions:
         Returned providers implement SDK protocols. New CaseGen capability fields
@@ -331,7 +331,7 @@ def _adapted_providers(
         not generate a Case or run Judge.
 
     Security/Privacy:
-        Negotiation sends no repository/requirement content and never reads or
+        Negotiation sends no repository or Agent Profile content and never reads or
         stores private service configuration.
     """
     official_case = case_provider is None
@@ -352,13 +352,13 @@ def _adapted_providers(
         trace_evidence_configured=trace_evidence is not None,
     )
     available_capabilities = available_evidence_capabilities(
-        None if requirement is None else requirement.tool_capabilities,
+        None if agent_profile is None else agent_profile.tool_capabilities,
         intrinsic_capabilities,
     )
     resolved_strategy_group = _resolve_official_strategy_group(
         backend=backend if official_case else None,
         config=config,
-        requirement=requirement,
+        agent_profile=agent_profile,
         available_capabilities=available_capabilities,
     )
     evidence_capabilities = intrinsic_capabilities
@@ -406,7 +406,7 @@ def _resolve_official_strategy_group(
     *,
     backend: BackendClient | None,
     config: CreateRunConfig,
-    requirement: RequirementSpec | None,
+    agent_profile: AgentProfileSpec | None,
     available_capabilities: tuple[str, ...],
 ) -> ResolvedStrategyGroup | None:
     """Fetch and resolve the Strategy Group contract for an official Case.
@@ -418,7 +418,7 @@ def _resolve_official_strategy_group(
     if backend is None:
         return None
     catalog_value = backend.json("GET", "/sdk/strategies/")
-    explicit = None if requirement is None else requirement.strategy_group
+    explicit = None if agent_profile is None else agent_profile.strategy_group
     if is_legacy_strategy_catalog(catalog_value):
         if explicit is not None:
             raise ValidationError(
@@ -428,7 +428,7 @@ def _resolve_official_strategy_group(
         return None
     if config.strategy != "auto" and explicit is None:
         raise ValidationError(
-            "Use requirement strategy_group for an explicit Strategy Group",
+            "Declare strategy_group in the Agent Profile for an explicit selection",
             code="strategy_group_invalid",
         )
     return resolve_strategy_group(
@@ -442,7 +442,7 @@ def _resolve_official_strategy_group(
 def create_run(
     *,
     repo_path: str | os.PathLike[str] = ".",
-    requirement_path: str | os.PathLike[str] | None = None,
+    agent_profile_path: str | os.PathLike[str] | None = None,
     case_provider: Any = None,
     judge_provider: Any = None,
     strategy: str = "auto",
@@ -467,8 +467,13 @@ def create_run(
         repo_path: Repository root visible to the Agent. Defaults to the current
             directory. Symlink roots, filesystem roots, and missing directories
             are rejected before runtime creation.
-        requirement_path: UTF-8 requirement file used for Case generation.
-            Official Case generation requires it; a custom Provider may opt out.
+        agent_profile_path: Path to a UTF-8 Markdown Agent Profile used to describe
+            the Agent, production scenario, expected behavior, and prohibited
+            boundaries. Official Case generation requires it; a custom Provider
+            may opt out. Its prose supplies context to the selected Strategy Group
+            and never selects, replaces, or overrides that group. A closed
+            ``strategy_group`` front-matter object is the only explicit selection;
+            if omitted, the catalog default remains authoritative.
             Front matter may link a reviewed local capability JSON through the
             relative ``tool_capabilities`` field. The linked file is validated
             before Provider I/O and remains local on the current official wire.
@@ -528,7 +533,7 @@ def create_run(
 
     Preconditions:
         ``repo_path`` is the repository the caller authorizes KUMA to inspect.
-        Official generation needs a readable requirement and valid credential.
+        Official generation needs a readable Agent Profile and valid credential.
         Unless ``allow_local=True``, the process runs in the supported container.
         Only one Run may own the process/container active-Run lease at a time.
 
@@ -539,7 +544,7 @@ def create_run(
         runtime resources are closed before the exception escapes.
 
     Side Effects:
-        Reads the requirement, its explicitly linked local schema/capability
+        Reads the Agent Profile, its explicitly linked local schema/capability
         files, and bounded repository metadata; may create the repository
         ``.kuma`` runtime area; may call the public Backend for official Case
         generation. The caller must call ``cancel`` when abandoning an unfinished
@@ -571,12 +576,12 @@ def create_run(
     )
     if config.upload_diff and not config.track_files:
         raise ConfigurationError("upload_diff requires track_files=True")
-    adapted_case_input, requirement = _prepare_case_requirement(
+    adapted_case_input, agent_profile = _prepare_case_agent_profile(
         case_provider,
-        requirement_path,
+        agent_profile_path,
     )
-    _preflight_official_requirement_privacy(
-        requirement,
+    _preflight_official_agent_profile_privacy(
+        agent_profile,
         official_case=adapted_case_input is None,
         allow_sensitive=config.allow_sensitive,
     )
@@ -596,7 +601,7 @@ def create_run(
         api_key=api_key,
         repo_path=resolved_repo,
         trace_evidence=trace_evidence,
-        requirement=requirement,
+        agent_profile=agent_profile,
     )
 
     run_id = f"run_{uuid.uuid4().hex}"
@@ -614,18 +619,20 @@ def create_run(
         context = CaseGenerationContext(
             repo_path=resolved_repo,
             repo_meta=repo_meta.to_dict(),
-            requirement=None if requirement is None else requirement.content,
+            agent_profile=None if agent_profile is None else agent_profile.content,
             agent_description=(
-                None if requirement is None else requirement.agent_description
+                None if agent_profile is None else agent_profile.agent_description
             ),
-            requirement_sections=({} if requirement is None else requirement.sections),
+            agent_profile_sections=(
+                {} if agent_profile is None else agent_profile.sections
+            ),
             tool_capabilities=(
                 None
-                if requirement is None or requirement.tool_capabilities is None
-                else requirement.tool_capabilities.to_dict()
+                if agent_profile is None or agent_profile.tool_capabilities is None
+                else agent_profile.tool_capabilities.to_dict()
             ),
-            input_type="auto" if requirement is None else requirement.input_type,
-            input_schema=None if requirement is None else requirement.input_schema,
+            input_type="auto" if agent_profile is None else agent_profile.input_type,
+            input_schema=None if agent_profile is None else agent_profile.input_schema,
             strategy=config.strategy,
             max_steps=effective_max_steps,
             strategy_group_selection=(
@@ -645,10 +652,10 @@ def create_run(
             run_id=run_id,
             max_steps=effective_max_steps,
             required_input_type=(
-                None if requirement is None else requirement.input_type
+                None if agent_profile is None else agent_profile.input_type
             ),
             required_input_schema=(
-                None if requirement is None else requirement.input_schema
+                None if agent_profile is None else agent_profile.input_schema
             ),
         )
         official_provenance = case.extensions.get("official_case")
@@ -693,12 +700,12 @@ def create_run(
             ),
             evidence=evidence,
             tool_capabilities_path=(
-                None if requirement is None else requirement.tool_capabilities_path
+                None if agent_profile is None else agent_profile.tool_capabilities_path
             ),
             tool_capabilities_provenance=(
                 None
-                if requirement is None or requirement.tool_capabilities is None
-                else requirement.tool_capabilities.provenance
+                if agent_profile is None or agent_profile.tool_capabilities is None
+                else agent_profile.tool_capabilities.provenance
             ),
         )
     except BaseException:

@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-本指南只说明仓库提供的 mini-SWE-agent 示例。SDK 的通用安装、API Key 配置、Requirement 格式、Run 协议、Evidence、OpenTelemetry、Docker 边界和故障排查，请查阅规范的[简体中文指南](../../docs/sdk-guide.zh-CN.md)或[英文指南](../../docs/sdk-guide.md)。
+本指南只说明仓库提供的 mini-SWE-agent 示例。SDK 的通用安装、API Key 配置、Agent Profile 格式、Run 协议、Evidence、OpenTelemetry、Docker 边界和故障排查，请查阅规范的[简体中文指南](../../docs/sdk-guide.zh-CN.md)或[英文指南](../../docs/sdk-guide.md)。
 
 ## 示例内容
 
@@ -19,7 +19,7 @@
 
 请使用一次性 Git 工作区，或确保其中所有既有改动均已提交。直接运行 Docker 示例时，挂载目录必须包含：
 
-- 符合支持格式的 `requirement.md`；
+- 符合支持格式的 `agent-profile.md`；
 - `calculator.py`，这是示例唯一允许修改的源码文件；
 - 可通过 `python -m unittest discover -v` 运行的测试。
 

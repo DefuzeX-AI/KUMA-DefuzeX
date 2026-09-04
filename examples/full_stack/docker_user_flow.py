@@ -24,7 +24,7 @@ from kuma import create_run
 from kuma.otel import configure_trace_evidence
 
 REPO = Path("/workspace").resolve()
-REQUIREMENT = REPO / "requirement.md"
+AGENT_PROFILE = REPO / "agent-profile.md"
 ARTIFACTS = REPO / ".kuma" / "mini-swe-agent"
 
 SEQUENTIAL_STEP_TEMPLATE = """Complete exactly this one KUMA Case step:
@@ -265,7 +265,7 @@ if not Path("/.dockerenv").exists():
 for required_name in ("KUMA_BASE_URL", "KUMA_API_KEY", "DEEPSEEK_API_KEY"):
     if not os.environ.get(required_name):
         raise RuntimeError(f"Missing required environment variable: {required_name}")
-if not REQUIREMENT.is_file():
+if not AGENT_PROFILE.is_file():
     raise RuntimeError("Mount the prepared Agent repository at /workspace.")
 
 provider = TracerProvider()
@@ -276,7 +276,7 @@ tracer = provider.get_tracer("official-mini-swe-agent")
 # container-wide active-Run lock before the official Case can be delivered.
 run = create_run(
     repo_path=REPO,
-    requirement_path=REQUIREMENT,
+    agent_profile_path=AGENT_PROFILE,
     track_files=True,
     upload_diff=False,
     save_local=True,

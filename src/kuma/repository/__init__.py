@@ -1,5 +1,6 @@
-"""Repository metadata, requirement, capability, and privacy boundaries."""
+"""Repository metadata, Agent Profile, capability, and privacy boundaries."""
 
+from .agent_profiles import AgentProfileSpec, parse_agent_profile
 from .strategy_groups import (
     STRATEGY_GROUP_CATALOG_SCHEMA_VERSION,
     STRATEGY_GROUP_SELECTION_SCHEMA_VERSION,
@@ -28,11 +29,13 @@ __all__ = [
     "STRATEGY_GROUP_CATALOG_SCHEMA_VERSION",
     "STRATEGY_GROUP_SELECTION_SCHEMA_VERSION",
     "AgentCapabilities",
+    "AgentProfileSpec",
     "ResourceScope",
     "StrategyGroupCatalog",
     "StrategyGroupDeclaration",
     "ToolCapability",
     "load_agent_capabilities",
+    "parse_agent_profile",
     "save_agent_capabilities",
     "scan_agent_tool_manifest",
     "scan_agent_tools",

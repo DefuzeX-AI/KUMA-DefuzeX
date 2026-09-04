@@ -87,9 +87,11 @@ print(credential_path)
 | `KUMA_CONFIG_HOME` | 覆盖用户凭证目录 |
 | `KUMA_BASE_URL` | 覆盖允许的公开或 loopback API 地址；非 loopback 地址必须使用 HTTPS |
 
-### Requirement 文件
+### Agent Profile 文件
 
-官方 Case Provider 要求显式提供 UTF-8 requirement 文件，包含 YAML front matter 和三个章节：
+官方 Case Provider 要求显式提供 UTF-8 Agent Profile 文件，包含 YAML front matter 和三个章节：
+
+策略组始终决定主要测试能力、领域和方法。Agent Profile 只提供被测 Agent、生产场景、预期行为与禁止边界等上下文；其中的自然语言不会选择、替换或覆盖策略组。若 Profile 省略 `strategy_group`，KUMA 使用目录中精确的默认组。
 
 ```markdown
 ---
@@ -114,14 +116,14 @@ Do not read credentials or access paths outside the repository.
 
 ### 策略组与 Agent 能力
 
-已鉴权用户可在编辑 Requirement 前查询并校验当前公共策略组目录：
+已鉴权用户可在编辑 Agent Profile 前查询并校验当前公共策略组目录：
 
 ```bash
 kuma strategies list
 kuma strategies list --output strategy-groups.json
 ```
 
-通过 closed `strategy_group` front matter 写入选定组的 `id` 和精确 `version`。省略时使用目录中的精确默认组；显式选择无效或缺少所需 Evidence 能力时会直接拒绝。`scan_strategy_group=True` 只是明确启用本地保守建议，默认保持关闭。Requirement schema、CLI 参数、类型化 Python API、默认行为和隐私边界详见[策略组](strategy-groups.zh-CN.md)。
+通过 closed `strategy_group` front matter 写入选定组的 `id` 和精确 `version`。省略时使用目录中的精确默认组；显式选择无效或缺少所需 Evidence 能力时会直接拒绝。`scan_strategy_group=True` 只是明确启用本地保守建议，默认保持关闭。Agent Profile schema、CLI 参数、类型化 Python API、默认行为和隐私边界详见[策略组](strategy-groups.zh-CN.md)。
 
 可选的 `tool_capabilities` 相对路径可以关联经审查的本地能力文档。可用 `kuma tools scan` / `kuma tools validate` 创建或校验，也可使用等价 Python helper。该文件不会上传；它是用户可控声明，只有 closed Evidence 能力集合可以参与本地建议。Schema、边界、CLI、Python API 和路径规则详见 [Agent 工具能力](agent-tool-capabilities.zh-CN.md)。
 
@@ -141,7 +143,7 @@ def execute_agent(test_input: Any) -> dict[str, Any]:
 
 run = create_run(
     repo_path=".",
-    requirement_path="requirement.md",
+    agent_profile_path="agent-profile.md",
     allow_local=True,  # 仅用于可信的本地开发。
 )
 
@@ -240,7 +242,7 @@ from kuma import create_run
 
 run = create_run(
     repo_path=".",
-    requirement_path="requirement.md",
+    agent_profile_path="agent-profile.md",
     allow_local=True,
 )
 tracer = trace.get_tracer("my-agent")
@@ -270,7 +272,7 @@ trace_evidence = configure_trace_evidence(
 )
 run = create_run(
     repo_path=".",
-    requirement_path="requirement.md",
+    agent_profile_path="agent-profile.md",
     allow_local=True,
     trace_evidence=trace_evidence,
 )
@@ -319,7 +321,7 @@ Evidence 或 Rubric。进程退出后，可使用 `kuma requests list`、
 | 现象 | 处理 |
 |---|---|
 | 缺少 API Key | 配置有效 Key，或使用完全本地 Provider / `judge=False` |
-| Requirement 被拒绝 | 检查 UTF-8、front matter、必需标题和结构化 Input schema |
+| Agent Profile 被拒绝 | 检查 UTF-8、front matter、必需标题和结构化 Input schema |
 | `DockerRequiredError` | 使用同一个受控容器；仅可信开发环境设置 `allow_local=True` |
 | `submit()` 返回 `None` | 检查剩余 Input、`judge`、`run.state` 与 `run.history` |
 | `input_protocol` | 严格交替执行一次 `get_input()` 与一次 `submit()`，不要并发推进 |

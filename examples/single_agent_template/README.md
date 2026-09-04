@@ -97,7 +97,7 @@ KUMA_API_KEY=<set outside source control>
 KUMA_REPO_PATH=<repository evaluated by the Agent>
 ```
 
-`KUMA_REQUIREMENT_PATH` defaults to this directory's [`requirement.md`](requirement.md). Official mode keeps `allow_local=False` unless `KUMA_ALLOW_LOCAL=1` is explicitly set for local development. The SDK then authenticates only to the Website Backend public API and internally waits on the bounded v2 Case/Judge operations while the Python API remains synchronous.
+`KUMA_AGENT_PROFILE_PATH` defaults to this directory's [`agent-profile.md`](agent-profile.md). Official mode keeps `allow_local=False` unless `KUMA_ALLOW_LOCAL=1` is explicitly set for local development. The SDK then authenticates only to the Website Backend public API and internally waits on the bounded v2 Case/Judge operations while the Python API remains synchronous.
 
 The Agent receives each `get_input()` value and its validated output/error returns through `submit()`. On success, inspect `run.state`, `run.history`, and `run.report`; the template prints them after completion.
 

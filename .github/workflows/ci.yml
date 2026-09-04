@@ -26,6 +26,7 @@ jobs:
       - run: python -m ruff check --exclude "*.ipynb" .
       - run: python -m ruff format --check --exclude "*.ipynb" .
       - run: python tools/verify_public_api_docs.py
+      - run: python tools/verify_agent_profile_migration.py
       - run: python -m compileall -q src examples tools
 
   test:

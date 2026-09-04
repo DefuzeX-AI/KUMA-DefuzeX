@@ -1,4 +1,4 @@
-"""Offline JSON Schema validation shared by requirements and tool contracts."""
+"""Offline JSON Schema validation shared by Agent Profiles and tool contracts."""
 
 from __future__ import annotations
 

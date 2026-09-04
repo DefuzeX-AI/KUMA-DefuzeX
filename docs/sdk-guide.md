@@ -87,9 +87,11 @@ Credential precedence is: `create_run(api_key=...)`, `KUMA_API_KEY`, then the us
 | `KUMA_CONFIG_HOME` | Override the user credential directory |
 | `KUMA_BASE_URL` | Override the accepted public or loopback API base URL; non-loopback URLs must use HTTPS |
 
-### Requirement file
+### Agent Profile file
 
-The official Case Provider requires an explicit UTF-8 requirement file with YAML front matter and three sections:
+The official Case Provider requires an explicit UTF-8 Agent Profile file with YAML front matter and three sections:
+
+The Strategy Group remains authoritative for the testing capability, domain, and method. The Agent Profile only supplies context about the Agent, its production scenario, expected behavior, and prohibited boundaries; its prose never selects, replaces, or overrides the group. If the profile omits `strategy_group`, KUMA uses the catalog's exact default group.
 
 ```markdown
 ---
@@ -114,14 +116,14 @@ Do not read credentials or access paths outside the repository.
 
 ### Strategy Groups and Agent capabilities
 
-Authenticated users can inspect the current validated public Strategy Group catalog before editing a Requirement:
+Authenticated users can inspect the current validated public Strategy Group catalog before editing an Agent Profile:
 
 ```bash
 kuma strategies list
 kuma strategies list --output strategy-groups.json
 ```
 
-Add the selected group `id` and exact `version` through the closed `strategy_group` front-matter object. Omitting it uses the catalog's exact default; an invalid explicit selection or missing Evidence capability fails closed. `scan_strategy_group=True` explicitly enables conservative local suggestion and remains off by default. See [Strategy Groups](strategy-groups.md) for the Requirement schema, CLI options, typed Python API, default behavior, and privacy boundary.
+Add the selected group `id` and exact `version` through the closed `strategy_group` front-matter object. Omitting it uses the catalog's exact default; an invalid explicit selection or missing Evidence capability fails closed. `scan_strategy_group=True` explicitly enables conservative local suggestion and remains off by default. See [Strategy Groups](strategy-groups.md) for the Agent Profile schema, CLI options, typed Python API, default behavior, and privacy boundary.
 
 An optional `tool_capabilities` relative path can link a reviewed local capability document. Create or validate it with `kuma tools scan` / `kuma tools validate`, or use the equivalent Python helpers. The file is not uploaded; it is a user-controlled claim that may contribute only its closed Evidence capability set to local suggestion. See [Agent tool capabilities](agent-tool-capabilities.md) for its schema, bounds, CLI, Python API, and path rules.
 
@@ -141,7 +143,7 @@ def execute_agent(test_input: Any) -> dict[str, Any]:
 
 run = create_run(
     repo_path=".",
-    requirement_path="requirement.md",
+    agent_profile_path="agent-profile.md",
     allow_local=True,  # Trusted local development only.
 )
 
@@ -246,7 +248,7 @@ from kuma import create_run
 
 run = create_run(
     repo_path=".",
-    requirement_path="requirement.md",
+    agent_profile_path="agent-profile.md",
     allow_local=True,
 )
 tracer = trace.get_tracer("my-agent")
@@ -276,7 +278,7 @@ trace_evidence = configure_trace_evidence(
 )
 run = create_run(
     repo_path=".",
-    requirement_path="requirement.md",
+    agent_profile_path="agent-profile.md",
     allow_local=True,
     trace_evidence=trace_evidence,
 )
@@ -326,7 +328,7 @@ Judge report is written to `.kuma/reports/<run_id>.json`.
 | Symptom | Action |
 |---|---|
 | Missing API key | Configure a valid key or use fully local Providers / `judge=False` |
-| Requirement rejected | Check UTF-8, front matter, required headings, and structured-input schema |
+| Agent Profile rejected | Check UTF-8, front matter, required headings, and structured-input schema |
 | `DockerRequiredError` | Use one controlled container; enable `allow_local=True` only for trusted development |
 | `submit()` returns `None` | Check remaining Inputs, `judge`, `run.state`, and `run.history` |
 | `input_protocol` | Alternate one `get_input()` with one `submit()` and avoid concurrent advancement |

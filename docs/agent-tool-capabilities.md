@@ -2,7 +2,7 @@
 
 [English](agent-tool-capabilities.md) | [简体中文](agent-tool-capabilities.zh-CN.md)
 
-KUMA can normalize tool metadata explicitly exported by an Agent into a local, versioned, editable JSON document. The feature is optional: you may create the same document manually. In both modes, you own and review the final file referenced by the Requirement.
+KUMA can normalize tool metadata explicitly exported by an Agent into a local, versioned, editable JSON document. The feature is optional: you may create the same document manually. In both modes, you own and review the final file referenced by the Agent Profile.
 
 The document remains local. KUMA does not upload tool names, argument schemas, resource scopes, local paths, or tool configuration. When local Strategy Group suggestion is enabled, only the canonical union of declared `evidence_types` participates in matching. See [Strategy Groups](strategy-groups.md).
 
@@ -85,9 +85,9 @@ path = save_agent_capabilities(editable, "agent-capabilities.json")
 
 Public value types are `AgentCapabilities`, `ToolCapability`, and `ResourceScope`; each provides a detached `to_dict()` representation. All operations are local and never execute an Agent tool.
 
-## Link the file from a Requirement
+## Link the file from an Agent Profile
 
-Keep the file inside the Requirement directory and use a relative path:
+Keep the file inside the Agent Profile directory and use a relative path:
 
 ```yaml
 ---
@@ -97,6 +97,6 @@ tool_capabilities: agent-capabilities.json
 ---
 ```
 
-KUMA validates the document before Provider I/O. Absolute paths, parent-directory escapes, and links resolving outside the Requirement directory fail closed. The resulting `Run` exposes the local association through `run.tool_capabilities_path` and `run.tool_capabilities_provenance`. A custom Case Provider receives the canonical mapping in `CaseGenerationContext.tool_capabilities`.
+KUMA validates the document before Provider I/O. Absolute paths, parent-directory escapes, and links resolving outside the Agent Profile directory fail closed. The resulting `Run` exposes the local association through `run.tool_capabilities_path` and `run.tool_capabilities_provenance`. A custom Case Provider receives the canonical mapping in `CaseGenerationContext.tool_capabilities`.
 
 The file is a user-controlled claim. KUMA validates its syntax, bounds, and privacy but does not confirm that a tool exists, is truly read-only, or emits the declared Evidence.

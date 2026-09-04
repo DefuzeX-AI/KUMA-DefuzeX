@@ -1046,7 +1046,7 @@ class BackendClient:
             client_request_id: Optional v2 request-recovery identity.
             _deadline: Internal monotonic operation deadline propagated to
                 transport retries.
-            _expected_status: Internal exact-success status requirement.
+            _expected_status: Internal exact-success status constraint.
 
         Returns:
             Validated public JSON response mapping.
@@ -1109,7 +1109,7 @@ class BackendClient:
             idempotency_key: Required stable key for the logical Judge request.
             client_request_id: Optional v2 request-recovery identity.
             _deadline: Internal monotonic operation deadline.
-            _expected_status: Internal exact-success status requirement.
+            _expected_status: Internal exact-success status constraint.
 
         Returns:
             Validated public JSON response mapping.

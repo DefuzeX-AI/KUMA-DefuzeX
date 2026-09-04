@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-This guide covers only the supplied mini-SWE-agent example. General SDK installation, API key setup, requirement format, Run protocol, Evidence, OpenTelemetry, Docker boundaries, and troubleshooting live in the canonical [English guide](../../docs/sdk-guide.md) and [简体中文指南](../../docs/sdk-guide.zh-CN.md).
+This guide covers only the supplied mini-SWE-agent example. General SDK installation, API key setup, Agent Profile format, Run protocol, Evidence, OpenTelemetry, Docker boundaries, and troubleshooting live in the canonical [English guide](../../docs/sdk-guide.md) and [简体中文指南](../../docs/sdk-guide.zh-CN.md).
 
 ## What this example runs
 
@@ -19,7 +19,7 @@ Both paths invoke real external services and may incur model or service cost.
 
 Use a disposable or fully committed Git workspace. The direct Docker example expects the mounted root to contain:
 
-- `requirement.md` in the accepted format;
+- `agent-profile.md` in the accepted format;
 - `calculator.py`, the only source file this example may modify;
 - tests runnable with `python -m unittest discover -v`.
 

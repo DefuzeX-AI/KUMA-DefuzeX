@@ -46,7 +46,7 @@ from kuma import create_run
 
 run = create_run(
     repo_path=".",
-    requirement_path="requirement.md",
+    agent_profile_path="agent-profile.md",
 )
 ```
 
@@ -55,14 +55,14 @@ run = create_run(
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
 | `repo_path` | `str \| os.PathLike[str]` | `"."` | Chooses the repository being tested. KUMA reads bounded metadata and, when enabled, observes file changes below this directory. Use `"."` when your Python process already runs at the repository root. |
-| `requirement_path` | `str \| os.PathLike[str] \| None` | `None` | Points to the UTF-8 file that describes what the Agent should do and which behaviors KUMA should test. Supply it for official Case generation. Front matter may contain a closed `strategy_group` coordinate and a relative `tool_capabilities` file; both are validated before Provider I/O. Omit the path only when your custom Case Provider does not need a Requirement. |
+| `agent_profile_path` | `str \| os.PathLike[str] \| None` | `None` | Points to the UTF-8 file that describes the Agent, its production scenario, expected behavior, and prohibited boundaries. Supply it for official Case generation. The selected Strategy Group still controls the testing capability/domain/method; profile prose cannot select or override that group. Front matter may contain a closed `strategy_group` coordinate and a relative `tool_capabilities` file; both are validated before Provider I/O. Omit the path only when your custom Case Provider does not need an Agent Profile. |
 | `case_provider` | `CaseProvider \| callable \| None` | `None` | Chooses who creates the test Inputs. Leave `None` to request an official Case from KUMA; pass a callable when your application supplies its own local Case. |
 | `judge_provider` | `JudgeProvider \| callable \| None` | `None` | Chooses who evaluates all submitted results and builds the final report. Leave `None` for the official Judge, or pass a callable for your own local evaluation. Ignored when `judge=False`. |
-| `strategy` | `str` | `"auto"` | Preserves compatibility with services that use an unversioned strategy ID. For current Strategy Groups, put the exact `id` and `version` in Requirement front matter. Combining a structured declaration with a non-default legacy value fails instead of creating ambiguous intent. |
+| `strategy` | `str` | `"auto"` | Preserves compatibility with services that use an unversioned strategy ID. For current Strategy Groups, put the exact `id` and `version` in Agent Profile front matter. Combining a structured declaration with a non-default legacy value fails instead of creating ambiguous intent. |
 | `max_steps` | `int \| None` | `None` | Limits how many test steps this Run may contain. For example, `3` allows one, two, or three steps—it does not force exactly three. `None` uses the official service limit; custom Case Providers require an explicit positive value. An explicit official value above the advertised limit fails before Case generation, and KUMA never truncates a returned Case. |
 | `judge` | `bool` | `True` | Controls whether KUMA evaluates the Run after the last Input. Keep `True` to receive a `TestReport`; use `False` when you only want to execute and record the Case, in which case `run.report` remains `None`. |
 | `on_failure` | `str` | `"continue"` | Decides what happens after you submit a step as `failed`, `timeout`, or `aborted`. `"continue"` delivers the next Input; `"stop"` ends the Run immediately. |
-| `allow_local` | `bool` | `False` | Allows the Run to start outside Docker for trusted local development. It only bypasses the Docker requirement: it does not sandbox the Agent, expand file access, or weaken validation and privacy checks. |
+| `allow_local` | `bool` | `False` | Allows the Run to start outside Docker for trusted local development. It only bypasses the Docker safety prerequisite: it does not sandbox the Agent, expand file access, or weaken validation and privacy checks. |
 | `track_files` | `bool` | `True` | Tells KUMA to compare repository file metadata before and after each Input so the Judge can see which files were created, modified, deleted, or renamed. Set `False` when file changes are irrelevant or unavailable. |
 | `upload_diff` | `bool` | `False` | Adds bounded changed text to file Evidence instead of sending only paths, hashes, sizes, and change types. Enable only when the Judge needs the actual diff and the repository text is safe to disclose; requires `track_files=True`. |
 | `save_local` | `bool` | `False` | Writes a local JSON copy of each committed Submission under `.kuma/runs/<run_id>/`. Use it for debugging or audit records. It does not replace submission to an official Judge. |
@@ -72,14 +72,14 @@ run = create_run(
 | `max_retries` | `int` | `2` | Sets how many additional attempts KUMA may make after a transient HTTP failure; accepted values are 0–5. Retries reuse the same idempotency key and do not intentionally create another Case or Judge operation. |
 | `api_key` | `str \| None` | `None` | Supplies the official-service credential for this Run only. Use it to override the environment or saved credential. With `None`, KUMA checks `KUMA_API_KEY` and then the user credential file. Fully local Provider combinations need no key. |
 | `trace_evidence` | `TraceEvidenceCapture \| None` | `None` | Supplies a specific in-process OTel capture and its limits for this Run. Pass the object returned by `configure_trace_evidence()` when you need explicit control. With `None`, KUMA safely reuses a compatible global Provider when available; otherwise the Run continues without Trace Evidence and records a warning. |
-| `scan_strategy_group` | `bool` | `False` | Explicitly enables conservative local Strategy Group suggestion for an official Case. KUMA compares only closed declared and intrinsic Runtime Evidence capabilities; it never executes tools or guesses from names, descriptions, schemas, resources, access, or side effects. A unique reliable match is selected; ties and no-match results use the catalog's exact default. An explicit Requirement selection always has priority. |
+| `scan_strategy_group` | `bool` | `False` | Explicitly enables conservative local Strategy Group suggestion for an official Case. KUMA compares only closed declared and intrinsic Runtime Evidence capabilities; it never executes tools or guesses from names, descriptions, schemas, resources, access, or side effects. A unique reliable match is selected; ties and no-match results use the catalog's exact default. An explicit Agent Profile selection always has priority. |
 
 <!-- api-parameters:create_run:end -->
 
 **Returns:** a synchronous `Run` in `ready` state.
 
 **Preconditions:** `repo_path` identifies the repository the caller authorizes
-KUMA to inspect. Official Case generation needs a readable Requirement and a
+KUMA to inspect. Official Case generation needs a readable Agent Profile and a
 valid key. Unless `allow_local=True`, execution must be inside the supported
 container environment. Only one Run may own the local active-Run lock.
 
@@ -92,7 +92,7 @@ the lock before re-raising the error.
 service failures raise a concrete `KumaError` subclass with stable `code`,
 `retryable`, and optional `request_id`.
 
-**Side effects and security:** reads the Requirement and bounded repository
+**Side effects and security:** reads the Agent Profile and bounded repository
 metadata, may create `.kuma/`, and may call only the public Backend for official
 Providers. It never contacts MCP, a model, or a database directly. Custom
 Providers run in the caller's process with that process's permissions.
@@ -105,6 +105,31 @@ compatibility slot must be `None`; mappings containing `rubric`,
 `custom_rubric_not_supported` before upload. When the official Judge evaluates
 a custom Case, KUMA sends that closed public Case directly and does not create
 or transmit caller-authored criteria, a Rubric ID, or a private revision ID.
+
+## Agent Profile parsing
+
+```python
+from kuma.repository import AgentProfileSpec, parse_agent_profile
+
+profile = parse_agent_profile("agent-profile.md")
+```
+
+<!-- api-parameters:parse_agent_profile:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `path` | `str \| Path` | Required | Selects the UTF-8 Markdown Agent Profile to validate. Pass the exact file used for this Run; relative paths resolve from the process working directory, so applications should prefer an explicit repository-relative or absolute path. |
+
+<!-- api-parameters:parse_agent_profile:end -->
+
+`parse_agent_profile(path)` reads the explicitly selected UTF-8 Markdown file,
+accepts an optional leading BOM, validates closed front matter and the three
+required behavior sections, and returns an immutable `AgentProfileSpec`. It may
+also read one explicitly linked relative input schema and one tool-capability
+file contained by the Profile directory. It performs no network request and does
+not upload the raw Profile. Missing files use `agent_profile_required`; malformed
+content uses `agent_profile_invalid`. The returned `strategy_group` is an exact
+coordinate declaration—not an inference from Profile prose.
 
 ## `Run`
 
@@ -219,7 +244,7 @@ removes validated temporary runtime files but does not submit or invoke Judge.
 | `history` | `tuple[HistoryItem, ...]` | Contains every successfully committed Input and its matching Submission in execution order. It does not include an in-progress step. |
 | `report` | `TestReport \| None` | Holds the final Judge result after state becomes `report_ready`; it stays `None` before Judgment or when `judge=False`. |
 | `runtime_warnings` | `tuple[str, ...]` | Lists stable warning codes for non-fatal Evidence gaps, such as unavailable automatic Trace capture. The Run can still complete. |
-| `tool_capabilities_path` | `Path \| None` | Holds the absolute local path of the capability document linked by the Requirement. The path is retained for caller inspection and is never uploaded. |
+| `tool_capabilities_path` | `Path \| None` | Holds the absolute local path of the capability document linked by the Agent Profile. The path is retained for caller inspection and is never uploaded. |
 | `tool_capabilities_provenance` | `str \| None` | Reports `user_declared`, `scanner_generated`, or `None` for the linked local capability document. It describes origin, not verified Agent behavior. |
 
 ## `KumaClient`
@@ -265,14 +290,14 @@ database directly.
 
 ## Strategy Group API
 
-Use the [Strategy Groups guide](strategy-groups.md) for the CLI and Requirement workflow.
+Use the [Strategy Groups guide](strategy-groups.md) for the CLI and Agent Profile workflow.
 
 | Public name | Accepted input / exposed fields | Result and failure behavior |
 | --- | --- | --- |
-| `StrategyGroupDeclaration` | Exact `id` and `version`; `to_dict()` adds `kuma.strategy_group_selection.v1`. | Immutable Requirement-ready coordinate. |
+| `StrategyGroupDeclaration` | Exact `id` and `version`; `to_dict()` adds `kuma.strategy_group_selection.v1`. | Immutable Agent Profile-ready coordinate. |
 | `StrategyGroup` | `id`, `version`, `display_name`, `description`, `required_capabilities`, `available`, and group `limits`. | Immutable validated catalog entry; `coordinate` returns `(id, version)` and `to_dict()` returns detached JSON. |
 | `StrategyGroupCatalog` | `catalog_release`, exact `default`, and ordered `groups`. | `group(declaration)` returns the exact entry or `None`; `to_dict()` returns canonical catalog JSON. |
-| `ResolvedStrategyGroup` | Selected `group`, `selection_source`, and `catalog_release`. | `to_declaration()` returns the Requirement object; `to_wire()` returns the closed resolved public selection. |
+| `ResolvedStrategyGroup` | Selected `group`, `selection_source`, and `catalog_release`. | `to_declaration()` returns the Agent Profile object; `to_wire()` returns the closed resolved public selection. |
 | `validate_strategy_group_declaration(value)` | Plain mapping with exactly `schema_version`, `id`, and `version`. | Returns `StrategyGroupDeclaration`; unknown fields, versions, or invalid text raise `ValidationError(code="strategy_group_invalid")`. |
 | `validate_strategy_group_catalog(value)` | Complete closed catalog mapping. | Returns `StrategyGroupCatalog`; malformed fields, ordering, limits, coordinates, or default fail closed. |
 | `validate_strategy_group_wire_selection(value)` | Complete resolved mapping with schema version, group ID/version, source, and catalog release. | Returns a detached public mapping; invalid or extra fields fail closed. Intended for advanced Provider boundaries. |
@@ -281,7 +306,7 @@ The schema constants `STRATEGY_GROUP_SELECTION_SCHEMA_VERSION` and `STRATEGY_GRO
 
 ## Agent capability API
 
-Use the [Agent tool capabilities guide](agent-tool-capabilities.md) for the closed JSON schema, CLI workflow, Requirement path rules, and privacy boundary.
+Use the [Agent tool capabilities guide](agent-tool-capabilities.md) for the closed JSON schema, CLI workflow, Agent Profile path rules, and privacy boundary.
 
 | Public name | Input | Return value and side effects |
 | --- | --- | --- |

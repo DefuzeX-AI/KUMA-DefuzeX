@@ -35,7 +35,7 @@ flowchart TD
     Init["kuma.__init__<br/>stable exports"]
     API["api.py<br/>configure / create_run"]
     Config["config.py<br/>credentials and CreateRunConfig"]
-    Req["repository/requirements.py<br/>local requirement/schema validation"]
+    Profile["repository/agent_profiles.py<br/>local Agent Profile/schema validation"]
     Repo["repository/metadata.py + privacy.py<br/>minimal metadata and scanning"]
     ProviderPort["providers/base.py<br/>CaseProvider / JudgeProvider"]
     Official["providers/official_case.py<br/>providers/official_judge.py"]
@@ -53,7 +53,7 @@ flowchart TD
     Init --> API
     Init --> Contracts
     API --> Config
-    API --> Req
+    API --> Profile
     API --> Repo
     API --> ProviderPort
     API --> Official
@@ -92,13 +92,13 @@ flowchart TD
 
 ### Provider
 
-`CaseProvider.generate_case(CaseGenerationContext)` 接收本地 requirement、公开 Repo Meta、input 类型/schema、strategy 和数量上限。输出只能是文档列出的 `Case`、带必需 `inputs` 的 Case mapping、单个文本/`KumaInput` 或 `list`/`tuple` Inputs；任意 mapping fallback 和任意 iterable 不再进入 Input。`normalize_case()` 在交付第一个 Input 前递归拒绝私有评测字段，再构造完整 `Case`。
+`CaseProvider.generate_case(CaseGenerationContext)` 接收本地 Agent Profile、公开 Repo Meta、input 类型/schema、strategy 和数量上限。输出只能是文档列出的 `Case`、带必需 `inputs` 的 Case mapping、单个文本/`KumaInput` 或 `list`/`tuple` Inputs；任意 mapping fallback 和任意 iterable 不再进入 Input。`normalize_case()` 在交付第一个 Input 前递归拒绝私有评测字段，再构造完整 `Case`。
 
 `JudgeProvider.judge(JudgeContext)` 接收已归一化 Case、不可变 History、Run status 和 Evidence summary。输出必须经 `normalize_report()` 转成 `TestReport`。Provider 抛出的 `KumaError` 保持类型；其他异常按官方或自定义 Provider 分别包装成不泄漏内部异常文本的 `ProviderError`。自定义 Case 不允许携带调用方 Rubric；官方 Judge 直接接收 closed 公共 Case，Core 独占私有评价策略。
 
 官方 Provider 是这两个端口的 HTTP 实现：
 
-- `OfficialCaseProvider` 不把 strategy catalog 查询作为 CaseGen 前置条件。显式模式只指定 ID；`auto` 不在客户端选择或发送 version。`CaseGenerationContext.max_steps` 是公共 Provider 协议的结果上限；直接构造 Provider 时，构造器中的显式值必须与 context 一致，否则在网络请求前拒绝。用户显式设置非默认上限时，新请求先从 entitlements 读取服务端上限；超限在 Case POST 前以带安全最大值的 `case_step_limit_exceeded` 拒绝。已有 pending operation 跳过该预检并恢复原 operation，避免配置漂移破坏幂等。两种模式都只上传最小 Repo Meta、纯 frontmatter `agent_description`，以及从 requirement 三个必填章节提取并受 UTF-8 字节边界和敏感扫描保护的 `behavior_spec`；不会上传原始 requirement、schema、路径或仓库正文。响应记录 Backend/Core 的实际 strategy/version，并校验 batch/case 一致、fingerprint、signature 和私有字段缺失。`KumaClient.strategies()` 仅供用户显式查询。
+- `OfficialCaseProvider` 不把 strategy catalog 查询作为 CaseGen 前置条件。显式模式只指定 ID；`auto` 不在客户端选择或发送 version。`CaseGenerationContext.max_steps` 是公共 Provider 协议的结果上限；直接构造 Provider 时，构造器中的显式值必须与 context 一致，否则在网络请求前拒绝。用户显式设置非默认上限时，新请求先从 entitlements 读取服务端上限；超限在 Case POST 前以带安全最大值的 `case_step_limit_exceeded` 拒绝。已有 pending operation 跳过该预检并恢复原 operation，避免配置漂移破坏幂等。两种模式都只上传最小 Repo Meta、纯 frontmatter `agent_description`，以及从 Agent Profile 三个必填章节提取并受 UTF-8 字节边界和敏感扫描保护的 `behavior_spec`；不会上传原始 Agent Profile、schema、路径或仓库正文。响应记录 Backend/Core 的实际 strategy/version，并校验 batch/case 一致、fingerprint、signature 和私有字段缺失。`KumaClient.strategies()` 仅供用户显式查询。
 - `OfficialJudgeProvider` 先读取动态上传限制，再构建 multipart evidence。单 Run 的幂等键在重试和手动 `run.judge()` 重试间保持稳定。
 - Run Evidence 超过服务端单文件预算时，SDK 只在 HTTP transport projection 中按稳定顺序截断 raw log content，再移除尾部 OTel spans；本地不可变 `Submission` 不变。投影保留日志哈希/offset、Trace envelope 和所有 Input/Submission，并通过 `transport_projection`、`complete/truncated`、`dropped_count`、`missing` 与 capture reasons 明确暴露缺口。若仅靠这两类冗余内容仍无法满足预算，上传失败而不会删除 output、file evidence 或其他结构。
 - `OfficialJudgeProvider.judge_batch()` 是同步 Provider 级 API；它验证 Backend 的动态 batch 上限，保持输入顺序，并把每项成功或安全错误归一化为 `JudgeBatchResult`。
@@ -118,7 +118,7 @@ flowchart TD
 
 ## `create_run()` 编排与调用流程
 
-`create_run()` 先完成纯配置校验，再适配 Case Provider 并验证、解析其 requirement。缺失或无效 requirement 会在 OTel 自动接入、凭据解析、entitlements 协商、仓库扫描和 Runtime 创建前失败；有效 requirement 才进入后续官方协商与 Case 生成。
+`create_run()` 先完成纯配置校验，再适配 Case Provider 并验证、解析其 Agent Profile。缺失或无效 Agent Profile 会在 OTel 自动接入、凭据解析、entitlements 协商、仓库扫描和 Runtime 创建前失败；有效 Agent Profile 才进入后续官方协商与 Case 生成。
 
 ```mermaid
 sequenceDiagram
@@ -129,9 +129,9 @@ sequenceDiagram
     participant J as Judge Provider
     participant B as Website Backend
 
-    U->>S: create_run(repo, requirement, providers, config)
-    S->>S: validate config and Provider requirement precondition
-    S->>S: parse requirement/schema, then resolve runtime and Repo Meta
+    U->>S: create_run(repo, agent_profile, providers, config)
+    S->>S: validate config and Provider Agent Profile precondition
+    S->>S: parse Agent Profile/schema, then resolve runtime and Repo Meta
     alt official Case
         S->>C: generate_case(context)
         opt explicit max_steps and no pending operation

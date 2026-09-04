@@ -20,6 +20,8 @@ KUMA 是公开 Python SDK，通过严格的 `Run` 协议和有界 Evidence 采�
 - 同步且不绑定框架的 Case 与 Judge 流程。
 - 支持官方或自定义 Provider，也可完全本地运行。
 - 有界采集文件、日志和可选 Trace Evidence。
+- Strategy Group 决定测试方法；Agent Profile 只提供被测 Agent、运行场景、
+  预期行为和禁止边界的上下文。
 
 ## 安装
 
@@ -43,7 +45,7 @@ kuma quickstart
 
 ## 详细文档
 
-[简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [策略组](docs/strategy-groups.zh-CN.md) · [中文 API 参考](docs/api-reference.zh-CN.md) · [English SDK guide](docs/sdk-guide.md) · [Python API reference](docs/api-reference.md) · [Runtime Evidence 合同](docs/runtime-evidence.md)
+[简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [策略组](docs/strategy-groups.zh-CN.md) · [Agent 工具能力](docs/agent-tool-capabilities.zh-CN.md) · [中文 API 参考](docs/api-reference.zh-CN.md) · [Agent Profile 迁移说明](docs/migration-agent-profile.md) · [English SDK guide](docs/sdk-guide.md) · [Python API reference](docs/api-reference.md) · [Runtime Evidence 合同](docs/runtime-evidence.md)
 
 ## 项目链接
 

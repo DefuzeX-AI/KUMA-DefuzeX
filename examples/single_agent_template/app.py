@@ -196,16 +196,16 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     use_official = _environment_flag("KUMA_USE_OFFICIAL", default=False)
-    requirement = Path(
+    agent_profile = Path(
         os.environ.get(
-            "KUMA_REQUIREMENT_PATH",
-            Path(__file__).with_name("requirement.md"),
+            "KUMA_AGENT_PROFILE_PATH",
+            Path(__file__).with_name("agent-profile.md"),
         )
     )
     with _repository(use_official) as repo:
         run = create_run(
             repo_path=repo,
-            requirement_path=requirement,
+            agent_profile_path=agent_profile,
             case_provider=None if use_official else _local_case,
             max_steps=None if use_official else 1,
             judge=use_official,
