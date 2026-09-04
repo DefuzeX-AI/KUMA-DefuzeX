@@ -230,6 +230,11 @@ Install OTel support only when trace capture is needed; the core package does no
 python -m pip install "kuma-defuzex[otel]"
 ```
 
+The declared `opentelemetry-sdk>=1.30,<2` range is supported across the Logs
+exporter rename: KUMA uses the matching old API pair on 1.30–1.38 and the new
+pair from 1.39 onward. If an installed release exposes neither complete pair,
+the import error reports the installed version and the supported range.
+
 `create_run()` now follows this precedence:
 
 | Environment | Run behavior | Trace behavior | Warning |

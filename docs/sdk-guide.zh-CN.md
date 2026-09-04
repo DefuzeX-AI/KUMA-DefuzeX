@@ -224,6 +224,10 @@ OpenTelemetry（OTel）是 Agent 框架和 instrumentation 用来产生 span 的
 python -m pip install "kuma-defuzex[otel]"
 ```
 
+声明的 `opentelemetry-sdk>=1.30,<2` 范围完整支持 Logs exporter 改名：
+KUMA 在 1.30–1.38 使用配套的旧 API 名称，从 1.39 起使用配套的新名称，
+不会混用两代符号。若安装版本不提供任一完整组合，导入错误会说明当前版本和支持范围。
+
 `create_run()` 现在按以下优先级工作：
 
 | 当前环境 | Run 行为 | Trace 行为 | 提示 |

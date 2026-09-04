@@ -7,28 +7,83 @@ import weakref
 from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
+from importlib import metadata
 from typing import Any
 
 from .errors import ConfigurationError
 from .evidence.trace import TraceEvidenceCapture, TraceEvidenceLimits
 
+
+def _resolve_log_export_api(
+    export_module: Any,
+) -> tuple[type[Any], type[Any], type[Any]]:
+    """Resolve the OTel Logs exporter rename across supported SDK releases.
+
+    OpenTelemetry Logs remains a development signal and renamed ``LogExporter``
+    and ``LogExportResult`` in 1.39 while retaining the same processor extension
+    point. KUMA supports the declared 1.30--1.x range by preferring the new names
+    and falling back to the old pair as one indivisible API generation.
+
+    Args:
+        export_module: Imported ``opentelemetry.sdk._logs.export`` module.
+
+    Returns:
+        Exporter base, result enum, and simple processor classes from one
+        supported OTel Logs API generation.
+
+    Raises:
+        ImportError: If neither complete API generation is available or the
+            processor extension point is missing.
+
+    Postconditions:
+        New and old exporter/result names are never mixed, so KUMA returns the
+        result enum expected by the installed processor implementation.
+    """
+    processor = getattr(export_module, "SimpleLogRecordProcessor", None)
+    generations = (
+        ("LogRecordExporter", "LogRecordExportResult"),
+        ("LogExporter", "LogExportResult"),
+    )
+    for exporter_name, result_name in generations:
+        exporter = getattr(export_module, exporter_name, None)
+        result = getattr(export_module, result_name, None)
+        if isinstance(exporter, type) and isinstance(result, type):
+            if not isinstance(processor, type):
+                break
+            return exporter, result, processor
+    raise ImportError("unsupported OpenTelemetry Logs exporter API")
+
+
+def _otel_import_error_message() -> str:
+    """Return an actionable optional-dependency error without internal details."""
+    try:
+        installed = metadata.version("opentelemetry-sdk")
+    except metadata.PackageNotFoundError:
+        return 'OpenTelemetry Trace Evidence requires: pip install "kuma-defuzex[otel]"'
+    return (
+        "OpenTelemetry Trace Evidence is incompatible with installed "
+        f"opentelemetry-sdk {installed}; install a supported >=1.30,<2 release "
+        'with: pip install --upgrade "kuma-defuzex[otel]"'
+    )
+
+
 try:
     from opentelemetry import trace
     from opentelemetry._logs import get_logger_provider
-    from opentelemetry.sdk._logs.export import (
-        LogRecordExporter,
-        LogRecordExportResult,
-        SimpleLogRecordProcessor,
-    )
+    from opentelemetry.sdk._logs import export as _otel_log_export
     from opentelemetry.sdk.trace import SpanProcessor
     from opentelemetry.sdk.trace.export import (
         SpanExporter,
         SpanExportResult,
     )
+
+    (
+        LogRecordExporter,
+        LogRecordExportResult,
+        SimpleLogRecordProcessor,
+    ) = _resolve_log_export_api(_otel_log_export)
 except ImportError as exc:  # pragma: no cover - exercised without the optional extra
-    raise ImportError(
-        'OpenTelemetry Trace Evidence requires: pip install "kuma-defuzex[otel]"'
-    ) from exc
+    raise ImportError(_otel_import_error_message()) from exc
 
 
 _ATTACH_LOCK = threading.RLock()
