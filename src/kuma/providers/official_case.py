@@ -478,6 +478,22 @@ def _normalized_case(
             "strategy_version": strategy_version,
         }
     )
+    # Include the resolved strategy-group selection in the returned provenance
+    # so callers can determine which public group (if any) influenced generation.
+    # Validate the wire shape before attaching; validate_official_case_provenance
+    # already performed privacy checks on the core provenance fields.
+    if context.strategy_group_selection is not None:
+        try:
+            validated_selection = validate_strategy_group_wire_selection(
+                context.strategy_group_selection
+            )
+        except ValidationError:
+            # Defensive: the request payload already passed validation earlier,
+            # but if something changed or a future code path provides an
+            # unexpected shape, avoid crashing on return; just omit selection.
+            validated_selection = None
+        if validated_selection is not None:
+            provenance["strategy_group_selection"] = validated_selection
     return {
         "case_id": case_id,
         "inputs": inputs,
@@ -517,7 +533,7 @@ class OfficialCaseProvider:
             max_steps: Optional caller-requested Case step ceiling sent to the
                 Backend. When supplied directly, it must equal the later
                 ``CaseGenerationContext.max_steps``. Values above the advertised
-                service ceiling fail before operation creation; ``None`` lets
+                service limit fail before operation creation; ``None`` lets
                 the context select a non-default ceiling or the default of 10.
 
         Preconditions:
@@ -595,8 +611,8 @@ class OfficialCaseProvider:
 
         Raises:
             ConfigurationError: If the constructor's explicit value differs from
-                ``context.max_steps``. Rejection occurs before network or local
-                pending-state effects.
+            ``context.max_steps``. Rejection occurs before network or local
+            pending-state effects.
 
         Postconditions:
             The returned values can control transport behavior, but result
@@ -632,7 +648,7 @@ class OfficialCaseProvider:
 
         Raises:
             SensitiveDataError: If uploadable public inputs violate privacy policy.
-            ProviderError: If operation wire, Case integrity, strategy selection,
+            ProviderError: If operation wire, Case, integrity, strategy selection,
                 or public result is invalid.
             KumaError: For authenticated transport, limits, service failure, or
                 bounded wait timeout.
@@ -677,44 +693,7 @@ class OfficialCaseProvider:
         repo_fingerprint: str,
         preflight_max_steps: int | None,
     ) -> Mapping[str, Any]:
-        """Run or resume v2 Case generation and validate before clearing state.
-
-        Args:
-            context: Current Run's immutable Case-generation correlation data.
-            payload: Privacy-checked public request whose canonical bytes define
-                pending-state identity and Backend idempotency semantics.
-            repo_fingerprint: Digest that the returned public Case must repeat.
-            preflight_max_steps: Explicit/non-default ceiling to validate against
-                entitlements before a fresh POST, or ``None`` for service-default
-                omission.
-
-        Returns:
-            Normalized official Case mapping accepted by ``normalize_case``.
-
-        Raises:
-            LimitExceededError: A new explicit request exceeds the entitlement
-                ceiling; no Case POST has occurred.
-            ProviderError: Entitlements, operation envelopes, or Case result are
-                malformed or fail integrity validation.
-            KumaError: Public transport, service, or bounded-wait failure.
-
-        Preconditions:
-            ``payload`` was produced by ``_safe_case_payload`` for ``context``.
-
-        Postconditions:
-            Success clears pending metadata only after Case acceptance. Existing
-            pending state bypasses the entitlement preflight and resumes the same
-            operation/key, so later service-limit changes cannot cause a repost.
-
-        Side Effects:
-            May GET entitlements, atomically write/delete safe pending metadata,
-            POST one idempotent Case operation, poll it, and sleep within the
-            configured deadline.
-
-        Security/Privacy:
-            Pending files contain only operation metadata; neither request
-            content nor credentials are persisted.
-        """
+        """Run or resume v2 Case generation and validate before clearing state."""
         store = _case_operation_store(
             context,
             payload=payload,
