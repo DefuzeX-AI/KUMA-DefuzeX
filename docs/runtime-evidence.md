@@ -45,7 +45,7 @@ metadata. The outer Judge request owns `case_id` correlation.
 
 `components` contains 1–100 items. `component_id` and non-negative `sequence`
 are each unique, and sequence is strictly ascending. Serialization uses stable,
-compact JSON. One encoded EvidenceItem is at most 120,000 characters.
+compact JSON. One encoded EvidenceItem is at most 5 MiB of UTF-8 JSON.
 
 ## Closed component union
 
@@ -113,10 +113,11 @@ trace span, prompt, completion, diff, or repository file. Failed, timed-out,
 aborted, refused, and blocked claims never include it. Explicit `submit(output)`
 still takes precedence over supported semantic OTel output extraction.
 
-The output's canonical JSON is limited to 32,768 UTF-8 bytes. JSON is never
+The output's canonical JSON is limited to 4 MiB (4,194,304 UTF-8 bytes). JSON is never
 truncated because doing so could change its meaning or schema. Exceeding that
-limit, the complete 120,000-character envelope limit, or dynamic Judge file and
-total limits raises a stable `KumaError` before multipart POST. `text_sha256`
+limit, the complete 5 MiB Runtime Evidence limit, the 8 MiB SDK multipart limit,
+or a stricter dynamic Judge limit raises a stable `KumaError` before multipart
+POST. `text_sha256`
 keeps the v1 algorithm: strings hash raw UTF-8 with `surrogatepass`; other values
 hash key-sorted compact JSON with ASCII escapes and `allow_nan=false`.
 

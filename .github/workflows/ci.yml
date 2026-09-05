@@ -27,6 +27,7 @@ jobs:
       - run: python -m ruff format --check --exclude "*.ipynb" .
       - run: python tools/verify_public_api_docs.py
       - run: python tools/verify_agent_profile_migration.py
+      - run: python tools/verify_evidence_capacity.py
       - run: python -m compileall -q src examples tools
 
   test:
@@ -47,6 +48,7 @@ jobs:
       - run: python -c "import importlib.metadata, kuma; assert kuma.__version__ == importlib.metadata.version('kuma-defuzex')"
       - run: python -m kuma --help
       - run: python examples/minimal_local.py
+      - run: python tools/verify_evidence_capacity.py
 
   windows:
     name: Windows
@@ -62,6 +64,7 @@ jobs:
       - run: python -c "import importlib.metadata, kuma; assert kuma.__version__ == importlib.metadata.version('kuma-defuzex')"
       - run: python -m kuma --help
       - run: python examples/minimal_local.py
+      - run: python tools/verify_evidence_capacity.py
 
   macos:
     name: macOS
@@ -77,6 +80,7 @@ jobs:
       - run: python -c "import importlib.metadata, kuma; assert kuma.__version__ == importlib.metadata.version('kuma-defuzex')"
       - run: python -m kuma --help
       - run: python examples/minimal_local.py
+      - run: python tools/verify_evidence_capacity.py
 
   otel-compatibility:
     name: OTel ${{ matrix.otel-version }}

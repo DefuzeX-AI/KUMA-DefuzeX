@@ -15,8 +15,8 @@ RUNTIME_EVIDENCE_SCHEMA_V2 = "defuzex.runtime_evidence.v2"
 # Preserve the original import as the v1 name used by existing integrations.
 RUNTIME_EVIDENCE_SCHEMA = RUNTIME_EVIDENCE_SCHEMA_V1
 RUNTIME_EVIDENCE_MEDIA_TYPE = "application/vnd.defuzex.runtime-evidence+json"
-RUNTIME_EVIDENCE_MAX_CHARS = 120_000
-RUNTIME_AGENT_OUTPUT_MAX_BYTES = 32_768
+RUNTIME_EVIDENCE_MAX_BYTES = 5 * 1024 * 1024
+RUNTIME_AGENT_OUTPUT_MAX_BYTES = 4 * 1024 * 1024
 CASEGEN_FRAMEWORK_SCHEMA = "defuzex.casegen.ita.v1"
 CASEGEN_EVIDENCE_CAPABILITY_ORDER = (
     "file_change",
@@ -438,15 +438,15 @@ def validate_runtime_evidence(
         schema_version=schema_version,
     )
     _validate_components(value["components"], schema_version=schema_version)
-    if len(runtime_evidence_json(value)) > RUNTIME_EVIDENCE_MAX_CHARS:
-        raise ValueError("runtime evidence exceeds the character limit")
+    if len(runtime_evidence_json(value).encode("utf-8")) > RUNTIME_EVIDENCE_MAX_BYTES:
+        raise ValueError("runtime evidence exceeds the byte limit")
 
 
 __all__ = [
     "CASEGEN_EVIDENCE_CAPABILITY_ORDER",
     "CASEGEN_FRAMEWORK_SCHEMA",
     "RUNTIME_AGENT_OUTPUT_MAX_BYTES",
-    "RUNTIME_EVIDENCE_MAX_CHARS",
+    "RUNTIME_EVIDENCE_MAX_BYTES",
     "RUNTIME_EVIDENCE_MEDIA_TYPE",
     "RUNTIME_EVIDENCE_SCHEMA",
     "RUNTIME_EVIDENCE_SCHEMA_V1",

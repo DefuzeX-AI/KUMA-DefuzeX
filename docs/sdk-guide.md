@@ -1,5 +1,14 @@
 # KUMA Python SDK guide
 
+Evidence capacity: the default Trace budget is 8 MiB across one Run; span,
+attribute and event limits and visible loss counters remain active. Canonical
+Agent-output JSON allows 4 MiB, one Runtime Evidence envelope allows 5 MiB, and
+the complete multipart body (including metadata/framing) allows 8 MiB. Lower
+Backend limits still apply. Output is never truncated. JSON quotes and escapes
+count: an ASCII string may contain at most 4,194,302 characters before its two
+JSON quotes; Unicode escapes can use more bytes. Run the offline capacity check
+with `python tools/verify_evidence_capacity.py` from a source checkout.
+
 [English](sdk-guide.md) | [简体中文](sdk-guide.zh-CN.md)
 
 This is the canonical user guide for KUMA configuration and integration. The package, CLI, and environment variables use `kuma` / `KUMA_*`; versioned `defuzex.*` wire schemas remain unchanged for server compatibility.
@@ -208,7 +217,7 @@ Each `get_input()` to `submit()` interval is one Evidence transaction. Evidence 
 - `save_local=True` writes structured records under `.kuma/runs/<run_id>/submissions/`; local persistence does not replace official submission.
 - `CaptureStatus`, `missing`, `dropped_count`, and `runtime_warnings` expose partial or degraded capture.
 
-Framework-neutral runtime metadata follows the [Runtime Evidence contract](runtime-evidence.md). v1 remains hash-only; only an explicitly negotiated v2 official service receives a bounded, scanned completed Agent output. That page is the authoritative schema and privacy reference.
+Framework-neutral runtime metadata follows the [Runtime Evidence contract](runtime-evidence.md). v1 remains hash-only; only an explicitly negotiated output-capable official service receives a scanned completed Agent output. Canonical Agent output is capped at 4 MiB, one Runtime Evidence item at 5 MiB, and the complete official multipart body at 8 MiB. Nothing is truncated. That page is the authoritative schema and privacy reference.
 
 Before official upload, KUMA scans output, errors, paths, diffs, explicit logs, and custom Cases for sensitive material. The API key is used for authorization and is not added to Evidence. `allow_sensitive=True` is an explicit ordinary-Evidence override, not a substitute for isolation or secret hygiene.
 

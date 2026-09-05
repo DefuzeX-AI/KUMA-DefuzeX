@@ -16,7 +16,7 @@ from ..repository.privacy import scan_sensitive_path
 from .otel_log_mapping import OTEL_LOG_MEDIA_TYPE
 from .runtime_contract import (
     RUNTIME_AGENT_OUTPUT_MAX_BYTES,
-    RUNTIME_EVIDENCE_MAX_CHARS,
+    RUNTIME_EVIDENCE_MAX_BYTES,
     RUNTIME_EVIDENCE_SCHEMA,
     RUNTIME_EVIDENCE_SCHEMA_V1,
     RUNTIME_EVIDENCE_SCHEMA_V2,
@@ -37,13 +37,14 @@ class RuntimeEvidenceLimits:
             Core v1 contract permits at most 100.
         max_text_length: Maximum characters accepted for a safe relative path or
             other bounded identifier before that observation is dropped.
-        max_content_chars: Maximum characters in the complete canonical JSON
-            content, including identifiers and component envelope overhead.
+        max_content_chars: Maximum UTF-8 bytes in the complete canonical JSON
+            content, including identifiers and component envelope overhead. The
+            historical attribute name remains because canonical JSON is ASCII.
     """
 
     max_components: int = 100
     max_text_length: int = 1024
-    max_content_chars: int = RUNTIME_EVIDENCE_MAX_CHARS
+    max_content_chars: int = RUNTIME_EVIDENCE_MAX_BYTES
 
     def __post_init__(self) -> None:
         """Enforce Core-compatible component, text, and envelope size limits."""
@@ -54,8 +55,8 @@ class RuntimeEvidenceLimits:
             raise ValueError("runtime evidence limits must be integers")
         if not 1 <= self.max_components <= 100 or self.max_text_length <= 0:
             raise ValueError("runtime evidence item limits are invalid")
-        if not 1024 <= self.max_content_chars <= RUNTIME_EVIDENCE_MAX_CHARS:
-            raise ValueError("runtime evidence character limit is invalid")
+        if not 1024 <= self.max_content_chars <= RUNTIME_EVIDENCE_MAX_BYTES:
+            raise ValueError("runtime evidence byte limit is invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,7 +221,7 @@ def _bounded_plain_agent_output(output: Any) -> tuple[Any, str]:
     """Detach one v2 output and return it with its frozen claim digest.
 
     Structural failures become value-free ``ValueError`` instances. The
-    32,768-byte limit is measured against canonical JSON and raises a public
+    4 MiB limit is measured against canonical JSON and raises a public
     ``LimitExceededError`` instead of truncating the Agent result.
     """
 
@@ -291,8 +292,8 @@ def project_runtime_evidence_v2(
         extension and caller-owned values are never mutated.
 
     Raises:
-        LimitExceededError: If canonical Agent output exceeds 32,768 UTF-8
-            bytes or adding it would exceed the 120,000-character envelope cap.
+        LimitExceededError: If canonical Agent output exceeds 4 MiB or adding it
+            would exceed the 5 MiB Runtime Evidence envelope cap.
         ValueError: If v1 association, claim cardinality/status/hash, output JSON,
             or the resulting v2 envelope is invalid.
 
@@ -316,11 +317,14 @@ def project_runtime_evidence_v2(
     projected = json.loads(runtime_evidence_json(value))
     _project_v2_claim(projected, status=status, output=output)
     projected["schema_version"] = RUNTIME_EVIDENCE_SCHEMA_V2
-    if len(runtime_evidence_json(projected)) > RUNTIME_EVIDENCE_MAX_CHARS:
+    if (
+        len(runtime_evidence_json(projected).encode("utf-8"))
+        > RUNTIME_EVIDENCE_MAX_BYTES
+    ):
         raise LimitExceededError(
             "Runtime Evidence exceeds the canonical envelope limit",
             code="runtime_evidence_too_large",
-            details={"max_characters": RUNTIME_EVIDENCE_MAX_CHARS},
+            details={"max_utf8_bytes": RUNTIME_EVIDENCE_MAX_BYTES},
         )
     validate_runtime_evidence(
         projected,
@@ -369,7 +373,7 @@ def _fit_components(
     identifiers: Mapping[str, str],
     limits: RuntimeEvidenceLimits,
 ) -> tuple[dict[str, Any], int, bool]:
-    """Retain ordered facts and the final claim within component and character caps."""
+    """Retain ordered facts and the final claim within component and byte caps."""
     dropped = max(0, len(components) - limits.max_components)
     retained = components[: limits.max_components]
     if dropped and limits.max_components > 1:
@@ -378,9 +382,11 @@ def _fit_components(
         retained = [components[-1]]
     envelope = _envelope(**identifiers, components=retained)
     char_limited = False
-    while len(runtime_evidence_json(envelope)) > limits.max_content_chars:
+    while (
+        len(runtime_evidence_json(envelope).encode("utf-8")) > limits.max_content_chars
+    ):
         if len(retained) <= 1:
-            raise ValueError("runtime evidence metadata exceeds the character limit")
+            raise ValueError("runtime evidence metadata exceeds the byte limit")
         retained.pop(-2)
         dropped += 1
         char_limited = True

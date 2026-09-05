@@ -1,5 +1,12 @@
 # KUMA Python SDK 指南
 
+Evidence 容量：默认 Trace 总预算为每 Run 8 MiB；span、attribute、event 上限及
+透明丢弃计数继续生效。Agent 输出 canonical JSON 上限 4 MiB，单份 Runtime
+Evidence 上限 5 MiB，含元数据和分隔符的完整 multipart 上限 8 MiB。
+Backend 更小的限制仍有效，输出不会截断。JSON 引号及转义也计入：ASCII 字符串
+加两个引号前最多 4,194,302 字符，Unicode 转义可能占更多字节。
+在源码目录运行 `python tools/verify_evidence_capacity.py` 可离线验证容量。
+
 [English](sdk-guide.md) | [简体中文](sdk-guide.zh-CN.md)
 
 本文是 KUMA 配置与接入的规范用户指南。Python 包、CLI 和环境变量使用 `kuma` / `KUMA_*`；版本化 `defuzex.*` wire schema 为兼容服务端保持不变。
@@ -202,7 +209,7 @@ print(report)
 - `save_local=True` 将结构化记录写入 `.kuma/runs/<run_id>/submissions/`；本地记录不能替代官方提交。
 - `CaptureStatus`、`missing`、`dropped_count` 和 `runtime_warnings` 用于呈现采集不完整或降级。
 
-框架无关的运行时元数据遵循 [Runtime Evidence 合同](runtime-evidence.md)。v1 仍仅含哈希；只有官方服务明确协商 v2 后，才会接收经过大小和敏感检查的 completed Agent 最终输出。该文档是 schema 与隐私规则的权威说明。
+框架无关的运行时元数据遵循 [Runtime Evidence 合同](runtime-evidence.md)。v1 仍仅含哈希；只有官方服务明确协商支持 Agent output 后，才会接收经过敏感检查的 completed Agent 最终输出。Agent output canonical JSON 上限为 4 MiB，单份 Runtime Evidence 为 5 MiB，整个官方 multipart 请求为 8 MiB；均不截断。该文档是 schema 与隐私规则的权威说明。
 
 上传到官方服务前，KUMA 会扫描 output、error、路径、diff、显式日志和自定义 Case 中的敏感内容。API Key 仅用于鉴权，不会加入 Evidence。`allow_sensitive=True` 只是普通 Evidence 的显式覆盖，不能替代隔离与 secret 管理。
 

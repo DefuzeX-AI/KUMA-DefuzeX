@@ -10,6 +10,7 @@ from typing import Any
 from ..errors import LimitExceededError, ProviderError
 from ..evidence.runtime import project_runtime_evidence_v2, runtime_submission_id
 from ..evidence.runtime_contract import (
+    RUNTIME_EVIDENCE_MAX_BYTES,
     RUNTIME_EVIDENCE_MEDIA_TYPE,
     RUNTIME_EVIDENCE_SCHEMA_V1,
     RUNTIME_EVIDENCE_SCHEMA_V2,
@@ -142,7 +143,7 @@ def _runtime_evidence_part(
             "Runtime Evidence is invalid", code="runtime_evidence_invalid"
         ) from exc
     encoded = runtime_evidence_json(value).encode()
-    if len(encoded) > max_file_bytes:
+    if len(encoded) > min(max_file_bytes, RUNTIME_EVIDENCE_MAX_BYTES):
         raise LimitExceededError(
             "Runtime Evidence exceeds the Judge upload limit",
             code="log_size_exceeded",

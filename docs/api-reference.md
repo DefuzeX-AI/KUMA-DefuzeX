@@ -383,11 +383,11 @@ excluded.
 
 | Argument | Type | Required/default | What happens when the limit is reached |
 | --- | --- | --- | --- |
-| `max_spans` | positive `int` | `200` | After this many ended spans have been retained for a Run, additional spans are dropped and the Evidence reports the drop instead of growing memory without bound. |
+| `max_spans` | positive `int` | `200` | Retains at most this many ended spans per step using deterministic sampling; dropped spans are counted. This per-step cap is independent of the Run-wide byte budget. |
 | `max_attributes` | positive `int` | `32` | Keeps at most this many safe, allowlisted attributes on each span; additional attributes are dropped and counted. Sensitive attributes remain rejected regardless of this number. |
 | `max_events_per_span` | positive `int` | `20` | Keeps at most this many safe OTel events on each span; later events are dropped and reported. |
 | `max_text_length` | positive `int` | `256` characters | Truncates each retained allowlisted text value to this many Unicode characters and records that truncation occurred. |
-| `max_total_bytes` | positive `int` | `512000` bytes | Caps the compact JSON size of all committed Trace envelopes in one Run. KUMA drops or truncates Trace data to stay within this budget; the value must still fit the smallest valid envelope. |
+| `max_total_bytes` | positive `int` | `8388608` bytes (8 MiB) | Caps the compact JSON size of all committed Trace envelopes in one Run. KUMA deterministically drops excess Trace data and reports the loss; the value must still fit the smallest valid envelope. |
 | `max_log_records` | positive `int` | `200` | Keeps at most this many normalized OTel log records per step; excess records are dropped and reported. |
 | `max_log_bytes` | positive `int` | `128000` bytes | Caps structured OTel log artifacts committed across one Run; raw log bodies are not retained. |
 

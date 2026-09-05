@@ -120,7 +120,7 @@ class TraceEvidenceLimits:
     max_attributes: int = 32
     max_events_per_span: int = 20
     max_text_length: int = 256
-    max_total_bytes: int = 512_000
+    max_total_bytes: int = 8 * 1024 * 1024
     max_log_records: int = 200
     max_log_bytes: int = 128_000
 

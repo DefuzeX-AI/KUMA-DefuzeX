@@ -256,7 +256,7 @@ Evidence 的完整性不由单个布尔值掩盖。`CaptureStatus` 分组件记�
 typed component union，只传关联 ID、顺序、路径/大小、结果枚举和 SHA-256。
 Official Judge 通过公开 Judge config 的 `evidence_types` 协商传输：明确广告 v2
 时，SDK 从已提交的 frozen output 生成不修改本地历史的 v2 transport projection，
-只给 completed response claim 增加经强制敏感扫描和 32,768-byte 上限约束的
+只给 completed response claim 增加经强制敏感扫描和 4 MiB canonical JSON 上限约束的
 `agent_output` JSON。仅广告 v1 时保持 hash-only v1；未广告 typed schema 的旧
 服务仍收到 `defuzex.run_evidence.v1`。SDK 不把日志、Trace、prompt、completion、
 diff 或 tool/model payload 混为 Agent output，也不从文本、OTel span name 或

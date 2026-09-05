@@ -307,11 +307,11 @@ Rubric、Prompt 或 Provider 响应。已知 operation 只通过 GET 继续轮�
 
 | 参数 | 类型 | 必填/默认值 | 达到上限后会怎样 |
 | --- | --- | --- | --- |
-| `max_spans` | 正 `int` | `200` | 一个 Run 保留到该数量后，后续已结束 span 会被丢弃，并在 Evidence 中记录 dropped，而不是让内存无限增长。 |
+| `max_spans` | 正 `int` | `200` | 每步通过确定性采样最多保留这么多个已结束 span，被丢弃的 span 会计数。此每步上限与 Run 总字节预算独立。 |
 | `max_attributes` | 正 `int` | `32` | 每个 span 最多保留这么多个安全 allowlist 属性；其余属性被丢弃并计数。无论数字多大，敏感属性仍会被拒绝。 |
 | `max_events_per_span` | 正 `int` | `20` | 每个 span 最多保留这么多个安全 OTel event；更晚的 event 会被丢弃并记录。 |
 | `max_text_length` | 正 `int` | `256` 字符 | 每个允许保留的文本值超过该 Unicode 字符数后会被截断，并记录 truncated 状态。 |
-| `max_total_bytes` | 正 `int` | `512000` 字节 | 一个 Run 的全部已提交 Trace envelope 紧凑 JSON 合计不能超过该值；KUMA 会丢弃或截断 Trace 数据来守住预算，但该值本身必须能容纳最小合法 envelope。 |
+| `max_total_bytes` | 正 `int` | `8388608` 字节（8 MiB） | 一个 Run 的全部已提交 Trace envelope 紧凑 JSON 合计不能超过该值；KUMA 会确定性丢弃超额 Trace 并报告损失，但该值本身必须能容纳最小合法 envelope。 |
 | `max_log_records` | 正 `int` | `200` | 每个步骤最多保留的规范化 OTel 日志记录数；超出部分会丢弃并记录。 |
 | `max_log_bytes` | 正 `int` | `128000` 字节 | 一个 Run 中已提交的结构化 OTel 日志 artifact 总字节上限；不会保留原始日志正文。 |
 

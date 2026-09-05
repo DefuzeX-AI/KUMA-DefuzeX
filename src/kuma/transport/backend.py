@@ -44,6 +44,7 @@ from .http import (
 
 DEFAULT_BASE_URL = "https://defuzex.ai/api/agentdefuze"
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+_MAX_MULTIPART_BYTES = 8 * 1024 * 1024
 _CLIENT_REQUEST_ID_PATTERN = re.compile(r"kreq_[0-9a-f]{32}\Z")
 WireTransport = Callable[
     [str, str, Mapping[str, str], bytes | None, float],
@@ -763,13 +764,16 @@ def encode_multipart(
     Raises:
         ValidationError: A field name is empty or permits quote/CR/LF injection.
             ``UploadPart`` metadata errors are rejected at construction time.
+        LimitExceededError: The complete encoded body, including MIME framing,
+            exceeds the SDK's 8 MiB official multipart ceiling.
 
     Preconditions:
         Field values and part bytes have already passed size, schema, and
         sensitive-data policy for the target public endpoint.
 
     Postconditions:
-        Returns a complete closing-boundary-terminated body; inputs are unchanged.
+        Returns a complete closing-boundary-terminated body no larger than
+        8 MiB; inputs are unchanged.
 
     Security/Privacy:
         Random boundaries prevent caller-controlled delimiter collisions. This
@@ -804,7 +808,14 @@ def encode_multipart(
             )
         )
     chunks.append(f"--{boundary}--\r\n".encode("ascii"))
-    return f"multipart/form-data; boundary={boundary}", b"".join(chunks)
+    body = b"".join(chunks)
+    if len(body) > _MAX_MULTIPART_BYTES:
+        raise LimitExceededError(
+            "The multipart request exceeds the SDK upload limit.",
+            code="evidence_upload_too_large",
+            details={"max_utf8_bytes": _MAX_MULTIPART_BYTES},
+        )
+    return f"multipart/form-data; boundary={boundary}", body
 
 
 class BackendClient:
@@ -1116,6 +1127,7 @@ class BackendClient:
 
         Raises:
             ValidationError: Multipart metadata cannot be serialized safely.
+            LimitExceededError: The complete body exceeds the 8 MiB SDK ceiling.
             KumaError: Request validation, transport, status, or response fails.
 
         Preconditions:
