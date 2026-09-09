@@ -46,7 +46,7 @@ run = create_run(repo_path=".", agent_profile_path="agent-profile.md")
 | `agent_profile_path` | `str \| os.PathLike[str] \| None` | `None` | 指向描述被测 Agent、生产场景、预期行为和禁止边界的 UTF-8 文件。官方 Case 必须提供。选定的策略组仍决定测试能力、领域和方法，Profile 自然语言不能选组或覆盖该选择。Front matter 可包含 closed `strategy_group` 坐标和相对路径 `tool_capabilities` 文件，两者都会在 Provider I/O 前校验。只有自定义 Case Provider 明确不需要 Agent Profile 时才可省略。 |
 | `case_provider` | `CaseProvider \| callable \| None` | `None` | 决定由谁生成测试步骤。保留 `None` 会向 KUMA 官方服务申请 Case；传入 callable 表示由你的程序在本地提供 Case。 |
 | `judge_provider` | `JudgeProvider \| callable \| None` | `None` | 决定由谁评估全部步骤并生成最终报告。保留 `None` 使用官方 Judge；传入 callable 使用你自己的本地评估逻辑。`judge=False` 时不会使用它。 |
-| `strategy` | `str` | `"auto"` | 保留仅使用未版本化 strategy ID 的服务兼容性。当前策略组应在 Agent Profile front matter 中填写精确 `id` 与 `version`。结构化声明与非默认旧值同时出现时会直接失败，避免产生歧义。 |
+| `strategy` | `str` | `"auto"` | `auto` 保持默认/scanner 选择；`safety-baseline` 在七个均通过验证的基础安全组中等概率选一个，只生成一个 Case，Profile 显式组优先。Custom Provider 原样接收参数，其它 strategy ID 校验不变。详见[选择与恢复边界](strategy-groups.zh-CN.md#随机选择一个基础安全组)。 |
 | `max_steps` | `int \| None` | `None` | 限制本次 Run 最多包含多少个测试步骤。例如填 `3`，Case 可以有 1、2 或 3 个步骤，并不保证一定生成 3 个。`None` 采用官方服务上限；自定义 Case Provider 必须填写正整数。显式值超过服务端公开上限会在生成 Case 前报错，KUMA 不会截断已返回的 Case。 |
 | `judge` | `bool` | `True` | 控制最后一个 Input 提交后是否进行评估。保持 `True` 才会得到 `TestReport`；设为 `False` 只执行并记录 Case，`run.report` 会保持 `None`。 |
 | `on_failure` | `str` | `"continue"` | 决定某一步被提交为 `failed`、`timeout` 或 `aborted` 后怎么办。`"continue"` 会继续交付下一个 Input；`"stop"` 会立即结束整个 Run。 |
