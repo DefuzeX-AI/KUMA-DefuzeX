@@ -84,9 +84,11 @@ class CreateRunConfig:
     them, so later lifecycle code can rely on the invariants below.
 
     Attributes:
-        strategy: Public Case strategy identifier. ``"auto"`` lets the official
-            service choose; a non-empty explicit identifier requests that exact
-            strategy.
+        strategy: Defaults to ``"auto"`` with catalog-default/scanner selection.
+            For ``"safety-baseline"``, the SDK locally samples one of seven
+            validated Basic Safety groups for one official Case. Explicit Profile
+            groups win; custom providers receive this string unchanged. Other
+            explicit IDs retain existing provider validation.
         max_steps: Positive upper bound on Case steps, or ``None`` to use the
             selected provider/service default. It is not an exact requested
             count. Custom Case Providers require an explicit value.

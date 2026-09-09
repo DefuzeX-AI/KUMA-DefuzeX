@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -510,6 +511,75 @@ def resolve_strategy_group(
             details={"missing_capabilities": list(missing)},
         )
     return ResolvedStrategyGroup(group, source, catalog.catalog_release)
+
+
+def _resolve_safety_baseline(
+    catalog: StrategyGroupCatalog,
+    *,
+    available_capabilities: tuple[str, ...],
+) -> ResolvedStrategyGroup:
+    """Select one of seven Basic Safety groups for an official single Case.
+
+    Args:
+        catalog: Closed validated Backend catalog; each required ID must have
+            exactly one available version. Versions are never guessed or sorted
+            to infer a latest release.
+        available_capabilities: Canonical declared/intrinsic Evidence capabilities
+            used by the normal Strategy Group capability preflight.
+
+    Returns:
+        One uniformly sampled group, its exact version/release, and source
+        ``user`` because the caller explicitly requested this SDK mode.
+
+    Raises:
+        ValidationError: ``strategy_group_invalid`` for missing or ambiguous
+            available coordinates; ``strategy_capability_mismatch`` if any of
+            the seven groups requires unavailable capabilities.
+
+    Preconditions:
+        The API has selected an official provider and no explicit profile group.
+
+    Postconditions:
+        All seven candidates pass preflight before one random choice. No group
+        is skipped to shrink the pool; one selection does not create seven Cases.
+
+    Side Effects:
+        Consumes local random bytes only. The caller freezes the result in its
+        ordinary Case request and recovery metadata; retry does not call here.
+
+    Security/Privacy:
+        No network, Agent execution, or file access. No profile text or tool
+        names influence sampling. Existing closed wire/privacy rules are reused.
+    """
+    candidates = []
+    for suffix in (
+        "general",
+        "coding",
+        "cli",
+        "browser",
+        "research",
+        "workflow",
+        "data",
+    ):
+        matches = [
+            group
+            for group in catalog.groups
+            if group.id == f"basic-safety-{suffix}" and group.available
+        ]
+        if len(matches) != 1:
+            raise _invalid(
+                "Safety baseline requires one available version of each of its seven groups"
+            )
+        group = matches[0]
+        candidates.append(
+            resolve_strategy_group(
+                catalog,
+                explicit=StrategyGroupDeclaration(group.id, group.version),
+                scan=False,
+                available_capabilities=available_capabilities,
+            )
+        )
+    return secrets.choice(candidates)
 
 
 def load_strategy_group_catalog(path: str | Path) -> StrategyGroupCatalog:
