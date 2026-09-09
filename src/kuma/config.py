@@ -23,6 +23,28 @@ DEFAULT_CASE_MAX_STEPS = 10
 _MAX_API_KEY_BYTES = 512
 
 
+def _validate_strategy_scan(enabled: bool) -> None:
+    """Reject the disabled strategy matcher before any input or network I/O.
+
+    Args:
+        enabled: Matching opt-in from Run configuration or a local suggestion
+            entry point. Only ``False`` permits normal explicit/default routing.
+
+    Raises:
+        ConfigurationError: If matching is requested. The stable ``config_invalid``
+            error instructs callers to use the catalog default or an explicit group.
+
+    Side Effects:
+        None. This shared configuration guard does not disable privacy scanning
+        or capability validation, and does not inspect credentials or file paths.
+    """
+    if enabled:
+        raise ConfigurationError(
+            "Automatic Strategy Group matching is disabled. Use auto for the "
+            "catalog default or declare an explicit strategy_group."
+        )
+
+
 def validate_max_retries(value: int) -> int:
     """Validate the number of HTTP retries allowed after the first attempt.
 
@@ -110,8 +132,9 @@ class CreateRunConfig:
             accepted asynchronous Case or Judge operation.
         max_retries: Number of bounded transient HTTP retries after the first
             attempt, from ``0`` through :data:`MAX_RETRIES`.
-        scan_strategy_group: Explicit opt-in to conservative local Strategy
-            Group selection from declared and intrinsic Evidence capabilities.
+        scan_strategy_group: Disabled matching flag. Keep ``False`` (default);
+            ``True`` raises ``ConfigurationError(config_invalid)`` before I/O.
+            Privacy scanning and declared Evidence capability validation remain.
 
     Raises:
         ConfigurationError: During construction when any field violates its
@@ -184,6 +207,7 @@ class CreateRunConfig:
             raise ConfigurationError("timeout must be a positive finite number")
         validate_operation_wait_timeout(self.operation_wait_timeout)
         validate_max_retries(self.max_retries)
+        _validate_strategy_scan(self.scan_strategy_group)
 
 
 _CREATE_RUN_FIELDS = frozenset(CreateRunConfig.__dataclass_fields__)

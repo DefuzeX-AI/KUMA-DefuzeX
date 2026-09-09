@@ -517,10 +517,10 @@ def create_run(
             :func:`kuma.otel.configure_trace_evidence`. ``None`` attempts to
             reuse a compatible configured global OTel provider; unavailable OTel
             becomes a non-blocking ``runtime_warnings`` entry.
-        scan_strategy_group: Explicitly enable conservative local Strategy Group
-            suggestion. KUMA compares only canonical Evidence capabilities from
-            the reviewed tool declaration and Run configuration; it never runs
-            tools or guesses from names, schemas, resources, or descriptions.
+        scan_strategy_group: Disabled automatic matching flag; keep ``False``.
+            ``True`` raises ``ConfigurationError(config_invalid)`` before file
+            or network I/O, even with an explicit group or custom provider.
+            Privacy scanning and Evidence capability validation remain enabled.
 
     Returns:
         A synchronous :class:`Run` in ``ready`` state. Use ``get_input`` and

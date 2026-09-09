@@ -1,4 +1,4 @@
-"""Closed Strategy Group catalog, selection, and local matching contracts."""
+"""Closed Strategy Group catalog and explicit/default selection contracts."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from ..config import _validate_strategy_scan
 from ..errors import ValidationError
 from ..evidence.runtime_contract import CASEGEN_EVIDENCE_CAPABILITY_ORDER
 from .tool_capabilities import AgentCapabilities
@@ -179,7 +180,7 @@ class ResolvedStrategyGroup:
 
     Attributes:
         group: Exact validated selected catalog entry.
-        selection_source: ``user``, conservative ``scanner``, or ``general``.
+        selection_source: ``user``, historical ``scanner``, or ``general``.
         catalog_release: Release against which the selection was resolved.
     """
 
@@ -461,40 +462,33 @@ def resolve_strategy_group(
     scan: bool,
     available_capabilities: tuple[str, ...],
 ) -> ResolvedStrategyGroup:
-    """Resolve explicit, conservative scanner, or catalog-default selection.
+    """Resolve an explicit group or the exact catalog default, never a matcher.
 
-    Explicit user choice has priority. Scanner mode considers only available
-    non-default groups whose required capabilities are a subset of the derived
-    capability set, keeps those with maximum required-capability cardinality, and uses
-    one only when that maximum is unique. It never guesses from tool names,
-    schemas, descriptions, resources, access, or side effects.
+    Args:
+        catalog: Validated public catalog with an available default coordinate.
+        explicit: User-declared exact coordinate, or ``None`` for the default.
+        scan: Disabled option; ``True`` raises configuration error before selection.
+        available_capabilities: Declared/intrinsic Evidence capabilities checked
+            against the selected group, not used to choose a different group.
+
+    Returns:
+        Exact group/version/release with source ``user`` or ``general``.
+
+    Raises:
+        ConfigurationError: Automatic matching was requested (``config_invalid``).
+        ValidationError: The coordinate is unavailable or required Evidence is missing.
+
+    Side Effects:
+        None. Run preflight and local contract callers share this selection rule;
+        privacy scanning, capability validation, and network behavior are unchanged.
     """
+    _validate_strategy_scan(scan)
     available = set(available_capabilities)
     if explicit is not None:
         group = catalog.group(explicit)
         if group is None or not group.available:
             raise _invalid("The declared strategy group is unavailable")
         source: SelectionSource = "user"
-    elif scan:
-        candidates = [
-            group
-            for group in catalog.groups
-            if group.coordinate != (catalog.default.id, catalog.default.version)
-            and group.available
-            and set(group.required_capabilities).issubset(available)
-        ]
-        maximum = max(
-            (len(group.required_capabilities) for group in candidates), default=-1
-        )
-        best = [
-            group for group in candidates if len(group.required_capabilities) == maximum
-        ]
-        if len(best) == 1:
-            group = best[0]
-            source = "scanner"
-        else:
-            group = catalog.group(catalog.default)
-            source = "general"
     else:
         group = catalog.group(catalog.default)
         source = "general"

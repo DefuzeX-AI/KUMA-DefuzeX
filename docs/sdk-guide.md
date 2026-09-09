@@ -132,9 +132,9 @@ kuma strategies list
 kuma strategies list --output strategy-groups.json
 ```
 
-Add the selected group `id` and exact `version` through the closed `strategy_group` front-matter object. Omitting it uses the catalog's exact default; an invalid explicit selection or missing Evidence capability fails closed. `scan_strategy_group=True` explicitly enables conservative local suggestion and remains off by default. See [Strategy Groups](strategy-groups.md) for the Agent Profile schema, CLI options, typed Python API, default behavior, and privacy boundary.
+Add the selected group `id` and exact `version` through the closed `strategy_group` front-matter object. Omitting it uses the catalog's exact default; an invalid explicit selection or missing Evidence capability fails closed. Keep `scan_strategy_group=False`: `True` raises `ConfigurationError(config_invalid)` before file or network I/O. Automatic matching is disabled, not privacy scanning or capability validation. See [Strategy Groups](strategy-groups.md) for the Agent Profile schema, CLI options, typed Python API, default behavior, and privacy boundary.
 
-An optional `tool_capabilities` relative path can link a reviewed local capability document. Create or validate it with `kuma tools scan` / `kuma tools validate`, or use the equivalent Python helpers. The file is not uploaded; it is a user-controlled claim that may contribute only its closed Evidence capability set to local suggestion. See [Agent tool capabilities](agent-tool-capabilities.md) for its schema, bounds, CLI, Python API, and path rules.
+An optional `tool_capabilities` relative path can link a reviewed local capability document. Create or validate it with `kuma tools scan` / `kuma tools validate`, or use the equivalent Python helpers. The file is not uploaded; it is a user-controlled claim that contributes its closed Evidence capability set to selection preflight, not automatic matching. See [Agent tool capabilities](agent-tool-capabilities.md) for its schema, bounds, CLI, Python API, and path rules.
 
 ### Agent integration
 

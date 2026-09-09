@@ -61,32 +61,22 @@ strategy_group:
 
 省略 `strategy_group` 时，KUMA 使用目录中精确的 `default.id` 与 `default.version`。此选择来源的语义是“general”；`general` 不是固定的策略组 ID。
 
-## 可选的本地保守建议
+## 自动匹配已禁用
 
-建议功能默认关闭。官方 Run 必须显式开启：
+保持 `scan_strategy_group=False`（默认值）。传 `True` 会在文件读取或网络前
+抛出 `ConfigurationError(code="config_invalid")`，即使已显式选组或使用
+Custom Provider 也会拒绝。`strategy="auto"` 且 Profile 未显式选组时，KUMA
+始终使用目录精确默认坐标，不根据工具元数据或 Evidence 能力选择其他组。
 
-```python
-from kuma import create_run
+`kuma strategies suggest` 同样已禁用，返回非零退出码及安全说明；旧
+`--catalog`、`--capabilities`、`--output` 参数不会触发文件读写。
+需要非默认组时，用 `kuma strategies list` 查询目录后显式声明。
 
-run = create_run(
-    repo_path=".",
-    agent_profile_path="agent-profile.md",
-    scan_strategy_group=True,
-)
-```
-
-KUMA 只比较经审查的本地 Agent 能力文件声明的 closed Runtime Evidence 能力集合，以及本次 Run 已启用的内在 Evidence。它不会执行工具，也不会根据工具名称、描述、Schema、资源、访问方式或副作用猜测能力。只有存在唯一可靠的最佳匹配时才选择非默认组；同分或没有可靠匹配时使用目录默认组。
-
-如需在不创建 Run、也不联网的情况下审查相同的保守建议，可使用已保存的本地文件：
-
-```bash
-kuma strategies suggest \
-  --catalog strategy-groups.json \
-  --capabilities agent-capabilities.json \
-  --output strategy-group.json
-```
-
-`--catalog` 和 `--capabilities` 为必填；`--output` 可省略，省略后会在终端输出可直接用于 Agent Profile 的 `{schema_version, id, version}` 对象。选择前会校验本地目录与能力文档。能力文件格式见 [Agent 工具能力](agent-tool-capabilities.zh-CN.md)。
+隐私扫描与 [Agent 能力校验](agent-tool-capabilities.zh-CN.md)仍然保留。
+声明的 `evidence_types` 与 Run 内在能力仍用于检查选定组的
+`required_capabilities`，不会用来选组。底层
+`resolve_strategy_group(scan=True)` 也返回相同配置错误。历史
+`selection_source="scanner"` wire 仍可解析用于恢复，不为新请求执行匹配。
 
 ## Python API
 
@@ -108,6 +98,6 @@ for group in catalog.groups:
 
 ## 隐私与兼容性
 
-查询目录和解析官方策略组均需要鉴权。本地建议不会上传能力文件、工具名称、参数 Schema、资源范围、路径、Agent 配置或原始 Agent Profile。创建官方 Case 时只发送解析后的公开坐标、目录版本标识和低敏感度选择来源。
+查询目录和解析官方策略组均需要鉴权。KUMA 不会上传能力文件、工具名称、参数 Schema、资源范围、路径、Agent 配置或原始 Agent Profile。创建官方 Case 时只发送解析后的公开坐标、目录版本标识和低敏感度选择来源。
 
 如果旧版公共服务不支持带版本策略组，显式声明会直接失败，不会改变用户意图。省略选择时，可以使用 SDK 严格校验后支持的旧版兼容行为。

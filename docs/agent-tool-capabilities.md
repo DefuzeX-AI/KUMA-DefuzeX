@@ -4,7 +4,7 @@
 
 KUMA can normalize tool metadata explicitly exported by an Agent into a local, versioned, editable JSON document. The feature is optional: you may create the same document manually. In both modes, you own and review the final file referenced by the Agent Profile.
 
-The document remains local. KUMA does not upload tool names, argument schemas, resource scopes, local paths, or tool configuration. When local Strategy Group suggestion is enabled, only the canonical union of declared `evidence_types` participates in matching. See [Strategy Groups](strategy-groups.md).
+The document remains local. KUMA does not upload tool names, argument schemas, resource scopes, local paths, or tool configuration. The canonical union of declared `evidence_types` participates in the selected group's capability preflight, not automatic matching (which is disabled). Tool manifest scanning and privacy validation remain available. See [Strategy Groups](strategy-groups.md).
 
 ## Canonical document
 

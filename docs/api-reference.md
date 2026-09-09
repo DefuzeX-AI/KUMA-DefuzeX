@@ -72,7 +72,7 @@ run = create_run(
 | `max_retries` | `int` | `2` | Sets how many additional attempts KUMA may make after a transient HTTP failure; accepted values are 0–5. Retries reuse the same idempotency key and do not intentionally create another Case or Judge operation. |
 | `api_key` | `str \| None` | `None` | Supplies the official-service credential for this Run only. Use it to override the environment or saved credential. With `None`, KUMA checks `KUMA_API_KEY` and then the user credential file. Fully local Provider combinations need no key. |
 | `trace_evidence` | `TraceEvidenceCapture \| None` | `None` | Supplies a specific in-process OTel capture and its limits for this Run. Pass the object returned by `configure_trace_evidence()` when you need explicit control. With `None`, KUMA safely reuses a compatible global Provider when available; otherwise the Run continues without Trace Evidence and records a warning. |
-| `scan_strategy_group` | `bool` | `False` | Explicitly enables conservative local Strategy Group suggestion for an official Case. KUMA compares only closed declared and intrinsic Runtime Evidence capabilities; it never executes tools or guesses from names, descriptions, schemas, resources, access, or side effects. A unique reliable match is selected; ties and no-match results use the catalog's exact default. An explicit Agent Profile selection always has priority. |
+| `scan_strategy_group` | `bool` | `False` | Disabled automatic matching flag: keep `False`. `True` raises `ConfigurationError(config_invalid)` before file or network I/O, including with an explicit group or custom provider. Privacy scanning and Evidence capability validation remain enabled. |
 
 <!-- api-parameters:create_run:end -->
 

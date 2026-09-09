@@ -130,9 +130,9 @@ kuma strategies list
 kuma strategies list --output strategy-groups.json
 ```
 
-通过 closed `strategy_group` front matter 写入选定组的 `id` 和精确 `version`。省略时使用目录中的精确默认组；显式选择无效或缺少所需 Evidence 能力时会直接拒绝。`scan_strategy_group=True` 只是明确启用本地保守建议，默认保持关闭。Agent Profile schema、CLI 参数、类型化 Python API、默认行为和隐私边界详见[策略组](strategy-groups.zh-CN.md)。
+通过 closed `strategy_group` front matter 写入选定组的 `id` 和精确 `version`。省略时使用目录中的精确默认组；显式选择无效或缺少所需 Evidence 能力时会直接拒绝。请保持 `scan_strategy_group=False`：传 `True` 在文件读取或网络前抛 `ConfigurationError(config_invalid)`。禁用的是自动匹配，不是隐私扫描或能力校验。Agent Profile schema、CLI 参数、类型化 Python API、默认行为和隐私边界详见[策略组](strategy-groups.zh-CN.md)。
 
-可选的 `tool_capabilities` 相对路径可以关联经审查的本地能力文档。可用 `kuma tools scan` / `kuma tools validate` 创建或校验，也可使用等价 Python helper。该文件不会上传；它是用户可控声明，只有 closed Evidence 能力集合可以参与本地建议。Schema、边界、CLI、Python API 和路径规则详见 [Agent 工具能力](agent-tool-capabilities.zh-CN.md)。
+可选的 `tool_capabilities` 相对路径可以关联经审查的本地能力文档。可用 `kuma tools scan` / `kuma tools validate` 创建或校验，也可使用等价 Python helper。该文件不会上传；它是用户可控声明，只有 closed Evidence 能力集合用于选定组的能力预检，不用于自动匹配。Schema、边界、CLI、Python API 和路径规则详见 [Agent 工具能力](agent-tool-capabilities.zh-CN.md)。
 
 ### 接入 Agent
 

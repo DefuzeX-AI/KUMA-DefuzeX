@@ -60,7 +60,7 @@ run = create_run(repo_path=".", agent_profile_path="agent-profile.md")
 | `max_retries` | `int` | `2` | 设置一次瞬态 HTTP 失败后最多再尝试几次，允许 0–5。重试会复用同一个幂等键，不会故意创建第二个 Case/Judge operation。 |
 | `api_key` | `str \| None` | `None` | 为“这一个 Run”提供官方服务凭证，用于临时覆盖环境变量或已保存凭证。`None` 时依次读取 `KUMA_API_KEY` 和用户凭证文件；Case/Judge 都是本地 Provider 时不需要 Key。 |
 | `trace_evidence` | `TraceEvidenceCapture \| None` | `None` | 为本次 Run 指定一份 OTel Trace 采集器及其资源上限。需要显式控制时传入 `configure_trace_evidence()` 的返回值；`None` 时 KUMA 会尝试复用兼容的全局 Provider，没有则继续运行并记录非阻断 warning。 |
-| `scan_strategy_group` | `bool` | `False` | 明确启用官方 Case 的本地保守策略组建议。KUMA 只比较 closed 声明能力与本次 Run 的内在 Runtime Evidence 能力，不执行工具，也不根据名称、描述、Schema、资源、访问方式或副作用猜测。只有唯一可靠匹配时才选择非默认组；同分或无匹配时使用目录精确默认组。Agent Profile 中的显式选择始终优先。 |
+| `scan_strategy_group` | `bool` | `False` | 自动匹配已禁用：保持 `False`。传 `True` 在文件读取或网络前抛 `ConfigurationError(config_invalid)`，即使已显式选组或使用 Custom Provider 也会拒绝。隐私扫描与 Evidence 能力校验仍然保留。 |
 
 <!-- api-parameters:create_run:end -->
 
