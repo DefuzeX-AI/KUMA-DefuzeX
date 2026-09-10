@@ -100,14 +100,89 @@ def required_text(value: Any, label: str) -> str:
     return value
 
 
-def validate_official_case_provenance(value: Any) -> dict[str, str]:
-    """Validate SDK-owned metadata that distinguishes an official Case."""
+def validate_executed_strategy_group(value: Any) -> dict[str, str]:
+    """Project the closed public coordinate reported by the execution service.
+
+    Args:
+        value: Non-null mapping with exactly schema_version, strategy_group_id
+            (1-80 characters), strategy_group_version (1-32 characters), and
+            catalog_release (64 lowercase hexadecimal characters). IDs must
+            contain non-whitespace text; no source or private member is allowed.
+
+    Returns:
+        Detached four-field mapping; no request or current catalog is consulted.
+
+    Raises:
+        ProviderError: Safe invalid_response for malformed or extra fields.
+
+    Side Effects:
+        None. Official Case normalization and local provenance validation share
+        this boundary; it neither proves a request match nor performs I/O.
+    """
+    keys = {
+        "schema_version",
+        "strategy_group_id",
+        "strategy_group_version",
+        "catalog_release",
+    }
+    if not isinstance(value, Mapping) or set(value) != keys:
+        raise ProviderError(
+            "Executed Strategy Group is invalid", code="invalid_response"
+        )
+    if value["schema_version"] != "kuma.executed_strategy_group.v1":
+        raise ProviderError(
+            "Executed Strategy Group is invalid", code="invalid_response"
+        )
+    for name, maximum in (("strategy_group_id", 80), ("strategy_group_version", 32)):
+        text = value[name]
+        if (
+            not isinstance(text, str)
+            or not 1 <= len(text) <= maximum
+            or not text.strip()
+        ):
+            raise ProviderError(
+                "Executed Strategy Group is invalid", code="invalid_response"
+            )
+    release = value["catalog_release"]
+    if not isinstance(release, str) or re.fullmatch(r"[0-9a-f]{64}", release) is None:
+        raise ProviderError(
+            "Executed Strategy Group is invalid", code="invalid_response"
+        )
+    return {
+        name: value[name]
+        for name in (
+            "schema_version",
+            "strategy_group_id",
+            "strategy_group_version",
+            "catalog_release",
+        )
+    }
+
+
+def validate_official_case_provenance(value: Any) -> dict[str, Any]:
+    """Validate official integrity references and optional actual execution data.
+
+    Args:
+        value: SDK-owned official Case extension; absence of executed_strategy_group
+            means historical unconfirmed provenance, whereas null is invalid.
+
+    Returns:
+        Detached integrity references and, when supplied, the closed execution
+        coordinate. No requested selection is used to fill an omitted value.
+
+    Raises:
+        ProviderError: Safe invalid_response for invalid/private metadata.
+
+    Side Effects:
+        None. Run and Judge share this validation; Judge still projects only its
+        existing integrity references, without new request or signature fields.
+    """
 
     if not isinstance(value, Mapping) or contains_private_fields(value):
         raise ProviderError(
             "Official Case provenance is invalid", code="invalid_response"
         )
-    provenance = {
+    provenance: dict[str, Any] = {
         name: required_text(value.get(name), f"Official Case {name}")
         for name in _OFFICIAL_CASE_PROVENANCE_FIELDS
     }
@@ -120,6 +195,10 @@ def validate_official_case_provenance(value: Any) -> dict[str, str]:
     ):
         raise ProviderError(
             "Official Case provenance is invalid", code="invalid_response"
+        )
+    if "executed_strategy_group" in value:
+        provenance["executed_strategy_group"] = validate_executed_strategy_group(
+            value["executed_strategy_group"]
         )
     return provenance
 

@@ -1,4 +1,29 @@
 # KUMA 策略组
+## 查看实际执行组
+
+`create_run(...)` 成功后可以直接查看 `run.executed_strategy_group`：
+
+```python
+actual = run.executed_strategy_group
+if actual is None:
+    print("执行组未确认：历史服务/结果缺少信息，或为自定义 Run")
+else:
+    print(actual["strategy_group_id"], actual["strategy_group_version"])
+    print(actual["catalog_release"])
+```
+
+该只读映射仅含 `schema_version`（固定为 `kuma.executed_strategy_group.v1`）、
+`strategy_group_id`、`strategy_group_version` 和 `catalog_release`。
+来源是服务端报告的实际执行信息，不是请求回显或当前目录查询。请求确实提交了
+Group 时，SDK 会在完成请求前逐一核对三个坐标；没有提交 Group 时只校验返回
+结构，不声称已匹配请求。历史缺失保持 `None`，不会猜默认组。畸形、null 或坐标
+不匹配会抛出 `ProviderError(code="invalid_response")`；恢复仍 GET 原任务，
+不会再次 POST 付费任务。
+
+这是经过校验的执行元数据，**不是独立加密证明**：它不属于原始 Case 的既有
+签名内容，也不新增到 Judge wire。公开 `strategy_id`/`strategy_version`
+（例如 `coding@1`）是兼容坐标，并不披露实际私有策略 member。
+
 ## 目录缓存与刷新
 
 官方 `create_run` 在同一进程内共享校验成功的目录，有效期为**成功校验后

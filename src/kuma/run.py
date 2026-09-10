@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 import threading
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Literal
 
 from ._json_values import detach_json
@@ -303,6 +304,35 @@ class Run:
 
         with self._mutex:
             return self._report
+
+    @property
+    def executed_strategy_group(self) -> Mapping[str, str] | None:
+        """Inspect the public Group coordinate reported by actual execution.
+
+        Returns:
+            Detached read-only mapping with schema_version, strategy_group_id,
+            strategy_group_version and catalog_release; None when the server
+            omitted it or the Run is custom/local. None means unconfirmed,
+            not General. No private strategy member or request source is exposed.
+
+        Preconditions:
+            Official Case provenance has passed Provider validation at creation.
+
+        Postconditions:
+            Mutating the returned value cannot change the Case. This reports
+            server-supplied execution metadata, never a substituted request
+            coordinate; it does not guarantee the quality of generated tests.
+            This metadata is not independent cryptographic proof, is outside the
+            existing raw Case signature, and is not added to Judge wire.
+
+        Side Effects:
+            None; reads immutable local Case metadata without network or disk.
+        """
+        official = self._case.extensions.get("official_case")
+        if not isinstance(official, Mapping):
+            return None
+        executed = official.get("executed_strategy_group")
+        return None if executed is None else MappingProxyType(dict(executed))
 
     @property
     def runtime_warnings(self) -> tuple[str, ...]:
