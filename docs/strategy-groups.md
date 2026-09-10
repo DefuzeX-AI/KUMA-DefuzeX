@@ -1,4 +1,25 @@
 # KUMA Strategy Groups
+## Discovery cache and refresh
+
+Official `create_run` calls share validated catalogs within one process for at
+most **60 seconds after successful validation**, with a **32-entry LRU** keyed
+by canonical Backend URL and the exact credential fingerprint. Different keys,
+URLs and processes do not share entries; custom transports bypass this cache.
+The cache contains discovery metadata, not Agent content, request bodies or keys.
+
+`kuma strategies list`, `KumaClient.strategies()` and
+`KumaClient.strategy_group_catalog()` always fetch a fresh catalog. A failed
+refresh invalidates the previous value; there is no stale-on-error fallback.
+Concurrent Run lookups share one GET. Waiters stop after the smaller of their
+HTTP timeout and 30 seconds, without starting replacement GETs automatically.
+Each Run still checks its selection and required capabilities, even on a hit.
+
+Availability can be up to 60 seconds old; the server remains authoritative.
+Refreshing metadata does not change a pending request's catalog release or
+idempotency identity, and never automatically retries a paid Case/Judge request.
+This optimization removes redundant discovery GETs, not Case/Judge execution:
+with the default Judge enabled, the final `run.submit(...)` also waits for Judge.
+
 
 [English](strategy-groups.md) | [简体中文](strategy-groups.zh-CN.md)
 

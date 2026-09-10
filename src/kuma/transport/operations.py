@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any
 
 from ..config import (
-    DEFAULT_CASE_MAX_STEPS,
     DEFAULT_OPERATION_WAIT_TIMEOUT,
     validate_operation_wait_timeout,
 )
@@ -26,7 +25,12 @@ from ..errors import (
     ProviderError,
     ServiceBusyError,
 )
-from .backend import BackendClient, mapped_error
+from .backend import (
+    _PUBLIC_ERROR_DETAIL_CODES,
+    BackendClient,
+    _public_error_details,
+    mapped_error,
+)
 
 _DEFAULT_RESUME_POLL_MS = 1_000
 _MIN_POLL_MS = 100
@@ -399,8 +403,8 @@ def _poll_response(
 
     Returns:
         Status plus either a succeeded result mapping or a closed failed-error
-        tuple. Case step-limit errors may additionally carry the sole safe detail
-        ``max_allowed_steps``.
+        tuple. Known codes may carry closed Case-limit, difficulty or missing-
+        capability details validated by the same policy as HTTP errors.
 
     Raises:
         ProviderError: If IDs differ, status/fields violate the closed union, or
@@ -450,21 +454,15 @@ def _poll_response(
             retryable = error["retryable"]
             message = error.get("message")
             details = error.get("details")
-            details_valid = "details" not in error or (
-                code == "case_step_limit_exceeded"
-                and isinstance(details, Mapping)
-                and set(details) == {"max_allowed_steps"}
-                and not isinstance(details.get("max_allowed_steps"), bool)
-                and isinstance(details.get("max_allowed_steps"), int)
-                and 1 <= details["max_allowed_steps"] <= DEFAULT_CASE_MAX_STEPS
-            )
             if (
                 isinstance(code, str)
                 and 1 <= len(code) <= 64
                 and isinstance(retryable, bool)
                 and ("message" not in error or isinstance(message, str))
-                and details_valid
+                and ("details" not in error or code in _PUBLIC_ERROR_DETAIL_CODES)
             ):
+                if "details" in error:
+                    details = _public_error_details(code, error)
                 return status, None, (code, retryable, message, details)
     raise ProviderError(
         "The Backend returned an invalid operation status response",

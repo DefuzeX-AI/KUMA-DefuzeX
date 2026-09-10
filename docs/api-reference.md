@@ -423,3 +423,26 @@ Catch `KumaError` for normal SDK failures. `str(exc)` is a safe user-facing
 message. Program logic should use `exc.code`, `exc.retryable`, and
 `exc.request_id`; `exc.details` is a bounded public mapping and should be logged
 only through an application-approved allowlist.
+
+Remote error details use exact per-code schemas (HTTP failures and async failed
+operations share validation):
+
+| `exc.code` | Allowed `exc.details` | Validation |
+| --- | --- | --- |
+| `case_step_limit_exceeded` | `{"max_allowed_steps": 10}` | Required non-boolean integer, 1–10. |
+| `unsupported_difficulty` | `{"supported_difficulties": ["D0", "D2"]}` | 1–5 unique values from D0–D4; server order is preserved, not required to be sorted. |
+| `strategy_capability_mismatch` | `{"missing_capabilities": ["file_change", "tool_call"]}` | 1–7 unique Evidence capabilities in canonical order: file_change, tool_call, command_result, test_result, state_transition, artifact_snapshot, agent_response_claim. |
+
+For example, on `unsupported_difficulty`, show the validated
+`exc.details.get("supported_difficulties", [])` so the caller can choose a
+supported value. Historical omission of difficulty/capability details yields
+`{}`. Present malformed, empty, unknown-key or out-of-range details for these
+codes raise `ProviderError(code="invalid_response")`; an invalid async response
+does not clear pending recovery state. The Case-limit contract is unchanged.
+
+Other HTTP details remain discarded; unknown async detail shapes remain rejected.
+The service has not defined safe `field`, `location`, `pattern_id`, log-name or
+hash-pair detail contracts for the other validation errors, so they are not
+forwarded. Remote free-form messages are not trusted or interpolated into SDK
+messages. These details are diagnostics, not instructions to automatically retry
+a failed or billable request.

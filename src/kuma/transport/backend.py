@@ -33,6 +33,7 @@ from ..errors import (
     ServiceError,
     ValidationError,
 )
+from ..evidence.runtime_contract import CASEGEN_EVIDENCE_CAPABILITY_ORDER
 from ..runtime import is_running_in_docker
 from .http import (
     WireResponse,
@@ -46,6 +47,13 @@ DEFAULT_BASE_URL = "https://defuzex.ai/api/agentdefuze"
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _MAX_MULTIPART_BYTES = 8 * 1024 * 1024
 _CLIENT_REQUEST_ID_PATTERN = re.compile(r"kreq_[0-9a-f]{32}\Z")
+_PUBLIC_ERROR_DETAIL_CODES = frozenset(
+    {
+        "case_step_limit_exceeded",
+        "unsupported_difficulty",
+        "strategy_capability_mismatch",
+    }
+)
 WireTransport = Callable[
     [str, str, Mapping[str, str], bytes | None, float],
     Mapping[str, Any],
@@ -430,14 +438,14 @@ def _error_envelope(
 
     Returns:
         ``(code, retryable, message, details)`` where arbitrary details are
-        discarded and only the closed Case step-limit field may survive.
+        discarded except for the per-code closed public detail schemas.
 
     Preconditions:
         ``error`` has not yet crossed the public SDK exception boundary.
 
     Postconditions:
         Only typed ``code``, ``retryable``, optional text ``message``, and the
-        integer ``max_allowed_steps`` for ``case_step_limit_exceeded`` remain.
+        explicitly validated Case-limit/difficulty/capability details remain.
 
     Security/Privacy:
         Backend/Core/provider diagnostics cannot flow through ``details``.
@@ -450,13 +458,62 @@ def _error_envelope(
     retryable = raw_retryable if isinstance(raw_retryable, bool) else False
     raw_message = envelope.get("message")
     message = raw_message if isinstance(raw_message, str) else None
-    return code, retryable, message, _case_step_limit_details(code, envelope)
+    return code, retryable, message, _public_error_details(code, envelope)
+
+
+def _public_error_details(code: str, envelope: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Detach only deployed per-code public details for HTTP and async failures.
+
+    Args:
+        code: Validated public error code; unrelated HTTP details are discarded.
+        envelope: Error fields from a bounded response. Historical omission is
+            accepted for difficulty/capability errors, not the required Case limit.
+
+    Returns:
+        A fresh mapping: Case integer limit, unique D0-D4 difficulty list in
+        server order, or canonical ordered missing Evidence capabilities.
+
+    Raises:
+        ProviderError: Present supported-code details have extra keys, invalid
+            types, duplicates, unknown values, or invalid bounds/order.
+
+    Security/Privacy:
+        No I/O or arbitrary strings survive. Async parsing restricts allowed
+        codes before calling this shared validator; pending state is not modified.
+    """
+    if code == "case_step_limit_exceeded":
+        return _case_step_limit_details(code, envelope)
+    if code not in _PUBLIC_ERROR_DETAIL_CODES or "details" not in envelope:
+        return {}
+    field, allowed = (
+        ("supported_difficulties", ("D0", "D1", "D2", "D3", "D4"))
+        if code == "unsupported_difficulty"
+        else ("missing_capabilities", CASEGEN_EVIDENCE_CAPABILITY_ORDER)
+    )
+    details = envelope["details"]
+    values = details.get(field) if isinstance(details, Mapping) else None
+    if (
+        not isinstance(details, Mapping)
+        or set(details) != {field}
+        or type(values) is not list
+        or not 1 <= len(values) <= len(allowed)
+        or any(type(value) is not str or value not in allowed for value in values)
+        or len(set(values)) != len(values)
+        or (
+            code == "strategy_capability_mismatch"
+            and values != [value for value in allowed if value in values]
+        )
+    ):
+        raise ProviderError(
+            "The Backend returned invalid public error details", code="invalid_response"
+        )
+    return {field: list(values)}
 
 
 def _case_step_limit_details(
     code: str, envelope: Mapping[str, Any]
 ) -> Mapping[str, int]:
-    """Validate the sole public error-detail shape allowed through the SDK.
+    """Validate the required closed Case service ceiling for the shared mapper.
 
     Arbitrary Backend details remain discarded for every other error code. The
     Case limit code fails closed when its required details object is absent,
@@ -622,7 +679,7 @@ def _mapped_remote_error(error: _RemoteError) -> KumaError:
 
     Returns:
         Unraised ``KumaError`` subclass carrying safe message, stable code,
-        retryability, and an empty detached details mapping.
+        retryability, and a detached per-code safe details mapping.
 
     Preconditions:
         The response has already passed size and top-level JSON validation.
@@ -666,8 +723,8 @@ def mapped_error(
         status: HTTP-equivalent status used for class fallback; defaults to 400.
         message: Optional frozen public wording. Arbitrary text is ignored by
             :func:`_public_error_message`.
-        details: Optional closed public error details. Only the Case step-limit
-            code may carry ``max_allowed_steps``.
+        details: Optional closed Case-limit, supported-difficulty or missing-
+            capability details; no other remote diagnostic fields are retained.
 
     Returns:
         Unraised public ``KumaError`` suitable for a batch item or asynchronous
@@ -680,7 +737,7 @@ def mapped_error(
         Produces the same class/message policy as a synchronous HTTP failure.
 
     Security/Privacy:
-        Discards all details except the validated integer Case service ceiling.
+        Discards details outside the validated per-code public whitelist.
     """
 
     envelope: dict[str, Any] = {

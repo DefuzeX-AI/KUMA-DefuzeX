@@ -43,6 +43,7 @@ from .repository.strategy_groups import (
 from .run import Run
 from .runtime import RuntimeSession
 from .transport.backend import DEFAULT_BASE_URL, BackendClient
+from .transport.catalog_cache import read_strategy_catalog
 
 
 def configure(*, api_key: str) -> Path:
@@ -409,15 +410,21 @@ def _resolve_official_strategy_group(
     agent_profile: AgentProfileSpec | None,
     available_capabilities: tuple[str, ...],
 ) -> ResolvedStrategyGroup | None:
-    """Fetch and resolve the Strategy Group contract for an official Case.
+    """Read cached discovery and resolve the group anew for each official Case.
 
     New catalogs always produce one exact selection. A bounded legacy catalog
     keeps the old Case wire only when the user did not explicitly declare a
-    Strategy Group; explicit intent cannot be silently downgraded.
+    Strategy Group; explicit intent cannot be silently downgraded. Selection and
+    required-capability validation execute on every call, including cache hits.
+    Default transports share credential-isolated catalogs for at most 60 seconds
+    after validation; custom transports bypass caching. Failed refreshes never
+    use stale entries. No paid request identity or Run lifecycle is changed.
     """
     if backend is None:
         return None
-    catalog_value = backend.json("GET", "/sdk/strategies/")
+    catalog_value = read_strategy_catalog(
+        backend, fetch=lambda: backend.json("GET", "/sdk/strategies/")
+    )
     explicit = None if agent_profile is None else agent_profile.strategy_group
     if is_legacy_strategy_catalog(catalog_value):
         if explicit is not None:
