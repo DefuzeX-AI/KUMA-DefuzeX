@@ -17,14 +17,12 @@ KUMA 是公开 Python SDK，通过严格的 `Run` 协议和有界 Evidence 采�
 
 ## 核心能力
 
-- 同步且不绑定框架的 Case 与 Judge 流程。
-- 支持官方或自定义 Provider，也可完全本地运行。
-- 有界采集文件、日志和可选 Trace Evidence。
-- 默认 Trace 预算为每 Run 8 MiB；Agent 输出 canonical JSON 上限 4 MiB，
-  Runtime Evidence 上限 5 MiB，完整 multipart 上传上限 8 MiB。
-  服务端更小的限制仍有效；输出超限会拒绝，不会截断。
-- Strategy Group 决定测试方法；Agent Profile 只提供被测 Agent、运行场景、
-  预期行为和禁止边界的上下文。
+- 通过统一、框架无关的 Python 工作流，完成从 Case 到 Judgment 的可重复评测。
+- 可使用 KUMA 官方服务，也可接入自定义 Case 和 Judge Provider，或保持全本地运行。
+- 有界采集步骤结果、文件变更、显式日志与可选 OpenTelemetry Trace，
+  形成结构化 Evidence。
+- 通过带版本的 Strategy Group 选择测试方法，并用 Agent Profile 描述被测
+  Agent 及其运行上下文。
 
 ## 安装
 

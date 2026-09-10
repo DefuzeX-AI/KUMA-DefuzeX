@@ -17,14 +17,14 @@ KUMA is the public Python SDK for testing Agent behavior through a strict `Run` 
 
 ## Core capabilities
 
-- Synchronous, framework-neutral Case and Judge workflow.
-- Official or custom Providers, including fully local runs.
-- Bounded file, log, and optional trace Evidence.
-- Default Trace budget: 8 MiB per Run. Agent output: 4 MiB canonical JSON;
-  Runtime Evidence: 5 MiB; complete multipart upload: 8 MiB. Stricter server
-  limits still apply; output is rejected rather than truncated.
-- Strategy Groups choose the testing method; an Agent Profile supplies only the
-  Agent, scenario, expected-behavior, and prohibited-boundary context.
+- Run repeatable Case-to-Judgment evaluations through one framework-neutral
+  Python workflow.
+- Use KUMA's official services, plug in custom Case and Judge Providers, or keep
+  the workflow fully local.
+- Capture bounded, structured Evidence from step results, file changes, explicit
+  logs, and optional OpenTelemetry traces.
+- Select the testing method with a versioned Strategy Group, and describe the
+  Agent and its operating context with an Agent Profile.
 
 ## Install
 
