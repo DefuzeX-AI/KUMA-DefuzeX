@@ -338,3 +338,22 @@ Rubric、Prompt 或 Provider 响应。已知 operation 只通过 GET 继续轮�
 ## 错误字段
 
 普通 SDK 失败统一捕获 `KumaError`。`str(exc)` 是安全的用户文案；程序判断使用 `exc.code`、`exc.retryable` 和 `exc.request_id`。`exc.details` 是有界公开 mapping，也只应通过应用自己的 allowlist 记录。
+
+远端错误详情按错误码使用精确 schema，HTTP 失败和异步 failed operation 共用校验：
+
+| `exc.code` | 允许的 `exc.details` | 校验规则 |
+| --- | --- | --- |
+| `case_step_limit_exceeded` | `{"max_allowed_steps": 10}` | 必填、非布尔整数，范围 1–10。 |
+| `unsupported_difficulty` | `{"supported_difficulties": ["D0", "D2"]}` | D0–D4 中 1–5 个不重复值；保留服务端顺序，不要求排序。 |
+| `strategy_capability_mismatch` | `{"missing_capabilities": ["file_change", "tool_call"]}` | 1–7 个不重复 Evidence 能力，按 file_change、tool_call、command_result、test_result、state_transition、artifact_snapshot、agent_response_claim 的规范顺序排列。 |
+
+例如遇到 `unsupported_difficulty`，可显示经过校验的
+`exc.details.get("supported_difficulties", [])`，让调用方选择支持的值。
+兼容旧服务省略难度/能力详情，此时返回 `{}`；若提供了畸形、空列表、未知键、
+越界或错误顺序的详情，则抛 `ProviderError(code="invalid_response")`。
+异步响应校验失败不会清除待恢复状态。Case 步数上限的既有合同不变。
+
+其它 HTTP 详情仍丢弃，未知异步详情结构仍拒绝。其它校验错误尚无安全的
+`field`、`location`、`pattern_id`、日志名或哈希对详情合同，因此不会透传。
+SDK 不信任任意远端 message，也不会将其插入异常文案。这些详情仅用于诊断，
+不意味着可以自动重试失败请求或再次发起计费操作。

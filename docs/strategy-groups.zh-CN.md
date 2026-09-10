@@ -1,4 +1,22 @@
 # KUMA 策略组
+## 目录缓存与刷新
+
+官方 `create_run` 在同一进程内共享校验成功的目录，有效期为**成功校验后
+60 秒**，采用最多 **32 项的 LRU**，按规范化 Backend URL 与当前密钥的精确
+指纹隔离。不同密钥、URL、进程不共享；自定义 transport 不使用此缓存。
+缓存只保存目录元数据，不保存 Agent 正文、请求正文或密钥。
+
+`kuma strategies list`、`KumaClient.strategies()` 和
+`KumaClient.strategy_group_catalog()` 每次都会请求最新目录；刷新失败立即
+使旧值失效，不会用旧目录兜底。并发 Run 查询共享一次 GET，等待者最多等待
+其 HTTP timeout 与 30 秒中的较小值，失败后不会自行发起替代 GET。
+即使命中缓存，每个 Run 仍重新检查选择和所需能力。
+
+目录可用性最多滞后 60 秒，服务端仍做最终裁决。刷新不会改变已有请求的
+目录 release 或幂等身份，也不会自动重试付费 Case/Judge 请求。
+这只减少重复目录 GET，不消除 Case/Judge 执行时间：默认启用 Judge 时，
+最后一次 `run.submit(...)` 还会等待 Judge 完成。
+
 
 [English](strategy-groups.md) | [简体中文](strategy-groups.zh-CN.md)
 

@@ -27,6 +27,7 @@ from .transport.backend import (
     _validate_base_url,
     _validate_timeout,
 )
+from .transport.catalog_cache import read_strategy_catalog
 
 Transport = WireTransport
 
@@ -140,6 +141,9 @@ class KumaClient:
 
         Side Effects:
             Performs one authenticated HTTPS/allowed-loopback GET request.
+            Strategy discovery refreshes the shared catalog cache before this
+            entry point maps transport errors; Run waiters retain their own
+            original SDK error classes rather than this client's legacy mapping.
 
         Security/Privacy:
             Stable public errors are exposed without returning raw remote bodies.
@@ -149,6 +153,12 @@ class KumaClient:
                 401, "Set KUMA_API_KEY or pass api_key to KumaClient."
             )
         try:
+            if path == "/sdk/strategies/":
+                return read_strategy_catalog(
+                    self._backend,
+                    fetch=lambda: self._backend.json("GET", path),
+                    refresh=True,
+                )
             return self._backend.json("GET", path)
         except AuthenticationError as exc:
             raise KumaAuthenticationError(401, str(exc)) from None
@@ -189,8 +199,9 @@ class KumaClient:
             KumaRateLimitError: Account quota prevents the read.
 
         Side Effects:
-            Performs one public Backend GET. Case generation does not use this
-            method as a client-side availability precheck.
+            Always refreshes through a public Backend GET, replacing the shared
+            process-local discovery cache; failure invalidates the old entry.
+            Run selection uses the cache but repeats selection/capability checks.
         """
 
         return self._read("/sdk/strategies/")
@@ -212,7 +223,7 @@ class KumaClient:
             Performs one public Backend GET. It does not generate a Case or run
             local scanner selection.
         """
-        return validate_strategy_group_catalog(self._read("/sdk/strategies/"))
+        return validate_strategy_group_catalog(self.strategies())
 
     def judge_config(self) -> Mapping[str, Any]:
         """Fetch current public Judge upload limits and Evidence types.
