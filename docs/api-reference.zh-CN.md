@@ -187,6 +187,7 @@ BOM，校验 closed front matter 和三个必需行为章节，并返回不可�
 | `case_id` | `str` | 标识本次正在执行的公开 Case，可安全用于关联，但不会暴露 Private Rubric。 |
 | `max_steps` | `int` | 表示最终生成的 Case 实际包含多少个步骤；至少为 1，且不会超过显式传入的 `create_run(max_steps=...)` 上限，参数为 `None` 时则不超过服务或本地默认上限。 |
 | `state` | `RunState` | 告诉你现在允许做什么，例如获取 Input、提交、等待 Judge、已经完成或已取消。 |
+| `executed_strategy_group` | `Mapping[str, str] \| None` | 脱离内部对象的只读执行元数据：schema_version、strategy_group_id（1–80 字符）、strategy_group_version（1–32）、catalog_release（64 位小写十六进制）。历史缺失/自定义 Run 返回 None，不拿请求或默认组代填。读取不触发 I/O；实际提交的坐标在成功前核对，错误在创建/恢复时抛 invalid_response。这不是独立加密证明，也不属于原始 Case 签名或 Judge wire。 |
 | `history` | `tuple[HistoryItem, ...]` | 按执行顺序保存所有已成功提交的 Input 及对应 Submission；正在处理但尚未提交的步骤不在其中。 |
 | `report` | `TestReport \| None` | `state` 变为 `report_ready` 后保存最终 Judge 结果；Judge 尚未完成或 `judge=False` 时为 `None`。 |
 | `runtime_warnings` | `tuple[str, ...]` | 保存不会阻断 Run 的 Evidence 缺口代码，例如自动 Trace 不可用；可用它向用户提示采集不完整。 |

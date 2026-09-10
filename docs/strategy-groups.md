@@ -1,4 +1,32 @@
 # KUMA Strategy Groups
+## Inspect actual execution
+
+After `create_run(...)` succeeds, inspect `run.executed_strategy_group`:
+
+```python
+actual = run.executed_strategy_group
+if actual is None:
+    print("Execution group unconfirmed (historical server/result or custom Run)")
+else:
+    print(actual["strategy_group_id"], actual["strategy_group_version"])
+    print(actual["catalog_release"])
+```
+
+This read-only mapping contains exactly `schema_version` (always
+`kuma.executed_strategy_group.v1`), `strategy_group_id`, `strategy_group_version`,
+and `catalog_release`. It comes from server-reported actual execution, not a
+request echo or current catalog lookup. When a Group was submitted, all three
+coordinates must match before the SDK completes the request. Without a submitted
+Group, only the returned shape is validated; no request match is implied.
+Missing historical data stays `None`, not a guessed default. Malformed/null or
+mismatched data raises `ProviderError(code="invalid_response")`; recovery keeps
+the original operation and polls by GET, without a second paid POST.
+
+This is validated execution metadata, **not independent cryptographic proof**:
+it is outside the existing signed raw Case and is not added to Judge wire.
+The public `strategy_id`/`strategy_version` (for example `coding@1`) remain
+compatibility coordinates, not disclosure of an actual private strategy member.
+
 ## Discovery cache and refresh
 
 Official `create_run` calls share validated catalogs within one process for at

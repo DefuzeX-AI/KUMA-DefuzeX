@@ -28,6 +28,7 @@ from ._official_wire import (
     canonical_sha256,
     contains_private_fields,
     required_text,
+    validate_executed_strategy_group,
     validate_official_case_provenance,
 )
 from .base import CaseGenerationContext
@@ -177,13 +178,13 @@ def _official_case_response(
     requested_strategy_group: Mapping[str, Any] | None,
     repo_fingerprint: str,
 ) -> tuple[str, str, str, str, Mapping[str, Any], list[dict[str, str]]]:
-    """Validate one official Case without conflating Group and member identities.
+    """Validate one official Case without conflating execution Groups and compatibility IDs.
 
     Args:
         response: Terminal public Backend Case result.
         max_steps: Maximum complete public steps accepted for this request.
         requested_strategy_id: Strategy requested on the no-Group path, or
-            ``auto`` when the Backend selects an actual member.
+            ``auto`` when the Backend selects a compatibility coordinate.
         requested_strategy_version: Exact no-Group strategy version when the
             caller supplied one; current SDK Case requests normally omit it.
         requested_strategy_group: Closed resolved Group coordinate sent in the
@@ -191,19 +192,19 @@ def _official_case_response(
         repo_fingerprint: Canonical repository metadata digest sent upstream.
 
     Returns:
-        Case and batch IDs, returned member strategy coordinate, raw public
+        Case and batch IDs, returned public compatibility coordinate, raw public
         Case, and normalized Inputs. Group provenance is validated separately
         and is not fabricated when the compatibility response omits it.
 
     Raises:
-        ProviderError: If the public envelope, member binding, optional Group
+        ProviderError: If the public envelope, compatibility binding, optional Group
             provenance, fingerprint, signature, or step contract is invalid.
 
     Postconditions:
-        The member strategy is internally consistent between batch and Case.
-        No-Group explicit requests additionally match that member. Group
+        The compatibility strategy is internally consistent between batch and Case.
+        No-Group explicit requests additionally match that compatibility coordinate. Group
         requests are compared only with independent Group provenance when the
-        server supplies it; member IDs are never treated as Group IDs.
+        server supplies it; compatibility IDs are never treated as Group IDs.
     """
     batch, raw_case = _case_response_envelope(response)
     case_id = required_text(raw_case.get("case_id"), "case_id")
@@ -274,24 +275,24 @@ def _selected_strategy(
     requested_strategy_version: str | None,
     enforce_requested_identity: bool = True,
 ) -> tuple[str, str]:
-    """Validate the returned legacy/member strategy coordinate.
+    """Validate the returned public compatibility strategy coordinate.
 
     ``strategy_id`` and ``strategy_version`` in the current Case response name
-    the actual strategy member selected inside a Strategy Group. On the
+    a public compatibility coordinate, not a private execution member. On the
     supported no-Group path, an explicit strategy still names that identity.
 
     Args:
-        batch: Public batch metadata containing the actual member coordinate.
+        batch: Public batch metadata containing the public compatibility coordinate.
         requested_strategy_id: Requested no-Group strategy ID or ``auto``.
         requested_strategy_version: Optional no-Group requested version.
         enforce_requested_identity: Whether a no-Group explicit request must
-            equal the returned member. Group-based requests set this to false.
+            equal the returned compatibility coordinate. Group-based requests set this to false.
 
     Returns:
-        Non-``auto`` member strategy ID and version from the public batch.
+        Non-``auto`` compatibility strategy ID and version from the public batch.
 
     Raises:
-        ProviderError: If the member coordinate is missing, unresolved, or does
+        ProviderError: If the compatibility coordinate is missing, unresolved, or does
             not match an enforced no-Group explicit request.
     """
     selected_strategy_id = required_text(
@@ -385,6 +386,58 @@ def _validate_response_strategy_group(
             "The Backend Strategy Group provenance does not match the request",
             code="invalid_response",
         )
+
+
+def _executed_strategy_group(
+    response: Mapping[str, Any],
+    requested: Mapping[str, Any] | None,
+) -> dict[str, str] | None:
+    """Validate actual execution data before a succeeded operation is committed.
+
+    Args:
+        response: Complete terminal result. Only its top-level optional
+            executed_strategy_group is the public execution record.
+        requested: Exact selection actually submitted, or None for a historical
+            no-Group request. Request source is not execution provenance.
+
+    Returns:
+        Detached closed execution coordinate, or None when omitted. With no
+        submitted selection this validates shape only, not a request match.
+
+    Raises:
+        ProviderError: Safe invalid_response on malformed/null execution data,
+            invalid requested metadata, or id/version/catalog release mismatch.
+
+    Postconditions:
+        Omission is never synthesized from request or current catalog. Failure
+        precedes pending-state completion, so recovery stays GET-only.
+
+    Side Effects:
+        None; does not mutate signed Cases, request hashes or network state.
+    """
+    if "executed_strategy_group" not in response:
+        return None
+    actual = validate_executed_strategy_group(response["executed_strategy_group"])
+    if requested is not None:
+        try:
+            expected = validate_strategy_group_wire_selection(requested)
+        except ValidationError:
+            raise ProviderError(
+                "Requested Strategy Group is invalid", code="invalid_response"
+            ) from None
+        if any(
+            actual[name] != expected[name]
+            for name in (
+                "strategy_group_id",
+                "strategy_group_version",
+                "catalog_release",
+            )
+        ):
+            raise ProviderError(
+                "Executed Strategy Group does not match the request",
+                code="invalid_response",
+            )
+    return actual
 
 
 def _agent_description(context: CaseGenerationContext) -> str:
@@ -575,10 +628,10 @@ def _normalized_case(
             returned Case.
         max_steps: Effective public step ceiling. Omitted and explicit-default
             requests both use 10, rather than the legacy internal ceiling of 50.
-        requested_strategy_id: Legacy/member strategy request used only when no
+        requested_strategy_id: Compatibility strategy request used only when no
             Strategy Group was resolved.
         requested_strategy_group: Exact resolved Group coordinate, which remains
-            distinct from the returned member strategy identity.
+            distinct from the public compatibility strategy identity.
 
     Returns:
         Normalized text Case mapping with validated, opaque official provenance.
@@ -589,8 +642,8 @@ def _normalized_case(
 
     Postconditions:
         The result contains the complete Case; it is never truncated to fit the
-        requested upper bound. Official provenance records the actual returned
-        member strategy; a requested Strategy Group remains a separate identity.
+        requested upper bound. Official provenance records the returned public
+        compatibility strategy; actual execution is a separate optional record.
     """
     requested_strategy_version = None
     (
@@ -619,6 +672,9 @@ def _normalized_case(
             "strategy_version": strategy_version,
         }
     )
+    executed = _executed_strategy_group(response, requested_strategy_group)
+    if executed is not None:
+        provenance["executed_strategy_group"] = executed
     return {
         "case_id": case_id,
         "inputs": inputs,
