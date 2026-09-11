@@ -1,4 +1,4 @@
-# Runtime Evidence v1 and v2
+# Runtime Evidence capabilities
 
 `Submission.extensions["runtime_evidence"]` is the canonical, bounded record of
 runtime facts the SDK observed between one `get_input()` and its matching
@@ -65,7 +65,9 @@ fields are limited to:
 The current framework-neutral SDK implementation always emits an
 `agent_response_claim`. File tracking can emit `file_change`. Explicit log files
 and configured in-process OTel capture can emit hash-only `artifact_snapshot`
-items. Renames are represented as one delete and one create because `renamed`
+items in historical schemas. With negotiated `runtime_trace`, the OTel artifact
+also carries the actual filtered Trace body and completeness information; see
+[Runtime Trace](runtime-trace.md). Renames are represented as one delete and one create because `renamed`
 is not part of the wire union.
 
 The SDK currently has no public instrumentation that proves tool calls,
@@ -80,21 +82,22 @@ Official Judge revalidates every envelope against its actual Run/Input/step and
 stable Submission identity before upload. It sends one public `EvidenceItem`
 per history item with:
 
-- `source`: the negotiated `defuzex.runtime_evidence.v1` or
-  `defuzex.runtime_evidence.v2`
+- `source`: the stable outer marker `defuzex.runtime_evidence.v1`
 - `media_type`: `application/vnd.defuzex.runtime-evidence+json`
 - `content`: the canonical UTF-8 JSON above
 - `name`: display-only filename
 
-Transport is negotiated through the Backend's public Judge config. The SDK only
-sends v2 when `evidence_types` explicitly contains
-`defuzex.runtime_evidence.v2`; v2 wins when both versions are advertised. A
-v1-only service receives the existing byte-compatible hash-only envelope. When
-neither typed version is advertised, the SDK sends the existing
-`defuzex.run_evidence.v1` item, so an older Backend never receives an unknown
-schema. The SDK does not use legacy raw logs to emulate v2.
+Transport is negotiated through the Backend's public Judge config. A current
+service advertises `defuzex.runtime_evidence.capabilities.v1`; the SDK then sends
+an inner envelope with the exact ordered capabilities
+`["runtime_evidence", "agent_output"]`. Historical inner v1 and v2 identifiers
+remain compatibility inputs only. A v1-only service receives the existing
+byte-compatible hash-only envelope, while a v2-only service receives its
+historical output-bearing projection. When no typed schema is advertised, the
+SDK retains the existing legacy upload for ordinary Runs. It never uses legacy
+raw logs to emulate Agent output or file-diff support.
 
-For a completed Submission, v2 adds exactly one field to its existing
+For a completed Submission, the `agent_output` capability adds exactly one field to its existing
 `agent_response_claim`:
 
 ```json
@@ -129,14 +132,43 @@ malformed, or non-matching capability keeps the legacy request shape. Stable
 ordering is `file_change`, `artifact_snapshot`, `agent_response_claim` for kinds
 the Run can actually produce. The SDK never declares framework-only kinds.
 
+## Optional file-diff capability
+
+`create_run(upload_diff=True)` means “send safe unified patches to the Official
+Judge when the service explicitly supports them.” It requires
+`track_files=True`. The SDK adds `file_diff` as the third capability only when
+the Backend advertises the named-capability schema. If the service does not
+advertise it, the SDK raises `runtime_evidence_unsupported` before the Judge
+multipart POST; it never silently falls back to hashes or `raw_log` after the
+user explicitly requested diff upload.
+
+Each `file_change` then contains exactly one of a closed `diff` object—format,
+complete text, SHA-256, and exact UTF-8 byte count—or the content-free
+`diff_omission_reason`: `binary`, `size_limit`, `sensitive_content`,
+`no_text_change`, or `capture_incomplete`. Absolute local paths are rewritten to
+validated repository-relative headers. The SDK never uploads a whole file and
+never truncates a patch. Limits are 32,768 UTF-8 bytes per diff, 65,536 included
+diff bytes per envelope, and 5 MiB for the complete Runtime Evidence envelope.
+
+The final official multipart body, including framing and metadata, is capped at
+8 MiB. Backend-advertised limits may be lower and remain authoritative. This
+transport budget is separate from the 8 MiB default Trace budget accumulated
+across one Run.
+
+With the default `upload_diff=False`, `file_diff` is absent and file components
+remain hash-only even on a current service.
+
 ## Privacy and resource behavior
 
-V1 contains hashes instead of Agent output. V2 contains only the bounded final
-Agent output described above; it does not add log bodies, trace bodies,
-stdout/stderr, tool arguments, prompts, model responses, or diff text. Before a
-v2 multipart POST, the SDK applies the existing canonical sensitive JSON scanner
-to `agent_output` with no `allow_sensitive` bypass. Credential findings therefore
-fail locally; the SDK stores neither the matched value nor raw diagnostic text.
+V1 contains hashes instead of Agent output. The named `agent_output` capability
+contains only the bounded final Agent output described above; it does not add
+log bodies, trace bodies, stdout/stderr, tool arguments, prompts, or model
+responses. Before multipart construction, the SDK applies the existing
+canonical sensitive scanner to Agent output with no `allow_sensitive` bypass.
+For an explicitly requested file diff, a sensitive match omits the text and
+sends only `sensitive_content`; the rejected patch is also removed before Run
+history and optional local Submission persistence. The SDK stores neither the
+matched value nor raw diagnostic text in the upload.
 Paths must be safe, root-relative, and pass the existing sensitive-path scanner.
 Invalid, external, or sensitive observations are otherwise dropped before
 serialization and reflected in the Submission's existing `missing` and

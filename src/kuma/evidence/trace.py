@@ -45,6 +45,13 @@ _CAPTURE_REASONS = frozenset(
         "trace_topology_partial",
         "trace_value_invalid",
         "trace_value_truncated",
+        "trace_tool_content_not_recorded",
+        "trace_tool_content_sensitive",
+        "trace_tool_content_size_limit",
+        "trace_tool_content_invalid",
+        "trace_link_invalid",
+        "trace_link_limit",
+        "trace_link_duplicate",
     }
 )
 _MAX_DROPPED_COUNT = 999_999_999
@@ -87,7 +94,8 @@ class TraceEvidenceLimits:
             per span or resource projection.
         max_events_per_span: Maximum OTel events retained per span.
         max_text_length: Maximum characters retained for each allowlisted name or
-            metadata value before truncation.
+            metadata value before truncation. Tool arguments/results instead
+            use the 4 MiB canonical JSON bound and are never cut into fragments.
         max_total_bytes: Maximum UTF-8 bytes of complete Trace Evidence envelopes
             committed across one Run, including envelope and reason overhead.
         max_log_records: Maximum normalized OTel log records retained per step.
@@ -693,7 +701,8 @@ class TraceEvidenceCapture:
             Requests provider ``force_flush`` and reads in-memory telemetry only.
 
         Security/Privacy:
-            Only allowlisted mapped values and hash-only log content are returned;
+            Allowlisted tool bodies are retained after mandatory sensitive
+            scanning; omissions carry explicit states. Log content stays hash-only;
             exporter exceptions and raw telemetry values are not exposed.
         """
         association = self._matching_association(run_id, case_id, input_id)

@@ -235,6 +235,13 @@ upload. The official Judge evaluates the supplied public Case directly.
 
 ## OpenTelemetry
 
+Captured Trace is now sent as a whole hash-bound body only when the server
+advertises `runtime_trace`; unsupported servers reject before Judge POST.
+This is separate from missing-Provider warnings. Tool arguments/results require
+actual `execute_tool` instrumentation; a plain span does not invent them.
+See [Runtime Trace and file diffs](runtime-trace.md) for a local example, upgrade
+instructions, body limits and the separate `upload_diff=True` option.
+
 OpenTelemetry (OTel) is the standard observability API used by Agent frameworks and instrumentation to emit spans. KUMA maps spans that were **actually emitted in the same process** into bounded Evidence. It does not invent Agent activity and is not an OTel Collector, backend, or trace UI.
 
 Install OTel support only when trace capture is needed; the core package does not require it:

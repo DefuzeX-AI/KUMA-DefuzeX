@@ -55,11 +55,17 @@ def _changed(before: SnapshotEntry, after: SnapshotEntry) -> bool:
 
 
 def _reason(before: SnapshotEntry | None, after: SnapshotEntry | None) -> str | None:
-    """Return why text diff content is unavailable for a file change."""
+    """Return stable capture or text-omission reasons for a file change."""
     reasons: list[str] = []
     for entry in (before, after):
         if entry is not None and entry.scan_error and entry.scan_error not in reasons:
             reasons.append(entry.scan_error)
+        if (
+            entry is not None
+            and entry.text_omission_reason
+            and entry.text_omission_reason not in reasons
+        ):
+            reasons.append(entry.text_omission_reason)
     if before is not None and after is not None and before.file_type != after.file_type:
         reasons.append("type_changed")
     return ",".join(reasons) or None

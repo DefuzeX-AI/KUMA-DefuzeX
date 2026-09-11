@@ -20,6 +20,9 @@ KUMA is the public Python SDK for testing Agent behavior through a strict `Run` 
 - Synchronous, framework-neutral Case and Judge workflow.
 - Official or custom Providers, including fully local runs.
 - Bounded file, log, and optional trace Evidence.
+- `upload_diff=True` with `track_files=True` sends safe patches; default is
+  hash-only. Trace attaches to configured OTel and uploads only recorded tool
+  content, never invented arguments/results. [Setup and source upgrade](docs/runtime-trace.md).
 - Default Trace budget: 8 MiB per Run. Agent output: 4 MiB canonical JSON;
   Runtime Evidence: 5 MiB; complete multipart upload: 8 MiB. Stricter server
   limits still apply; output is rejected rather than truncated.
@@ -49,6 +52,8 @@ Follow the [full-stack user-flow guide](examples/full_stack/README.md) to run KU
 ## Detailed documentation
 
 [Save and reuse a Case](docs/case-files.md)
+
+[Runtime Trace and optional file diffs](docs/runtime-trace.md)
 
 [English SDK guide](docs/sdk-guide.md) · [Strategy Groups](docs/strategy-groups.md) · [Agent tool capabilities](docs/agent-tool-capabilities.md) · [Python API reference](docs/api-reference.md) · [Agent Profile migration](docs/migration-agent-profile.md) · [简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [中文 API 参考](docs/api-reference.zh-CN.md) · [Runtime Evidence contract](docs/runtime-evidence.md)
 

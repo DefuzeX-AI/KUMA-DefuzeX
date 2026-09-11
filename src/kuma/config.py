@@ -120,8 +120,10 @@ class CreateRunConfig:
             supported container boundary is detected. It does not weaken path
             or sensitive-data checks.
         track_files: Capture bounded file snapshots and changes for each step.
-        upload_diff: Include bounded textual diffs in Evidence when safe. File
-            metadata can still be captured when this is ``False``.
+        upload_diff: Explicitly request safe bounded unified patches for the
+            Official Judge. ``False`` keeps hash-only file Evidence. ``True``
+            requires file tracking and negotiated service support; it never
+            silently falls back to raw logs or truncates a patch.
         save_local: Persist committed Run Evidence under the SDK-owned runtime
             directory. Prepared but uncommitted Evidence is not finalized.
         allow_sensitive: Permit sensitive values only where the relevant public

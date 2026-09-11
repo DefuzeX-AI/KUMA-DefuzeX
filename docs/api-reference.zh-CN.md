@@ -53,7 +53,7 @@ run = create_run(repo_path=".", agent_profile_path="agent-profile.md")
 | `on_failure` | `str` | `"continue"` | 决定某一步被提交为 `failed`、`timeout` 或 `aborted` 后怎么办。`"continue"` 会继续交付下一个 Input；`"stop"` 会立即结束整个 Run。 |
 | `allow_local` | `bool` | `False` | 允许在 Docker 外启动可信的本地开发 Run。它只绕过 Docker 要求，不会隔离 Agent、扩大文件权限，也不会关闭校验或隐私保护。 |
 | `track_files` | `bool` | `True` | 让 KUMA 在每个 Input 前后比较仓库文件，从而告诉 Judge 哪些文件被创建、修改、删除或重命名。文件变化与评估无关或无法观察时可设为 `False`。 |
-| `upload_diff` | `bool` | `False` | 除路径、哈希、大小和变化类型外，再把有界的实际文本改动加入 Evidence。只有 Judge 必须查看代码差异且仓库文本允许披露时才开启；要求 `track_files=True`。 |
+| `upload_diff` | `bool` | `False` | 通过协商的 `file_diff` 发送安全 unified patch，要求 `track_files=True`。默认 False 仅传哈希；服务端不支持时在 Judge POST 前报错。超限、二进制或敏感补丁整项省略并给原因，不截断。见[限制说明](runtime-trace.zh-CN.md)。 |
 | `save_local` | `bool` | `False` | 把每个已成功提交的 Submission 额外保存为 `.kuma/runs/<run_id>/` 下的 JSON，便于调试和审计。它只是本地副本，不能替代提交给官方 Judge。 |
 | `allow_sensitive` | `bool` | `False` | 当普通 Evidence 被扫描器判断为可能敏感时，是否仍允许继续。默认应保持 `False`；只有人工确认内容可以披露时才开启，而且它永远不能让秘密进入 OTel Trace Evidence。 |
 | `timeout` | `float` | `300.0` 秒 | 限制一次连接 KUMA 公网服务的 HTTP 请求最多等待多久。调小后单次网络失败会更快返回；它不限制 Case 生成或 Judge 的总等待时间。 |
@@ -335,7 +335,7 @@ Rubric、Prompt 或 Provider 响应。已知 operation 只通过 GET 继续轮�
 | `max_spans` | 正 `int` | `200` | 每步通过确定性采样最多保留这么多个已结束 span，被丢弃的 span 会计数。此每步上限与 Run 总字节预算独立。 |
 | `max_attributes` | 正 `int` | `32` | 每个 span 最多保留这么多个安全 allowlist 属性；其余属性被丢弃并计数。无论数字多大，敏感属性仍会被拒绝。 |
 | `max_events_per_span` | 正 `int` | `20` | 每个 span 最多保留这么多个安全 OTel event；更晚的 event 会被丢弃并记录。 |
-| `max_text_length` | 正 `int` | `256` 字符 | 每个允许保留的文本值超过该 Unicode 字符数后会被截断，并记录 truncated 状态。 |
+| `max_text_length` | 正 `int` | `256` 字符 | 限制保留的元数据文本；工具参数/结果使用独立的 4 MiB canonical JSON 上限，绝不截断。见 [Runtime Trace](runtime-trace.zh-CN.md)。 |
 | `max_total_bytes` | 正 `int` | `8388608` 字节（8 MiB） | 一个 Run 的全部已提交 Trace envelope 紧凑 JSON 合计不能超过该值；KUMA 会确定性丢弃超额 Trace 并报告损失，但该值本身必须能容纳最小合法 envelope。 |
 | `max_log_records` | 正 `int` | `200` | 每个步骤最多保留的规范化 OTel 日志记录数；超出部分会丢弃并记录。 |
 | `max_log_bytes` | 正 `int` | `128000` 字节 | 一个 Run 中已提交的结构化 OTel 日志 artifact 总字节上限；不会保留原始日志正文。 |

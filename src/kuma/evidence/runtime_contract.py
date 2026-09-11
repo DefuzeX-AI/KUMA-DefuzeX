@@ -9,14 +9,27 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .._json_values import JsonStructureError, detach_json
+from .runtime_diff_contract import (
+    RUNTIME_FILE_DIFF_MAX_BYTES,
+    RUNTIME_FILE_DIFF_OMISSION_REASONS,
+    RUNTIME_FILE_DIFF_TOTAL_MAX_BYTES,
+    validate_file_diff_components,
+)
 
 RUNTIME_EVIDENCE_SCHEMA_V1 = "defuzex.runtime_evidence.v1"
 RUNTIME_EVIDENCE_SCHEMA_V2 = "defuzex.runtime_evidence.v2"
+RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA = "defuzex.runtime_evidence.capabilities.v1"
 # Preserve the original import as the v1 name used by existing integrations.
 RUNTIME_EVIDENCE_SCHEMA = RUNTIME_EVIDENCE_SCHEMA_V1
 RUNTIME_EVIDENCE_MEDIA_TYPE = "application/vnd.defuzex.runtime-evidence+json"
 RUNTIME_EVIDENCE_MAX_BYTES = 5 * 1024 * 1024
 RUNTIME_AGENT_OUTPUT_MAX_BYTES = 4 * 1024 * 1024
+RUNTIME_EVIDENCE_CAPABILITY_ORDER = (
+    "runtime_evidence",
+    "agent_output",
+    "file_diff",
+    "runtime_trace",
+)
 CASEGEN_FRAMEWORK_SCHEMA = "defuzex.casegen.ita.v1"
 CASEGEN_EVIDENCE_CAPABILITY_ORDER = (
     "file_change",
@@ -165,21 +178,35 @@ def _non_negative(value: Any) -> bool:
 def _valid_component_fields(
     component: Mapping[str, Any], *, schema_version: str = RUNTIME_EVIDENCE_SCHEMA_V1
 ) -> bool:
-    """Enforce the closed component fields for the selected wire version.
-
-    Runtime Evidence v2 changes only ``agent_response_claim``: a completed claim
-    carries ``agent_output`` while v1 remains hash-only. Required conditional
-    semantics are checked by :func:`_valid_component_value`.
-    """
+    """Enforce versioned closed fields before validating conditional values."""
     kind = component.get("kind")
     if kind not in _KINDS:
         return False
     allowed = _COMMON_FIELDS | _KIND_FIELDS[kind]
-    if schema_version == RUNTIME_EVIDENCE_SCHEMA_V2 and kind == "agent_response_claim":
+    if (
+        schema_version
+        in {
+            RUNTIME_EVIDENCE_SCHEMA_V2,
+            RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA,
+        }
+        and kind == "agent_response_claim"
+    ):
         allowed |= {"agent_output"}
+    if schema_version == RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA and kind == "file_change":
+        allowed |= {"diff", "diff_omission_reason"}
+    trace_fields = {"trace_evidence", "capture_status", "capture_summary"}
+    if (
+        schema_version == RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA
+        and kind == "artifact_snapshot"
+    ):
+        allowed |= trace_fields
     required = allowed - _KIND_OPTIONAL_FIELDS[kind]
     if kind == "agent_response_claim":
         required -= {"agent_output"}
+    if kind == "file_change":
+        required -= {"diff", "diff_omission_reason"}
+    if kind == "artifact_snapshot":
+        required -= trace_fields
     return required <= set(component) <= allowed
 
 
@@ -408,14 +435,14 @@ def validate_runtime_evidence(
 ) -> None:
     """Fail closed on malformed, duplicate, or mis-associated public evidence.
 
-    ``schema_version`` is the exact version negotiated with the Backend. Omitting
-    it preserves v1 validation for existing callers; unknown versions are never
-    inferred from untrusted content.
+    ``schema_version`` must be the exact Backend-negotiated version; unknown
+    versions are never inferred from untrusted content.
     """
 
     if schema_version not in {
         RUNTIME_EVIDENCE_SCHEMA_V1,
         RUNTIME_EVIDENCE_SCHEMA_V2,
+        RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA,
     }:
         raise ValueError("runtime evidence schema version is unsupported")
 
@@ -427,6 +454,8 @@ def validate_runtime_evidence(
         "submission_id",
         "components",
     }
+    if schema_version == RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA:
+        fields.add("capabilities")
     if not isinstance(value, Mapping) or set(value) != fields:
         raise ValueError("runtime evidence envelope is invalid")
     _validate_association(
@@ -437,7 +466,29 @@ def validate_runtime_evidence(
         submission_id=submission_id,
         schema_version=schema_version,
     )
+    capabilities = value.get("capabilities")
+    if schema_version == RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA and capabilities not in (
+        list(RUNTIME_EVIDENCE_CAPABILITY_ORDER[:2]),
+        list(RUNTIME_EVIDENCE_CAPABILITY_ORDER[:3]),
+        [*RUNTIME_EVIDENCE_CAPABILITY_ORDER[:2], "runtime_trace"],
+        list(RUNTIME_EVIDENCE_CAPABILITY_ORDER),
+    ):
+        raise ValueError("runtime evidence capabilities are invalid")
     _validate_components(value["components"], schema_version=schema_version)
+    if schema_version == RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA:
+        from .runtime_trace_contract import validate_trace_components
+
+        validate_trace_components(
+            value["components"],
+            enabled="runtime_trace" in capabilities,
+            run_id=run_id,
+            input_id=input_id,
+        )
+        diff_enabled = "file_diff" in capabilities
+        validate_file_diff_components(
+            value["components"],
+            enabled=diff_enabled,
+        )
     if len(runtime_evidence_json(value).encode("utf-8")) > RUNTIME_EVIDENCE_MAX_BYTES:
         raise ValueError("runtime evidence exceeds the byte limit")
 
@@ -446,11 +497,16 @@ __all__ = [
     "CASEGEN_EVIDENCE_CAPABILITY_ORDER",
     "CASEGEN_FRAMEWORK_SCHEMA",
     "RUNTIME_AGENT_OUTPUT_MAX_BYTES",
+    "RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA",
+    "RUNTIME_EVIDENCE_CAPABILITY_ORDER",
     "RUNTIME_EVIDENCE_MAX_BYTES",
     "RUNTIME_EVIDENCE_MEDIA_TYPE",
     "RUNTIME_EVIDENCE_SCHEMA",
     "RUNTIME_EVIDENCE_SCHEMA_V1",
     "RUNTIME_EVIDENCE_SCHEMA_V2",
+    "RUNTIME_FILE_DIFF_MAX_BYTES",
+    "RUNTIME_FILE_DIFF_OMISSION_REASONS",
+    "RUNTIME_FILE_DIFF_TOTAL_MAX_BYTES",
     "casegen_framework_is_advertised",
     "derive_casegen_evidence_capabilities",
     "normalize_sha256",
