@@ -44,7 +44,7 @@ For optional OTel dependencies and Trace setup, see the
 
 ## Versions and update reminders
 
-SDK version: **0.2.0**. Publication status is shown in the
+SDK version: **0.2.1**. Publication status is shown in the
 [official Releases](https://github.com/DefuzeX-AI/KUMA-DefuzeX/releases).
 Run `kuma updates check` (or Python `kuma.check_for_updates()`) to check stable
 Release tags: patch-only updates are **optional**, higher major/minor versions

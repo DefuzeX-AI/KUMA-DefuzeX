@@ -198,6 +198,14 @@ Judge 仍校验当前租户的服务端原件。参见[保存与加载示例及 
 
 ### `judge`
 
+Backend 广告的 `max_files` 为支持的最大 Case 步数 × 2（当前 10 × 2 = 20），
+不是本次 Run 的实际步数 × 2。Case 文件和每份 Evidence 各占一个名额。
+Batch Judge 按每个 item 分别计算，不将整批相加；SDK 不硬编码 20。
+文件数超限在 Judge POST 前拒绝。字节和隐私检查保持：Backend 对每项强制
+检查 Case+Evidence 合计字节，包括自定义 Case；SDK 保留各路径原有字节检查
+和保守的整批字节上限。本次不新增自定义 Case 单次 Judge 的合计字节预检。
+应先部署配套 Backend；客户端仍遵守旧 Backend 返回的较小上限。
+
 <!-- api-parameters:judge:start -->
 
 | 参数 | 类型 | 必填/默认值 | 它控制什么、什么时候填写 |
