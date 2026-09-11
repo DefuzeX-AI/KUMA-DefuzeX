@@ -230,6 +230,47 @@ def _runtime_evidence_part(
     )
 
 
+def _validate_runtime_capability_support(
+    config: JudgeUploadConfig, *, upload_diff: bool, trace_enabled: bool
+) -> None:
+    """Check explicit upload capabilities before multipart construction.
+
+    Called by Runtime Evidence negotiation after Trace association validation.
+
+    Args:
+        config: Validated Backend advertisement; an empty capability tuple means
+            the historical server omitted the capability field entirely.
+        upload_diff: Whether the caller explicitly requested file-diff bodies.
+        trace_enabled: Whether Run history contains captured Trace Evidence.
+
+    Returns:
+        None when the requested capabilities are supported or the historical
+        file-diff omission rule applies; schema support is checked by the caller.
+
+    Raises:
+        ProviderError: With ``runtime_evidence_unsupported`` when an explicit
+            advertisement lacks file_diff, or captured Trace lacks runtime_trace.
+            File-diff rejection retains precedence when both are unsupported.
+
+    Side Effects:
+        None; this check reads only validated configuration and performs no I/O.
+    """
+    if (
+        upload_diff
+        and config.runtime_evidence_capabilities
+        and "file_diff" not in config.runtime_evidence_capabilities
+    ):
+        raise ProviderError(
+            "The Backend does not support file-diff Evidence",
+            code="runtime_evidence_unsupported",
+        )
+    if trace_enabled and "runtime_trace" not in config.runtime_evidence_capabilities:
+        raise ProviderError(
+            "The Backend does not support captured Runtime Trace Evidence",
+            code="runtime_evidence_unsupported",
+        )
+
+
 def _runtime_evidence_parts(
     context: JudgeContext, config: JudgeUploadConfig, part_prefix: str
 ) -> tuple[list[UploadPart], list[dict[str, Any]], list[Any]]:
@@ -260,20 +301,9 @@ def _runtime_evidence_parts(
         "trace_evidence" in item.submission.extensions for item in context.history
     )
     _validate_trace_associations(context)
-    if (
-        context.upload_diff
-        and config.runtime_evidence_capabilities
-        and "file_diff" not in config.runtime_evidence_capabilities
-    ):
-        raise ProviderError(
-            "The Backend does not support file-diff Evidence",
-            code="runtime_evidence_unsupported",
-        )
-    if trace_enabled and "runtime_trace" not in config.runtime_evidence_capabilities:
-        raise ProviderError(
-            "The Backend does not support captured Runtime Trace Evidence",
-            code="runtime_evidence_unsupported",
-        )
+    _validate_runtime_capability_support(
+        config, upload_diff=context.upload_diff, trace_enabled=trace_enabled
+    )
     if context.upload_diff or trace_enabled:
         if RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA not in config.evidence_types:
             raise ProviderError(
