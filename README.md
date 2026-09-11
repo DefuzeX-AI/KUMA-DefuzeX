@@ -48,6 +48,8 @@ Follow the [full-stack user-flow guide](examples/full_stack/README.md) to run KU
 
 ## Detailed documentation
 
+[Save and reuse a Case](docs/case-files.md)
+
 [English SDK guide](docs/sdk-guide.md) · [Strategy Groups](docs/strategy-groups.md) · [Agent tool capabilities](docs/agent-tool-capabilities.md) · [Python API reference](docs/api-reference.md) · [Agent Profile migration](docs/migration-agent-profile.md) · [简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [中文 API 参考](docs/api-reference.zh-CN.md) · [Runtime Evidence contract](docs/runtime-evidence.md)
 
 ## Project

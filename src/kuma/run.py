@@ -30,6 +30,8 @@ from .evidence.tracking.evidence import EvidenceCollector, PreparedEvidence
 from .providers.base import JudgeContext, JudgeProvider
 from .providers.normalization import normalize_report
 from .providers.official_judge import OfficialJudgeProvider
+from .repository.case_artifact_io import save_case_artifact
+from .repository.case_artifacts import artifact_from_case
 from .runtime import RuntimeSession
 
 RunState = Literal[
@@ -283,6 +285,41 @@ class Run:
         self._stopped_early = False
         self._evidence = evidence
         self._mutex = threading.RLock()
+
+    @property
+    def case_origin(self) -> Literal["official", "custom"]:
+        """Return the explicit Case origin, not a guess based on its identifier."""
+        return "official" if "official_case" in self._case.extensions else "custom"
+
+    def save_case(self, path: str | os.PathLike[str]) -> Path:
+        """Save the complete reusable public Case without execution data.
+
+        Args:
+            path: Explicit destination within this Run's repo_path. Relative
+                paths resolve from that repository. Parent must exist; an
+                existing file is never overwritten, including concurrent saves.
+        Returns:
+            Absolute Path to the new UTF-8 kuma.case_artifact.v1 document.
+        Raises:
+            ValidationError: Malformed/changed official content or artifact limits.
+            SensitiveDataError: Private or sensitive content, without overrides.
+            ConfigurationError: Unsafe path, existing target, or file I/O failure.
+        Preconditions:
+            This Run owns a complete Case; official Cases retain the raw original.
+        Postconditions:
+            State/history/input position are unchanged. No Run ID, Evidence,
+            Agent output, rubric or credentials are exported. Checksums are not
+            authenticity proofs; official Judge still checks the server original.
+        Side Effects:
+            Atomically writes one bounded file, without network or tool execution.
+        Security/Privacy:
+            The complete file is limited to 5 MiB; links and mount escapes are
+            rejected. allow_sensitive never bypasses artifact privacy checks.
+        """
+        with self._mutex:
+            artifact = artifact_from_case(self._case)
+            root = self._runtime.workspace.repo_path
+            return save_case_artifact(root, path, artifact)
 
     @property
     def state(self) -> RunState:

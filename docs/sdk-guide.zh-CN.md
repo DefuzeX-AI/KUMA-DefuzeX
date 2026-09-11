@@ -1,5 +1,9 @@
 # KUMA Python SDK 指南
 
+跨进程复用同一完整 Case：调用 `run.save_case("case.json")`，再使用
+`create_run(repo_path=".", case_path="case.json")`。来源、路径/大小限制、官方核验
+及 Judge 计费边界见 [Case 文件](case-files.zh-CN.md)。
+
 Evidence 容量：默认 Trace 总预算为每 Run 8 MiB；span、attribute、event 上限及
 透明丢弃计数继续生效。Agent 输出 canonical JSON 上限 4 MiB，单份 Runtime
 Evidence 上限 5 MiB，含元数据和分隔符的完整 multipart 上限 8 MiB。

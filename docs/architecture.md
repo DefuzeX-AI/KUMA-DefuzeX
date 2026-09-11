@@ -1,5 +1,11 @@
 # SDK v4 架构
 
+Case 文件层 `repository/case_artifacts.py` 统一校验保存、加载与官方 Judge
+上传的同一公共原件。`case_artifact_io.py` 仅负责有界读取及固定父目录下的原子
+不覆盖发布；`create_run(case_path=...)` 在鉴权/运行材料初始化前加载，复用
+正常 Input 规范化并绑定新 Run ID。来源与 Rubric 不猜测：SDK checksum 不证明
+发行身份，Backend/Core 保留租户原件/原 Rubric 的权威核验职责。
+
 本文描述当前 `kuma` Python 包的模块边界、同步用户 API、内部 v2 operation 流程和关键不变量。公开 HTTP 字段与路径另见 [API Contract](api-contract.md)；使用方式见 [README](../README.md)。
 
 ## 系统边界与数据归属

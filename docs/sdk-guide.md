@@ -1,5 +1,9 @@
 # KUMA Python SDK guide
 
+To reuse the same complete Case in a new process, call `run.save_case("case.json")`
+then `create_run(repo_path=".", case_path="case.json")`. See [Case files](case-files.md)
+for origin, path/size limits, official verification and Judge billing boundaries.
+
 Evidence capacity: the default Trace budget is 8 MiB across one Run; span,
 attribute and event limits and visible loss counters remain active. Canonical
 Agent-output JSON allows 4 MiB, one Runtime Evidence envelope allows 5 MiB, and

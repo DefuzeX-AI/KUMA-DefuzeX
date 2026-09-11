@@ -44,6 +44,7 @@ run = create_run(repo_path=".", agent_profile_path="agent-profile.md")
 | --- | --- | --- | --- |
 | `repo_path` | `str \| os.PathLike[str]` | `"."` | 指定“这次要测试哪个仓库”。KUMA 会读取该目录下的有界元数据，并在启用文件追踪时观察其中的文件变化。如果 Python 正在仓库根目录运行，保留 `"."` 即可。 |
 | `agent_profile_path` | `str \| os.PathLike[str] \| None` | `None` | 指向描述被测 Agent、生产场景、预期行为和禁止边界的 UTF-8 文件。官方 Case 必须提供。选定的策略组仍决定测试能力、领域和方法，Profile 自然语言不能选组或覆盖该选择。Front matter 可包含 closed `strategy_group` 坐标和相对路径 `tool_capabilities` 文件，两者都会在 Provider I/O 前校验。只有自定义 Case Provider 明确不需要 Agent Profile 时才可省略。 |
+| `case_path` | `str \| os.PathLike[str] \| None` | `None` | 加载完整 `kuma.case_artifact.v1` 文件，不重新生成 Case。相对路径基于 `repo_path` 而非 cwd；不能与 `case_provider`、`agent_profile_path` 或非 `auto` strategy 同用。最多读取 5 MiB，在凭据和 runtime 初始化前校验，不调用 CaseGen/目录；`max_steps=None` 使用保存的完整步数，显式值更小时报错、不截断。官方 Judge 仍需凭据并核验服务端原件。 |
 | `case_provider` | `CaseProvider \| callable \| None` | `None` | 决定由谁生成测试步骤。保留 `None` 会向 KUMA 官方服务申请 Case；传入 callable 表示由你的程序在本地提供 Case。 |
 | `judge_provider` | `JudgeProvider \| callable \| None` | `None` | 决定由谁评估全部步骤并生成最终报告。保留 `None` 使用官方 Judge；传入 callable 使用你自己的本地评估逻辑。`judge=False` 时不会使用它。 |
 | `strategy` | `str` | `"auto"` | 保留仅使用未版本化 strategy ID 的服务兼容性。当前策略组应在 Agent Profile front matter 中填写精确 `id` 与 `version`。结构化声明与非默认旧值同时出现时会直接失败，避免产生歧义。 |
@@ -106,6 +107,29 @@ BOM，校验 closed front matter 和三个必需行为章节，并返回不可�
 `strategy_group` 是精确坐标声明，不是从 Profile 正文推断的结果。
 
 ## `Run`
+
+### `save_case`
+
+<!-- api-parameters:save_case:start -->
+
+| 参数 | 类型 | 必填/默认值 | 用途与用法 |
+| --- | --- | --- | --- |
+| `path` | `str \| os.PathLike[str]` | 必填 | 保存到该 Run 仓库内部；相对路径从仓库根解析。父目录须已存在，请使用新文件名：已有文件、symlink、跨 mount 逃逸及并发覆盖都会拒绝。 |
+
+<!-- api-parameters:save_case:end -->
+
+**返回值：** 完整 UTF-8 Case 文件的绝对 `Path`，整文件最多 5,242,880 bytes。
+**前置条件：** Run 已持有完整有效 Case；官方 Case 必须保有原始公共记录。
+**后置条件：** 不改变 Run 状态、history 或 Input 位置，不保存运行 ID、Evidence、
+Agent 输出、Rubric 或凭据。**异常：** 内容无效/被改动时
+`ValidationError(case_artifact_invalid)`；来源冲突时
+`ValidationError(case_origin_invalid)`；敏感/私有内容为 `SensitiveDataError`；
+路径不安全、不可写或已存在为 `ConfigurationError`。**副作用：** 有界原子写文件，
+不联网，隐私检查不能关闭。公开 checksum 只能检测损坏，不能证明真实性；官方
+Judge 仍校验当前租户的服务端原件。参见[保存与加载示例及 wire 边界](case-files.zh-CN.md)。
+
+`run.case_origin` 是只读 `"official" | "custom"`，表示 Case 来源而不是 Judge
+类型；使用官方 Judge 不会把自定义 Case 变成官方 Case。
 
 ### `get_input`
 
