@@ -7,7 +7,7 @@ import os
 import tempfile
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +30,8 @@ from ..trace import (
     PreparedOtelLogs,
     PreparedTraceEvidence,
     TraceEvidenceCapture,
+    _capture_summary,
+    _evidence_payload,
 )
 from .diff import DiffResult, compare_snapshots
 from .logs import LogTracker, PreparedLogs
@@ -499,22 +501,53 @@ class EvidenceCollector:
         summary: _CaptureSummary,
         sensitive_detected: bool,
     ) -> dict[str, Any]:
-        """Build backward-compatible Trace and canonical Runtime Evidence extensions."""
+        """Stage Trace and Runtime projections without committing capture budgets.
+
+        The Submission coordinator supplies prepared sources and status. Even
+        unavailable capture retains an empty failed Trace plus summary so the
+        Official uploader must negotiate runtime_trace rather than silently
+        omit it. Existing local history and hash artifacts use the same bytes;
+        commit/abort remains owned by PreparedEvidence. No network call occurs.
+        """
         extensions: dict[str, Any] = {
             "allow_sensitive": self.allow_sensitive,
             "sensitive_detected": sensitive_detected,
         }
         trace_evidence = None
-        if (
-            summary.prepared_traces is not None
-            and summary.prepared_traces.evidence is not None
-        ):
+        if summary.prepared_traces is not None:
             trace_evidence = summary.prepared_traces.evidence
-            extensions["trace_evidence"] = trace_evidence
-            if summary.prepared_traces.capture_summary is not None:
-                extensions["trace_capture_summary"] = (
-                    summary.prepared_traces.capture_summary
+            if trace_evidence is None:
+                trace_evidence = _evidence_payload(
+                    self.run_id or "",
+                    self.case_id or "",
+                    input_id,
+                    dropped_count=summary.prepared_traces.dropped_count,
+                    truncated=True,
+                    reasons=tuple(
+                        sorted(
+                            set(summary.prepared_traces.component.reasons)
+                            | {"trace_topology_partial"}
+                        )
+                    ),
                 )
+            extensions["trace_evidence"] = trace_evidence
+            extensions["trace_capture_summary"] = (
+                summary.prepared_traces.capture_summary
+                or _capture_summary(
+                    observed_spans=0,
+                    retained_spans=0,
+                    dropped_attribute_events=0,
+                    topology_complete=False,
+                    observed_logs=0,
+                    retained_logs=0,
+                    dropped_log_fields=0,
+                )
+            )
+            extensions["trace_capture_summary"] = {
+                **extensions["trace_capture_summary"],
+                "topology_complete": "trace_topology_partial"
+                not in trace_evidence["reasons"],
+            }
         if self.run_id and self.case_id:
             built = build_runtime_evidence(
                 run_id=self.run_id,
@@ -647,7 +680,22 @@ class EvidenceCollector:
             )
 
     def _prepare_files(self) -> _PreparedFiles:
-        """Capture the after-Snapshot and diff it from the active step baseline."""
+        """Capture final files and stage only privacy-safe diff text.
+
+        The comparison computes bounded local unified diffs when ``upload_diff``
+        is enabled. Before those values can enter a Submission or local record,
+        this boundary removes any diff matched by the canonical sensitive-data
+        scanner and records the content-free ``sensitive_content`` reason. File
+        hashes and other metadata remain available to Runtime Evidence.
+
+        Returns:
+            Staged snapshot, comparison status, public file Evidence, and
+            local-only safe diffs for the active input.
+
+        Side Effects:
+            Reads the configured repository through ``Snapshotter``. It does
+            not commit offsets, persist final records, or perform network I/O.
+        """
         if not self.track_files:
             skipped = CaptureComponent(status="skipped")
             return _PreparedFiles(skipped, skipped, None, None)
@@ -673,6 +721,7 @@ class EvidenceCollector:
                 ),
                 local_diffs={},
             )
+        result = self._omit_sensitive_file_diffs(result)
         diff = CaptureComponent(
             status="complete" if result.evidence.complete else "partial",
             reasons=result.evidence.errors,
@@ -682,6 +731,75 @@ class EvidenceCollector:
             diff=diff,
             evidence=result.evidence,
             result=result,
+        )
+
+    def _omit_sensitive_file_diffs(self, result: DiffResult) -> DiffResult:
+        """Remove sensitive diff bodies before Submission/local persistence.
+
+        Args:
+            result: Bounded comparison result produced for the active step.
+
+        Returns:
+            The original immutable result when no diff is sensitive; otherwise
+            a detached result retaining file metadata while replacing each
+            rejected body with the stable ``sensitive_content`` reason.
+
+        Postconditions:
+            Returned ``local_diffs`` and every ``FileChange.diff`` contain no
+            text rejected by the canonical scanner. The comparison is marked
+            incomplete when at least one requested diff was omitted.
+
+        Security/Privacy:
+            ``allow_sensitive`` deliberately does not bypass this upload-diff
+            boundary. Findings and matched values are never persisted.
+        """
+
+        if not self.upload_diff:
+            return result
+        sensitive_paths = {
+            change.path
+            for change in result.evidence.changes
+            if change.diff is not None
+            and scan_sensitive_text(change.diff, location="file_diff")
+        }
+        if not sensitive_paths:
+            return result
+        changes = tuple(
+            replace(
+                change,
+                diff=None,
+                reason=",".join(
+                    dict.fromkeys(
+                        (
+                            *filter(None, (change.reason or "").split(",")),
+                            "sensitive_content",
+                        )
+                    )
+                ),
+            )
+            if change.path in sensitive_paths
+            else change
+            for change in result.evidence.changes
+        )
+        errors = tuple(dict.fromkeys((*result.evidence.errors, "sensitive_content")))
+        extensions = dict(result.evidence.extensions)
+        extensions["diff_included_count"] = sum(
+            change.diff is not None for change in changes
+        )
+        return DiffResult(
+            evidence=FileEvidence(
+                complete=False,
+                scope=result.evidence.scope,
+                changes=changes,
+                errors=errors,
+                schema_version=result.evidence.schema_version,
+                extensions=extensions,
+            ),
+            local_diffs={
+                path: text
+                for path, text in result.local_diffs.items()
+                if path not in sensitive_paths
+            },
         )
 
     def _scan_findings(

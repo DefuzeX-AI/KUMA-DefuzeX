@@ -250,7 +250,21 @@ def _valid_non_negative_int(value: Any) -> bool:
 
 
 def _valid_trace_span(value: Any) -> bool:
-    """Return whether trace span satisfies the official public-wire validation contract."""
+    """Validate stored legacy spans or current normalized capture spans.
+
+    Local history projection shares the named Trace span validator when links
+    are present. This does not authorize legacy upload: the Official upload
+    coordinator still requires explicit runtime_trace negotiation for capture.
+    Malformed new fields return False without exposing an accessor exception.
+    """
+    if isinstance(value, Mapping) and "links" in value:
+        from ..evidence.runtime_trace_contract import _span
+
+        try:
+            _span(value)
+        except Exception:
+            return False
+        return True
     if not isinstance(value, Mapping) or set(value) != _SPAN_FIELDS:
         return False
     parent = value["parent_span_id"]

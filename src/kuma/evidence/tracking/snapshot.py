@@ -6,7 +6,6 @@ import hashlib
 import os
 import stat
 from collections.abc import Mapping
-from contextlib import suppress
 from dataclasses import dataclass, replace
 from itertools import islice
 from pathlib import Path
@@ -49,6 +48,8 @@ class SnapshotEntry:
         hash_complete: Whether the full permitted content was hashed.
         scan_error: Stable reason for partial observation, never raw OS text.
         text_content: Bounded safe text retained only for local diff generation.
+        text_omission_reason: Stable reason why text was unavailable while hash
+            metadata may still be complete: ``binary`` or ``size_limit``.
     """
 
     path: str
@@ -62,6 +63,7 @@ class SnapshotEntry:
     hash_complete: bool
     scan_error: str | None = None
     text_content: str | None = None
+    text_omission_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,12 +235,32 @@ class Snapshotter:
     def _budget_text(
         self, entry: SnapshotEntry, retained_bytes: int
     ) -> tuple[SnapshotEntry, int, bool]:
-        """Return the stable reason for whichever Snapshot budget was exhausted."""
+        """Apply the per-Snapshot aggregate text budget without losing hashes.
+
+        Args:
+            entry: Fully captured entry that may contain bounded UTF-8 text.
+            retained_bytes: Text bytes already retained by this Snapshot.
+
+        Returns:
+            The retained or metadata-only entry, the new aggregate count, and a
+            flag indicating that text was dropped as ``size_limit``.
+
+        Side Effects:
+            None; the frozen input entry is never mutated.
+        """
         if entry.text_content is None:
             return entry, retained_bytes, False
         if retained_bytes + entry.size <= self.max_total_text_bytes:
             return entry, retained_bytes + entry.size, False
-        return replace(entry, text_content=None), retained_bytes, True
+        return (
+            replace(
+                entry,
+                text_content=None,
+                text_omission_reason="size_limit",
+            ),
+            retained_bytes,
+            True,
+        )
 
     def _excluded(self, path: Path) -> bool:
         """Return whether a canonical path is inside an explicitly excluded root."""
@@ -334,7 +356,23 @@ class Snapshotter:
         before: os.stat_result,
         common: Mapping[str, int | str],
     ) -> tuple[SnapshotEntry, str | None]:
-        """Hash and optionally retain bounded UTF-8 text for one regular file."""
+        """Hash one regular file and classify optional diff source text.
+
+        Args:
+            path: Boundary-checked path to open without changing process cwd.
+            canonical: Stable internal path used only in capture diagnostics.
+            before: Pre-open identity and size used for race detection/budgets.
+            common: Already captured stat fields for the returned entry.
+
+        Returns:
+            A hash-bound snapshot entry plus an internal stable capture reason.
+            Binary/invalid UTF-8 and oversized text retain metadata with the
+            content-free ``binary`` or ``size_limit`` classification.
+
+        Security/Privacy:
+            At most ``max_text_bytes`` is retained for diff construction; a
+            changed file identity invalidates the hash and retained text.
+        """
         digest = hashlib.sha256()
         captured = bytearray()
         try:
@@ -362,9 +400,17 @@ class Snapshotter:
             and before.st_ino == after.st_ino
         )
         text_content: str | None = None
-        if stable and before.st_size <= self.max_text_bytes and b"\0" not in captured:
-            with suppress(UnicodeDecodeError):
-                text_content = bytes(captured).decode("utf-8")
+        text_omission_reason: str | None = None
+        if stable and before.st_size <= self.max_text_bytes:
+            if b"\0" in captured:
+                text_omission_reason = "binary"
+            else:
+                try:
+                    text_content = bytes(captured).decode("utf-8")
+                except UnicodeDecodeError:
+                    text_omission_reason = "binary"
+        elif stable:
+            text_omission_reason = "size_limit"
         error = None if stable else "changed_during_scan"
         return SnapshotEntry(
             **common,
@@ -373,6 +419,7 @@ class Snapshotter:
             hash_complete=stable,
             scan_error=error,
             text_content=text_content,
+            text_omission_reason=text_omission_reason,
         ), None if stable else f"changed_during_scan:{canonical}"
 
 

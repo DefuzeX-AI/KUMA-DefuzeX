@@ -8,6 +8,11 @@ from collections.abc import Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from ..repository.privacy import scan_sensitive_text
+from .trace_tool_content import (
+    TOOL_CONTENT_KEYS,
+    TOOL_METADATA_KEYS,
+    normalize_tool_content,
+)
 
 if TYPE_CHECKING:
     from .trace import TraceEvidenceLimits
@@ -167,7 +172,12 @@ def attribute_key_allowed(key: str, *, resource: bool = False) -> bool:
     """Allow only public resource metadata and bounded ``gen_ai`` metrics."""
     if resource:
         return key in _ALLOWED_RESOURCE_ATTRIBUTES
-    return key in _ALLOWED_GEN_AI_ATTRIBUTES or key.startswith(_ALLOWED_GEN_AI_PREFIXES)
+    return (
+        key in _ALLOWED_GEN_AI_ATTRIBUTES
+        or key in TOOL_METADATA_KEYS
+        or key in TOOL_CONTENT_KEYS
+        or key.startswith(_ALLOWED_GEN_AI_PREFIXES)
+    )
 
 
 def _safe_attributes(
@@ -175,6 +185,7 @@ def _safe_attributes(
     limits: TraceEvidenceLimits,
     *,
     resource: bool = False,
+    tool_content_status: dict[str, str] | None = None,
 ) -> tuple[dict[str, Any], int, bool, set[str]]:
     """Filter all observed attributes before bounding retained allowlisted values.
 
@@ -191,19 +202,27 @@ def _safe_attributes(
     dropped = 0
     truncated = False
     reasons: set[str] = set()
-    for item in _attribute_items(attributes):
+    items = _attribute_items(attributes)
+    if tool_content_status is not None:
+        # Reserve the actually observed semantic identity before optional
+        # attributes; never infer it from a span name or retained tool body.
+        result["gen_ai.operation.name"] = "execute_tool"
+    for item in items:
         if item is _ATTRIBUTE_ITERATION_ERROR:
             dropped += 1
             truncated = True
             reasons.add("trace_attribute_invalid")
             break
         raw_key, raw_value = item
+        if tool_content_status is not None and raw_key == "gen_ai.operation.name":
+            continue
         key, value, item_truncated, item_dropped, item_reasons = _safe_attribute(
             raw_key,
             raw_value,
             limits,
             resource=resource,
             retain=len(result) < limits.max_attributes,
+            tool_content_status=tool_content_status,
         )
         dropped += item_dropped
         reasons.update(item_reasons)
@@ -247,6 +266,7 @@ def _safe_attribute(
     *,
     resource: bool,
     retain: bool,
+    tool_content_status: dict[str, str] | None = None,
 ) -> tuple[str | None, Any | None, bool, int, set[str]]:
     """Classify and optionally retain one attribute without exposing raw values."""
     key = _normalized_attribute_key(raw_key)
@@ -259,8 +279,14 @@ def _safe_attribute(
             else "trace_attribute_not_allowlisted"
         )
         return None, None, False, 1, {reason}
+    if key in TOOL_METADATA_KEYS and tool_content_status is None:
+        return None, None, False, 1, {"trace_attribute_not_allowlisted"}
+    if key in TOOL_CONTENT_KEYS:
+        return _safe_tool_attribute(key, raw_value, retain, tool_content_status)
     if not retain:
         return None, None, True, 1, {"trace_attribute_limit"}
+    if key in TOOL_METADATA_KEYS and not isinstance(raw_value, str):
+        return None, None, False, 1, {"trace_attribute_invalid"}
     try:
         value, value_truncated, value_dropped, value_reasons = _safe_value_with_drops(
             raw_value, limits.max_text_length
@@ -282,6 +308,30 @@ def _safe_attribute(
         value_dropped,
         value_reasons,
     )
+
+
+def _safe_tool_attribute(
+    key: str, raw_value: Any, retain: bool, tool_content_status: dict[str, str] | None
+) -> tuple[str | None, Any, bool, int, set[str]]:
+    """Retain one whole tool body and update explicit field omission status.
+
+    The allowlist boundary supplies known body keys. No truncation or execution
+    inference occurs; attribute-count exhaustion is also recorded separately.
+    """
+    field = TOOL_CONTENT_KEYS[key]
+    if tool_content_status is None:
+        return None, None, False, 1, {"trace_attribute_not_allowlisted"}
+    value, status = (
+        normalize_tool_content(raw_value) if retain else (None, "size_limit")
+    )
+    tool_content_status[field] = status
+    if status != "present":
+        reason = "sensitive" if status == "sensitive_content" else status
+        reasons = {f"trace_tool_content_{reason}"}
+        if not retain:
+            reasons.add("trace_attribute_limit")
+        return None, None, True, 1, reasons
+    return key, value, False, 0, set()
 
 
 def _normalized_attribute_key(raw_key: Any) -> str | None:
@@ -475,6 +525,8 @@ def _span_core(
         try:
             raw_parent_id = parent.span_id
             if raw_parent_id != 0:
+                if getattr(parent, "trace_id", context.trace_id) != context.trace_id:
+                    raise ValueError("parent belongs to another trace")
                 parent_span_id = _hex_identifier(raw_parent_id, 16, "parent span ID")
         except Exception:
             reasons.add("trace_parent_invalid")
@@ -530,12 +582,42 @@ def _map_scope(
 def map_span(
     span: Any, limits: TraceEvidenceLimits
 ) -> tuple[dict[str, Any], int, bool, set[str]]:
-    """Convert one ended OTel span to the public privacy-filtered Evidence shape."""
+    """Convert an ended OTel span into bounded, privacy-filtered observations.
+
+    Args:
+        span: Actual readable span from the in-process provider callback.
+        limits: Capture attribute/event/metadata budgets; tool bodies have a
+            separate 4 MiB canonical JSON cap, not the metadata text limit.
+
+    Returns:
+        Span mapping, observed omitted-field count, truncation flag and stable
+        reasons. Only actual execute_tool attributes can populate tool bodies;
+        real context links are retained without inferring authorization.
+
+    Raises:
+        SpanMappingError: Required span context or timestamps are invalid.
+
+    Side Effects:
+        Reads provider objects only. The caller accounts for omissions and
+        chooses complete/partial/failed capture status; no tool or I/O runs.
+    """
     mapped, core_truncated, core_reasons = _span_core(span, limits)
     span_attributes, attribute_field_reasons = _optional_span_field(
         span, "attributes", "trace_attribute_invalid"
     )
-    attributes, dropped, truncated, reasons = _safe_attributes(span_attributes, limits)
+    tool_status = None
+    if (
+        isinstance(span_attributes, Mapping)
+        and span_attributes.get("gen_ai.operation.name") == "execute_tool"
+    ):
+        tool_status = {"arguments": "not_recorded", "result": "not_recorded"}
+    attributes, dropped, truncated, reasons = _safe_attributes(
+        span_attributes, limits, tool_content_status=tool_status
+    )
+    if tool_status is not None:
+        mapped["tool_content_status"] = tool_status
+        if "not_recorded" in tool_status.values():
+            reasons.add("trace_tool_content_not_recorded")
     event_source, event_field_reasons = _optional_span_field(
         span, "events", "trace_event_invalid"
     )
@@ -567,9 +649,22 @@ def map_span(
         resource=resource,
         scope=scope,
     )
+    links, link_dropped, link_reasons = _map_links(span)
+    mapped["links"] = links
+    reasons.update(link_reasons)
+    sdk_dropped = 0
+    for field, reason in (
+        ("dropped_attributes", "trace_attribute_limit"),
+        ("dropped_events", "trace_event_limit"),
+        ("dropped_links", "trace_link_limit"),
+    ):
+        count, invalid = _sdk_drop_count(span, field)
+        sdk_dropped += count
+        if count or invalid:
+            reasons.add("trace_value_invalid" if invalid else reason)
     return (
         mapped,
-        dropped + event_dropped + resource_dropped,
+        dropped + event_dropped + resource_dropped + link_dropped + sdk_dropped,
         truncated
         or event_truncated
         or resource_truncated
@@ -577,6 +672,79 @@ def map_span(
         or scope_truncated,
         reasons,
     )
+
+
+def _map_links(span: Any) -> tuple[list[dict[str, str]], int, set[str]]:
+    """Retain at most 128 actual OTel link contexts, independently of events.
+
+    Args:
+        span: Ended readable span. No attributes of links are uploaded.
+
+    Returns:
+        Unique trace/span pairs in observed order, omitted-link count and safe
+        reasons. External trace targets are valid; they need not be captured.
+
+    Postconditions:
+        Every retained identifier is valid lowercase hex. Invalid/duplicate
+        links cannot fabricate a parent; sized OTel sources have exact drops.
+
+    Security/Privacy:
+        Accessor failures expose no object text and generic iterators are
+        bounded. Nothing executes tools, resolves targets or performs I/O.
+    """
+    result: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    dropped = 0
+    reasons: set[str] = set()
+    try:
+        source = getattr(span, "links", ()) or ()
+        iterator = iter(source)
+        index = 0
+        while True:
+            try:
+                link = next(iterator)
+            except StopIteration:
+                break
+            if index == 128:
+                dropped += _event_limit_drop_count(source, index)
+                reasons.add("trace_link_limit")
+                break
+            index += 1
+            try:
+                pair = (
+                    _hex_identifier(link.context.trace_id, 32, "link trace ID"),
+                    _hex_identifier(link.context.span_id, 16, "link span ID"),
+                )
+            except Exception:
+                dropped += 1
+                reasons.add("trace_link_invalid")
+                continue
+            if pair in seen:
+                dropped += 1
+                reasons.add("trace_link_duplicate")
+                continue
+            seen.add(pair)
+            result.append({"trace_id": pair[0], "span_id": pair[1]})
+    except Exception:
+        dropped += 1
+        reasons.add("trace_link_invalid")
+    return result, dropped, reasons
+
+
+def _sdk_drop_count(span: Any, field: str) -> tuple[int, bool]:
+    """Read an OTel-reported pre-export omission count without guessing losses.
+
+    Missing counters mean no observed SDK loss; invalid accessors/values are
+    reported separately, without fabricating a record count or leaking text.
+    The caller aggregates actual drops into existing capture accounting.
+    """
+    try:
+        value = getattr(span, field, 0)
+        if type(value) is int and value >= 0:
+            return value, False
+    except Exception:
+        pass
+    return 0, True
 
 
 def _optional_span_field(span: Any, name: str, reason: str) -> tuple[Any, set[str]]:

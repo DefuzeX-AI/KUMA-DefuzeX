@@ -1,4 +1,4 @@
-"""Build local hash-only v1 Evidence and negotiated v2 transport views."""
+"""Build local hash-only Evidence and negotiated official transport views."""
 
 from __future__ import annotations
 

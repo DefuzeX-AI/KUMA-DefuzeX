@@ -227,6 +227,12 @@ print(report)
 
 ## OpenTelemetry
 
+已采集的 Trace 仅在服务端广告 `runtime_trace` 时作为完整哈希绑定正文上传；
+不支持时在 Judge POST 前拒绝，这不同于未配置 Provider 的非阻断 warning。
+工具参数/结果需要真实 `execute_tool` 埋点，普通 span 不会凭空产生正文。
+见 [Runtime Trace 与文件 diff](runtime-trace.zh-CN.md)：本地示例、升级方式、
+正文上限及独立的 `upload_diff=True` 选项。
+
 OpenTelemetry（OTel）是 Agent 框架和 instrumentation 用来产生 span 的标准可观测性接口。KUMA 只把**同一进程中真实产生**的 span 映射为有界 Evidence；它不会伪造 Agent 行为，也不是 OTel Collector、后端或 Trace UI。
 
 仅在需要 Trace Evidence 时安装可选能力，核心包不强制依赖 OTel：

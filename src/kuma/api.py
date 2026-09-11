@@ -574,9 +574,13 @@ def create_run(
             create a sandbox or relax path, privacy, and protocol validation.
         track_files: Capture bounded repository file metadata before and after
             each input.
-        upload_diff: Include bounded safe text diffs. Requires
-            ``track_files=True`` and may expose selected repository text to the
-            configured Judge after sensitive scanning.
+        upload_diff: Send bounded safe unified diffs to the configured Judge.
+            The default ``False`` sends file hashes/metadata only. ``True``
+            requires ``track_files=True`` and explicit Backend support for the
+            named ``file_diff`` capability; unsupported services raise before
+            the Judge POST instead of silently downgrading. Patches are never
+            truncated or expanded to whole-file uploads, and sensitive text is
+            replaced by a content-free omission reason.
         save_local: Persist committed Submission records under the SDK-owned
             ``.kuma/runs/<run_id>/`` directory using atomic replacement.
         allow_sensitive: Permit ordinary Evidence that triggers the scanner in

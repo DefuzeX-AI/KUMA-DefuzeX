@@ -787,6 +787,9 @@ class Run:
                     item.submission.dropped_count for item in self._history
                 ),
             },
+            upload_diff=(
+                self._evidence.upload_diff if self._evidence is not None else False
+            ),
         )
         try:
             raw_report = self._judge_provider.judge(context)

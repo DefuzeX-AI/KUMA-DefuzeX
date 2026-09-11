@@ -152,6 +152,9 @@ class JudgeContext:
         evidence_summary: Read-only bounded summary such as history length and
             dropped-evidence count. It is not a substitute for per-submission
             Evidence and contains no private Judge material.
+        upload_diff: Whether the Run explicitly requested safe bounded unified
+            diffs for Official Judge Evidence. ``False`` preserves hash-only
+            transport and custom Judge compatibility.
 
     Security/Privacy:
         Custom judges receive only public Case data and SDK-collected Run
@@ -163,6 +166,7 @@ class JudgeContext:
     history: tuple[HistoryItem, ...]
     run_status: str
     evidence_summary: Mapping[str, Any] = field(default_factory=dict)
+    upload_diff: bool = False
 
     def __post_init__(self) -> None:
         """Detach the completed history and summary before Judge invocation.
@@ -181,6 +185,8 @@ class JudgeContext:
         object.__setattr__(
             self, "evidence_summary", _immutable_mapping(self.evidence_summary)
         )
+        if not isinstance(self.upload_diff, bool):
+            raise ConfigurationError("upload_diff must be a boolean")
 
 
 @runtime_checkable
