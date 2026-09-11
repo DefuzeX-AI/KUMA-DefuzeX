@@ -6,6 +6,30 @@ This page documents the stable user-facing Python entry points. Types, defaults,
 ranges, side effects, and failure behavior match the current implementation.
 KUMA uses keyword-only arguments for its main APIs so call sites remain readable.
 
+## `check_for_updates`
+
+```python
+from kuma import check_for_updates
+
+update = check_for_updates()
+print(update["status"], update["latest_version"], update["release_url"])
+```
+
+No parameters. Returns a detached dict: `status` is `disabled`, `checking`,
+`unavailable`, `up_to_date`, `optional` (new patch) or `required` (new major/minor);
+`current_version` is the local string, `latest_version` and `release_url` are
+validated official-release values or `None`, and `cached` is boolean. Required
+is a strong reminder, never a blocked request or automatic installation.
+
+Explicit calls can perform one anonymous GitHub HTTPS request (one-second socket
+timeout, 64 KiB cap, no retry); ordinary failure returns unavailable. Concurrent
+checks return checking without waiting. Success/failure is cached in memory for
+24 hours per process. Set `KUMA_DISABLE_UPDATE_CHECK=1` to disable even explicit
+calls. No credentials, Agent data, disk writes, proxies or redirects. Official
+transport schedules the same checker on a daemon thread; import/help/local/custom
+paths do not check. CLI equivalent: `kuma updates check`, JSON stdout, exit zero.
+See [release policy](releases.md) for all status fields and lifecycle limits.
+
 ## `configure`
 
 ```python

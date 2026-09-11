@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Ordinary CI commands must not contact the release API.
+  KUMA_DISABLE_UPDATE_CHECK: "1"
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

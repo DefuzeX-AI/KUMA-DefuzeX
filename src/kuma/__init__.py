@@ -70,6 +70,7 @@ from .repository.tool_capability_io import (
 )
 from .requests import RequestRecord, list_requests, resume_request, show_request
 from .serialization import to_json
+from .updates import check_for_updates
 
 __all__ = [
     "AGENT_CAPABILITIES_SCHEMA_VERSION",
@@ -117,6 +118,7 @@ __all__ = [
     "ToolCapability",
     "ValidationError",
     "__version__",
+    "check_for_updates",
     "configure",
     "create_run",
     "list_requests",
