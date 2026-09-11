@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -147,6 +148,20 @@ class LocalTransport:
 
 
 class RuntimeTraceSmoke(unittest.TestCase):
+    def test_explicit_catalog_without_file_diff_rejects_before_post(self):
+        transport = LocalTransport()
+        config = upload_config()
+        config["runtime_evidence_capabilities"].remove("file_diff")
+        context = replace(capture_context(), upload_diff=True)
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(transport, "json", return_value=config),
+            self.assertRaises(ProviderError) as caught,
+        ):
+            OfficialJudgeProvider(transport, state_root=Path(directory)).judge(context)
+        self.assertEqual(caught.exception.code, "runtime_evidence_unsupported")
+        self.assertEqual(transport.posts, [])
+
     def test_file_diff_and_trace_compose_without_whole_file_upload(self):
         context = capture_context()
         item = context.history[0]

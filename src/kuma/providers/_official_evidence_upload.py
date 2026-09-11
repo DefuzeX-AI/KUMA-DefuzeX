@@ -260,6 +260,15 @@ def _runtime_evidence_parts(
         "trace_evidence" in item.submission.extensions for item in context.history
     )
     _validate_trace_associations(context)
+    if (
+        context.upload_diff
+        and config.runtime_evidence_capabilities
+        and "file_diff" not in config.runtime_evidence_capabilities
+    ):
+        raise ProviderError(
+            "The Backend does not support file-diff Evidence",
+            code="runtime_evidence_unsupported",
+        )
     if trace_enabled and "runtime_trace" not in config.runtime_evidence_capabilities:
         raise ProviderError(
             "The Backend does not support captured Runtime Trace Evidence",
