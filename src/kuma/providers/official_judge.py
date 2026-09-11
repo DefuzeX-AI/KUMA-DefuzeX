@@ -422,7 +422,14 @@ class OfficialJudgeProvider:
         part_prefix: str = "",
         idempotency_key: str | None = None,
     ) -> _JudgeUpload:
-        """Build and privacy-check an official or custom Case Judge upload."""
+        """Stage one Case and its Evidence under the advertised per-item limits.
+
+        Called by single and batch Judge preparation before POST. ``max_files``
+        counts the Case artifact plus all Evidence parts for this item.
+        Existing Evidence, Case and aggregate byte/privacy checks remain in
+        their respective paths. Returns staged parts without I/O;
+        raises stable size or privacy errors before request persistence/upload.
+        """
         run_id = self._run_id(context)
         log_parts, manifest, findings = _evidence_upload(context, config, part_prefix)
         metadata: dict[str, Any] = {
@@ -452,8 +459,7 @@ class OfficialJudgeProvider:
                 data=encoded,
             )
             if (
-                len(log_parts) + 1 > config.max_files
-                or len(encoded) + sum(len(part.data) for part in log_parts)
+                len(encoded) + sum(len(part.data) for part in log_parts)
                 > config.max_total_bytes
             ):
                 raise LimitExceededError(
@@ -463,6 +469,11 @@ class OfficialJudgeProvider:
         else:
             case_part, case_findings = _custom_case_part(context, config, part_prefix)
             findings.extend(case_findings)
+        if len(log_parts) + 1 > config.max_files:
+            raise LimitExceededError(
+                "Case and Evidence exceed the upload limit",
+                code="log_size_exceeded",
+            )
         enforce_sensitive_policy(findings, allow_sensitive=self.allow_sensitive)
         return _JudgeUpload(
             run_id=run_id,
@@ -689,7 +700,9 @@ class OfficialJudgeProvider:
 
         Args:
             contexts: Non-empty unique-Run completed contexts, no larger than the
-                Backend-advertised ``max_batch_items``.
+                Backend-advertised ``max_batch_items``. Each item's Case and
+                Evidence share ``max_files``; it is not a batch-wide count.
+                The existing aggregate multipart byte budget also applies.
 
         Returns:
             Tuple in request order. Each :class:`JudgeBatchResult` contains
@@ -731,10 +744,7 @@ class OfficialJudgeProvider:
             item, item_parts = _batch_item(upload)
             items.append(item)
             parts.extend(item_parts)
-        if (
-            len(parts) > config.max_files
-            or sum(len(part.data) for part in parts) > config.max_total_bytes
-        ):
+        if sum(len(part.data) for part in parts) > config.max_total_bytes:
             raise LimitExceededError(
                 "Case and Evidence exceed the batch upload limit",
                 code="log_size_exceeded",

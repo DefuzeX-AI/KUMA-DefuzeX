@@ -245,6 +245,17 @@ credentials, raw tracebacks, prompts, or unapproved file contents.
 
 ### `judge`
 
+The Backend advertises `max_files` as twice the supported maximum Case step
+count (currently 10 × 2 = 20), not twice this Run's actual steps. The Case file
+and every Evidence file each consume a slot. Batch Judge applies that count
+independently to each item, not the batch sum; the SDK never hardcodes 20.
+File-count rejection happens before Judge POST. Existing byte and privacy
+checks remain: the Backend enforces combined Case+Evidence bytes for every
+item, including custom Cases; the SDK preserves its existing per-path byte
+checks and conservative aggregate batch cap. This update does not add a new
+combined-byte preflight for custom single Judge uploads. Deploy the matching
+Backend first; clients continue to respect an older Backend's smaller limit.
+
 <!-- api-parameters:judge:start -->
 
 | Argument | Type | Required/default | What it does and when to use it |

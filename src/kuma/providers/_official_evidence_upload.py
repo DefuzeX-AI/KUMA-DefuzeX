@@ -34,9 +34,14 @@ class JudgeUploadConfig:
     """Hold the validated dynamic public Judge upload limits.
 
     Attributes:
-        max_files: Maximum multipart Evidence files accepted per request.
+        max_files: Maximum Case plus Evidence files per Judge item, including
+            each batch item independently. Consumed from Backend configuration;
+            the SDK does not derive it from the current Case's step count.
         max_file_bytes: Maximum bytes accepted for one Evidence part.
-        max_total_bytes: Maximum combined multipart Evidence bytes.
+        max_total_bytes: Backend limit for combined Case and Evidence bytes.
+            The SDK preserves its existing per-path checks and conservative
+            aggregate batch preflight; the Backend enforces the combined limit
+            for every item, including custom single Judge uploads.
         manifest_schema_version: Exact public manifest version to serialize.
         max_batch_items: Maximum Runs accepted by synchronous batch Judge.
         evidence_types: Closed public Evidence media/type identifiers advertised

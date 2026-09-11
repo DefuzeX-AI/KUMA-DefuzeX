@@ -1,5 +1,26 @@
 # Versions and releases / 版本与发布
 
+## 0.2.1
+
+Availability is determined by the corresponding official GitHub Release, not
+this document or a development branch. 是否可用以对应正式 Release 为准。
+
+- Corrects Judge file-count preflight: Case plus Evidence count toward the
+  advertised per-item limit for both official and custom Cases. Batch counts
+  each item independently rather than rejecting their combined file count.
+- The matching Backend derives the file count as twice its supported maximum
+  step count (currently 20 files); clients consume that value, not a hardcoded
+  20 or a limit based on this Run's actual steps. Deploy the Backend first.
+- 修复官方/自定义 Judge 文件计数；Case 与 Evidence 都占名额，batch 按每项
+  分别计算。服务端按支持的最大步数 × 2 返回上限，客户端直接遵守配置。
+- Existing byte budgets, privacy checks and request identities are unchanged.
+  Combined bytes for custom single Judge remain enforced by the Backend; this
+  patch does not add a new local combined-byte preflight for that path.
+- 字节预算、敏感检查与请求身份不变；自定义 Case 单次 Judge 的合计字节仍由
+  Backend 强制检查，本补丁不新增该路径的本地合计预检。
+- This is an optional patch update from 0.2.0. It does not publish to PyPI or
+  automatically install itself. 0.2.0 → 0.2.1 是可选补丁，不自动安装。
+
 ## 0.2.0
 
 Release availability is determined by the corresponding official
