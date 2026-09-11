@@ -31,11 +31,15 @@ KUMA 是公开 Python SDK，通过严格的 `Run` 协议和有界 Evidence 采�
 
 ## 安装
 
-需要 Python 3.10 或更高版本：
+安装 GitHub `main` 最新源码，需要 Python 3.10 或更高版本以及 Git：
 
 ```bash
-python -m pip install "kuma-defuzex==0.1.0"
+python -m pip install --upgrade "git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git"
 ```
+
+请在 Agent 实际使用的 Python 环境中运行，安装后重启 Agent。
+当前 PyPI 尚无可用公开包，请按上面的命令从 GitHub 安装。
+可选 OTel 依赖与 Trace 配置见 [Runtime Trace 指南](docs/runtime-trace.zh-CN.md)。
 
 ## 快速开始
 
