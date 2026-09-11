@@ -18,6 +18,7 @@ from .repository.tool_capability_io import (
     scan_agent_tool_manifest,
 )
 from .requests import list_requests, resume_request, show_request
+from .updates import check_for_updates
 
 
 def _emit(data: Any) -> None:
@@ -162,10 +163,38 @@ def cmd_requests_resume(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_updates_check(args: argparse.Namespace) -> int:
+    """Print a safe update-status JSON object; offline/disabled checks exit zero.
+
+    Args:
+        args: Parsed no-option updates check command; no credentials are read.
+
+    Returns:
+        Zero, including required reminders, unavailable or disabled results.
+
+    Side Effects:
+        Calls the bounded explicit GitHub check and emits its detached result to
+        stdout. Never installs software or calls Backend/Agent/model services.
+    """
+    _emit(check_for_updates())
+    return 0
+
+
+def _add_update_parser(subparsers: Any) -> None:
+    """Register the explicit update command without scheduling checks or I/O."""
+    updates = subparsers.add_parser("updates", help="check official GitHub releases")
+    update_commands = updates.add_subparsers(dest="updates_command", required=True)
+    update_check = update_commands.add_parser(
+        "check", help="report update status; never install"
+    )
+    update_check.set_defaults(func=cmd_updates_check)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the public CLI parser without performing I/O."""
     parser = argparse.ArgumentParser(prog="kuma")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    _add_update_parser(subparsers)
     whoami = subparsers.add_parser(
         "whoami", help="validate KUMA_API_KEY and show entitlements"
     )

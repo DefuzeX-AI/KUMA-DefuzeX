@@ -42,6 +42,18 @@ The package is not currently available on PyPI; install from GitHub as above.
 For optional OTel dependencies and Trace setup, see the
 [Runtime Trace guide](docs/runtime-trace.md).
 
+## Versions and update reminders
+
+SDK version: **0.2.0**. Publication status is shown in the
+[official Releases](https://github.com/DefuzeX-AI/KUMA-DefuzeX/releases).
+Run `kuma updates check` (or Python `kuma.check_for_updates()`) to check stable
+Release tags: patch-only updates are **optional**, higher major/minor versions
+**require an upgrade reminder**, but never block work or install automatically.
+Official requests check in the background; import/help/local/custom do not.
+Set `KUMA_DISABLE_UPDATE_CHECK=1` to disable all checks. Offline failures are safe;
+results are cached for 24 hours per process. Old 0.1.0 users must upgrade manually
+once to gain reminders. [Full policy and limits](docs/releases.md).
+
 ## Quick start
 
 Run the deterministic local check without an account, API key, Docker, or network:

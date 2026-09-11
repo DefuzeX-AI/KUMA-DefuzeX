@@ -35,6 +35,7 @@ from ..errors import (
 )
 from ..evidence.runtime_contract import CASEGEN_EVIDENCE_CAPABILITY_ORDER
 from ..runtime import is_running_in_docker
+from ..updates import schedule_update_check
 from .http import (
     WireResponse,
     request_timeout,
@@ -209,6 +210,8 @@ def _wire_transport(
 
     Side Effects:
         Sends one HTTPS request, or approved loopback/Docker-gateway HTTP request.
+        A successful response schedules one cached, nonblocking anonymous GitHub
+        Release check; KUMA_DISABLE_UPDATE_CHECK=1 disables that separate check.
 
     Security/Privacy:
         Response text, provider details, and tracebacks are never interpolated
@@ -217,10 +220,12 @@ def _wire_transport(
     request = Request(url, data=body, headers=dict(headers), method=method)
     try:
         with urlopen(request, timeout=timeout) as response:
-            return WireResponse(
+            result = WireResponse(
                 status=response.status,
                 payload=_read_response(response, response.status),
             )
+        schedule_update_check()
+        return result
     except HTTPError as exc:
         try:
             try:

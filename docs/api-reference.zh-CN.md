@@ -4,6 +4,29 @@
 
 本文记录稳定的用户侧 Python API。参数类型、默认值、范围、副作用和失败语义均以当前实现为准。KUMA 的主要 API 使用仅关键字参数，调用时应保留参数名。
 
+## `check_for_updates`
+
+```python
+from kuma import check_for_updates
+
+update = check_for_updates()
+print(update["status"], update["latest_version"], update["release_url"])
+```
+
+无参数。返回独立字典：`status` 为 `disabled`、`checking`、`unavailable`、
+`up_to_date`、`optional`（新补丁）或 `required`（新主/次版本）；
+`current_version` 是本地版本字符串，`latest_version`/`release_url` 是已校验的
+官方发行版信息或 `None`，`cached` 是布尔值。required 是必须升级的强提醒，
+不拒绝请求、不自动安装。
+
+显式调用最多执行一次匿名 GitHub HTTPS 请求（socket 超时 1 秒、64 KiB 上限、
+不重试）；普通失败返回 unavailable，并发检查直接返回 checking，不等待。
+成功/失败在当前进程缓存 24 小时。`KUMA_DISABLE_UPDATE_CHECK=1` 连显式调用
+也禁用。不读取凭据、不发送 Agent 数据、不写磁盘、不走代理/重定向。官方传输
+复用同一检查器的 daemon 后台线程；import/help/local/custom 不检查。
+等价 CLI：`kuma updates check`，JSON 写 stdout、退出码为 0。
+全部字段及生命周期限制见[版本发布规范](releases.md)。
+
 ## `configure`
 
 ```python

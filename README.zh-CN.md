@@ -41,6 +41,16 @@ python -m pip install --upgrade "git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.
 当前 PyPI 尚无可用公开包，请按上面的命令从 GitHub 安装。
 可选 OTel 依赖与 Trace 配置见 [Runtime Trace 指南](docs/runtime-trace.zh-CN.md)。
 
+## 版本与更新提醒
+
+SDK 版本：**0.2.0**；是否已正式发布以
+[官方 Releases](https://github.com/DefuzeX-AI/KUMA-DefuzeX/releases) 为准。
+运行 `kuma updates check`（或 Python `kuma.check_for_updates()`）检查正式版：
+只升补丁号为**可选更新**，主/次版本提高为**必须升级提醒**，但不阻断任务、不自动安装。
+官方请求后台检查，import/help/local/custom 不联网检查；设置
+`KUMA_DISABLE_UPDATE_CHECK=1` 可全部禁用。离线失败不影响业务，结果按进程缓存
+24 小时。0.1.0 用户需先手动升级一次才能获得提醒。[完整规范与限制](docs/releases.md)。
+
 ## 快速开始
 
 无需账号、API Key、Docker 或网络即可运行确定性的本地检查：
