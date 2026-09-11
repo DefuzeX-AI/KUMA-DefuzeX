@@ -49,6 +49,7 @@ jobs:
       - run: python -m kuma --help
       - run: python examples/minimal_local.py
       - run: python tools/verify_evidence_capacity.py
+      - run: python tools/verify_executed_strategy_group.py
 
   windows:
     name: Windows
@@ -65,6 +66,7 @@ jobs:
       - run: python -m kuma --help
       - run: python examples/minimal_local.py
       - run: python tools/verify_evidence_capacity.py
+      - run: python tools/verify_executed_strategy_group.py
 
   macos:
     name: macOS
@@ -81,6 +83,7 @@ jobs:
       - run: python -m kuma --help
       - run: python examples/minimal_local.py
       - run: python tools/verify_evidence_capacity.py
+      - run: python tools/verify_executed_strategy_group.py
 
   otel-compatibility:
     name: OTel ${{ matrix.otel-version }}
