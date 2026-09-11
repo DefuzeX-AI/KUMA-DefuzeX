@@ -56,6 +56,7 @@ run = create_run(
 | --- | --- | --- | --- |
 | `repo_path` | `str \| os.PathLike[str]` | `"."` | Chooses the repository being tested. KUMA reads bounded metadata and, when enabled, observes file changes below this directory. Use `"."` when your Python process already runs at the repository root. |
 | `agent_profile_path` | `str \| os.PathLike[str] \| None` | `None` | Points to the UTF-8 file that describes the Agent, its production scenario, expected behavior, and prohibited boundaries. Supply it for official Case generation. The selected Strategy Group still controls the testing capability/domain/method; profile prose cannot select or override that group. Front matter may contain a closed `strategy_group` coordinate and a relative `tool_capabilities` file; both are validated before Provider I/O. Omit the path only when your custom Case Provider does not need an Agent Profile. |
+| `case_path` | `str \| os.PathLike[str] \| None` | `None` | Loads a complete saved `kuma.case_artifact.v1` instead of generating a Case. Relative paths use `repo_path`, not cwd. Cannot combine with `case_provider`, `agent_profile_path`, or non-`auto` strategy. Loading validates at most 5 MiB before credentials/runtime setup and makes no CaseGen/catalog call; `max_steps=None` uses the saved count, a smaller explicit limit fails without truncation. Official Judge still needs credentials and validates the server original. |
 | `case_provider` | `CaseProvider \| callable \| None` | `None` | Chooses who creates the test Inputs. Leave `None` to request an official Case from KUMA; pass a callable when your application supplies its own local Case. |
 | `judge_provider` | `JudgeProvider \| callable \| None` | `None` | Chooses who evaluates all submitted results and builds the final report. Leave `None` for the official Judge, or pass a callable for your own local evaluation. Ignored when `judge=False`. |
 | `strategy` | `str` | `"auto"` | Preserves compatibility with services that use an unversioned strategy ID. For current Strategy Groups, put the exact `id` and `version` in Agent Profile front matter. Combining a structured declaration with a non-default legacy value fails instead of creating ambiguous intent. |
@@ -132,6 +133,32 @@ content uses `agent_profile_invalid`. The returned `strategy_group` is an exact
 coordinate declaration—not an inference from Profile prose.
 
 ## `Run`
+
+### `save_case`
+
+<!-- api-parameters:save_case:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `path` | `str \| os.PathLike[str]` | Required | Destination within this Run's repository; relative paths are repository-relative. Its parent must already exist. Choose a new filename: existing files, symlinks, mount escapes and concurrent overwrites are rejected. |
+
+<!-- api-parameters:save_case:end -->
+
+**Returns:** absolute `Path` to the complete UTF-8 Case artifact (maximum
+5,242,880 bytes). **Preconditions:** the Run has a validated complete Case;
+official Cases must retain their original public record. **Postconditions:**
+Run state, history and Input position do not change; no runtime ID, Evidence,
+Agent output, Rubric or credential is saved. **Raises:**
+`ValidationError(case_artifact_invalid)` for invalid/changed content,
+`ValidationError(case_origin_invalid)` for conflicting origin,
+`SensitiveDataError` for sensitive/private content, and `ConfigurationError`
+for unsafe/unwritable/existing paths. **Side effects:** bounded atomic file
+publication, no network. Privacy checks cannot be disabled. Public checksums
+detect corruption, not authenticity; official Judge validates the tenant-owned
+server original. [Save/load example and wire boundaries](case-files.md).
+
+`run.case_origin` is read-only `"official" | "custom"`; it describes the Case,
+not which Judge is configured. An official Judge does not make a custom Case official.
 
 ### `get_input`
 

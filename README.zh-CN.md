@@ -48,6 +48,8 @@ kuma quickstart
 
 ## 详细文档
 
+[保存并复用 Case](docs/case-files.zh-CN.md)
+
 [简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [策略组](docs/strategy-groups.zh-CN.md) · [Agent 工具能力](docs/agent-tool-capabilities.zh-CN.md) · [中文 API 参考](docs/api-reference.zh-CN.md) · [Agent Profile 迁移说明](docs/migration-agent-profile.md) · [English SDK guide](docs/sdk-guide.md) · [Python API reference](docs/api-reference.md) · [Runtime Evidence 合同](docs/runtime-evidence.md)
 
 ## 项目链接

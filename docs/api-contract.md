@@ -1,5 +1,20 @@
 # KUMA SDK API Contract
 
+## 保存的 Case 与官方 Judge 原件
+
+`Run.save_case(path)` / `create_run(case_path=...)` 使用本地 closed
+`kuma.case_artifact.v1`；完整字段、5 MiB/深度限制和来源规则见
+[Case 文件](case-files.zh-CN.md)。新官方 Judge 上传 raw schema `2` 的完整十字段
+公共 Case，part 为 `case_file`、filename `kuma-official-case.json`、MIME
+`application/json`；不上传本地 artifact 外壳，不同时传顶层 `case_id`。
+metadata 仍为既有 `repo_fingerprint/case_sha256/case_signature`，必须与 raw 一致。
+batch 使用既有 `case_file_part` 指向各条目的 Case part。Case 文件字节计入原有
+动态单文件和总预算；custom Case 仍用 `defuzex.custom_case.v1`。
+公开 checksum 不是认证：Backend 在新 reservation 前核验租户原件和原 CaseGen
+control 的唯一 Rubric 引用。SDK 不导入 Rubric，不把被编辑的官方 Case 降级为
+custom，也不在旧 Backend 拒绝时退回 case_id-only。历史客户端引用路径不作为
+新保存/加载流程的隐式兼容路径。
+
 Base URL：`https://defuzex.ai/api/agentdefuze`
 
 所有 URL 使用 trailing slash。SDK 请求使用：

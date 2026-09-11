@@ -45,6 +45,7 @@ PUBLIC_APIS = (
         "parse_agent_profile",
     ),
     PublicApi("get_input", "src/kuma/run.py", "Run.get_input"),
+    PublicApi("save_case", "src/kuma/run.py", "Run.save_case"),
     PublicApi("submit", "src/kuma/run.py", "Run.submit"),
     PublicApi("judge", "src/kuma/run.py", "Run.judge"),
     PublicApi(

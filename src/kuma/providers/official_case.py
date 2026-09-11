@@ -15,6 +15,7 @@ from ..errors import (
     ValidationError,
 )
 from ..evidence.runtime_contract import CASEGEN_EVIDENCE_CAPABILITY_ORDER
+from ..repository.case_artifacts import validate_public_original
 from ..repository.metadata import prepare_repo_meta_upload
 from ..repository.privacy import enforce_sensitive_policy, scan_sensitive_json
 from ..repository.strategy_groups import validate_strategy_group_wire_selection
@@ -675,6 +676,15 @@ def _normalized_case(
     executed = _executed_strategy_group(response, requested_strategy_group)
     if executed is not None:
         provenance["executed_strategy_group"] = executed
+    invalid_original = False
+    try:
+        provenance["public_case"] = validate_public_original(raw_case)
+    except ValidationError:
+        invalid_original = True
+    if invalid_original:
+        raise ProviderError(
+            "The Backend returned an invalid public Case", code="invalid_response"
+        )
     return {
         "case_id": case_id,
         "inputs": inputs,
