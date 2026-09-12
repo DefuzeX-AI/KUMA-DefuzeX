@@ -43,7 +43,7 @@ python -m pip install --upgrade "git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.
 
 ## 版本与更新提醒
 
-SDK 版本：**0.2.1**；是否已正式发布以
+SDK 版本：**0.2.2**；是否已正式发布以
 [官方 Releases](https://github.com/DefuzeX-AI/KUMA-DefuzeX/releases) 为准。
 运行 `kuma updates check`（或 Python `kuma.check_for_updates()`）检查正式版：
 只升补丁号为**可选更新**，主/次版本提高为**必须升级提醒**，但不阻断任务、不自动安装。

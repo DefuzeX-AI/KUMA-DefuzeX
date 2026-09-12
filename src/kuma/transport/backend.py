@@ -617,6 +617,7 @@ _ERROR_MESSAGES = {
     ServiceError: "The KUMA service request failed.",
 }
 _CODE_ERROR_MESSAGES = {
+    "service_busy": "服务繁忙，请稍后重试。",  # noqa: RUF001
     "forbidden": "此密钥没有权限使用该功能。",
     "idempotency_conflict": "这个请求已经提交过了，请不要重复提交。",  # noqa: RUF001
     "invalid_api_key": "密钥无效。",
