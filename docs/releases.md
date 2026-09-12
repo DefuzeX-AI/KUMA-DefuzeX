@@ -1,5 +1,16 @@
 # Versions and releases / 版本与发布
 
+## 0.2.2
+
+- `service_busy` now consistently displays “服务繁忙，请稍后重试。” for
+  synchronous and asynchronous failures. The exception remains `ServiceBusyError`;
+  its stable code and server-provided retryable flag, including false, are unchanged.
+- 同步和异步服务繁忙错误统一中文提示；仅接受固定文案，任意服务端内部文字仍被
+  安全回退。提示不改变重试资格、不触发自动重试；`retryable=false` 时不要自动重试。
+- Optional patch update from 0.2.1, with no automatic installation or PyPI
+  publication implied. Availability follows the official GitHub Release.
+  这是可选补丁，是否发行以正式 Release 为准，不自动安装。
+
 ## 0.2.1
 
 Availability is determined by the corresponding official GitHub Release, not
