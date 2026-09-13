@@ -11,6 +11,7 @@ import socket
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from http.client import HTTPException
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -232,6 +233,12 @@ def _wire_transport(
                 payload = _read_response(exc, exc.code)
             except _RemoteError as nested:
                 payload = nested.payload
+            except HTTPException as nested:
+                raise ServiceError(
+                    "The KUMA service could not be reached.",
+                    code="network_error",
+                    retryable=True,
+                ) from nested
         finally:
             exc.close()
         raise _RemoteError(exc.code, payload) from None
@@ -248,6 +255,12 @@ def _wire_transport(
                 code="network_timeout",
                 retryable=True,
             ) from exc
+        raise ServiceError(
+            "The KUMA service could not be reached.",
+            code="network_error",
+            retryable=True,
+        ) from exc
+    except HTTPException as exc:
         raise ServiceError(
             "The KUMA service could not be reached.",
             code="network_error",
