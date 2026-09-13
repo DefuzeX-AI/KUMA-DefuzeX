@@ -17,7 +17,7 @@ Backend 更小的限制仍有效，输出不会截断。JSON 引号及转义也�
 
 ## 安装
 
-KUMA 支持 Python 3.10 至 3.14。请从 GitHub 安装（需要 Git）；当前 PyPI 无可用公开包。请先创建隔离环境：
+KUMA 支持 Python 3.10 至 3.14。建议安装下方指定版本的 GitHub Release（需要 Git）。请先创建隔离环境：
 
 ```bash
 python -m venv .venv

@@ -429,4 +429,4 @@ null、列表、非空未知详情仍然非法。
 
 其它 HTTP 详情仍丢弃，未知异步详情结构仍拒绝。不展示任意远端 message、私有路径
 或模型原文。详情不改变 retryable、待恢复身份、计费或自动重试规则。
-参见[未发布错误语义变更说明](public-error-diagnostics.zh-CN.md)。
+参见[公开错误诊断指南](public-error-diagnostics.zh-CN.md)。

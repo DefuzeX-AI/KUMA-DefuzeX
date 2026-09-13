@@ -534,4 +534,4 @@ object `details: {}` as absence; null/lists/unknown nonempty details remain inva
 Other HTTP details remain discarded; unknown async detail shapes remain rejected.
 Remote free-form messages, private paths and raw model responses are never shown.
 Details do not change retryability, pending identity, billing or automatic retry
-policy. See the [unreleased error change notes](public-error-diagnostics.md).
+policy. See the [public error diagnostics guide](public-error-diagnostics.md).

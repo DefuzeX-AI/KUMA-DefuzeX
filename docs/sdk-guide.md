@@ -19,8 +19,8 @@ This is the canonical user guide for KUMA configuration and integration. The pac
 
 ## Installation
 
-KUMA supports Python 3.10 through 3.14. Install from GitHub (Git required); the
-package is not currently available on PyPI. Create an isolated environment:
+KUMA supports Python 3.10 through 3.14. We recommend installing the pinned GitHub
+release below (Git required). Create an isolated environment:
 
 ```bash
 python -m venv .venv
