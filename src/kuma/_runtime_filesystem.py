@@ -28,19 +28,29 @@ def default_runtime_root(mode: str) -> Path:
     return Path(tempfile.gettempdir()) / "kuma"
 
 
-def _create_repo_runtime_directory(path: Path) -> bool:
+def _create_repo_runtime_directory(root: Path, path: Path) -> bool:
     """Create ``path`` or verify a concurrently/existing directory.
 
     Returns ``True`` only when this call created the directory, allowing its
     caller to remove an empty partial setup after a later atomic-write failure.
     """
+    created = False
     try:
         path.mkdir()
-        return True
+        created = True
     except FileExistsError:
-        if path.is_dir():
-            return False
-        raise
+        pass
+    metadata = path.lstat()
+    reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_ISLNK(metadata.st_mode)
+        or (reparse and getattr(metadata, "st_file_attributes", 0) & reparse)
+        or metadata.st_dev != root.stat().st_dev
+        or path.resolve(strict=True) != path
+    ):
+        raise OSError("Repository runtime directory is unsafe")
+    return created
 
 
 def _write_runtime_ignore_rule(root: Path, gitignore: Path, existing: str) -> None:
@@ -118,7 +128,9 @@ def ensure_repo_runtime_directory(repo_path: Path) -> Path:
         if not root.is_dir():
             raise ConfigurationError("repo_path must be an existing directory")
         runtime_directory = root / ".kuma"
-        created_runtime_directory = _create_repo_runtime_directory(runtime_directory)
+        created_runtime_directory = _create_repo_runtime_directory(
+            root, runtime_directory
+        )
 
         gitignore = root / ".gitignore"
         existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
