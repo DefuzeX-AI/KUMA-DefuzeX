@@ -32,6 +32,7 @@ jobs:
       - run: python tools/verify_public_api_docs.py
       - run: python tools/verify_agent_profile_migration.py
       - run: python tools/verify_evidence_capacity.py
+      - run: python tools/verify_cli_atomic_output.py
       - run: python -m compileall -q src examples tools
 
   test:
