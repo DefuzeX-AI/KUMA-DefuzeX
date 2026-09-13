@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -54,7 +55,8 @@ def _emit_or_save(data: Any, output: str | None) -> None:
         os.replace(temporary, destination)
     except OSError:
         if temporary is not None:
-            temporary.unlink(missing_ok=True)
+            with suppress(OSError):
+                temporary.unlink(missing_ok=True)
         raise KumaError(
             "Strategy Group output could not be saved",
             code="strategy_scan_invalid",
