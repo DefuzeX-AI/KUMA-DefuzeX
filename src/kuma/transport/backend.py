@@ -11,10 +11,10 @@ import socket
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NoReturn
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .._version import __version__
 from ..config import DEFAULT_CASE_MAX_STEPS, resolve_api_key, validate_max_retries
@@ -36,10 +36,13 @@ from ..errors import (
 from ..evidence.runtime_contract import CASEGEN_EVIDENCE_CAPABILITY_ORDER
 from ..runtime import is_running_in_docker
 from ..updates import schedule_update_check
+from .error_details import field_error_message, validated_field_details
 from .http import (
     WireResponse,
+    header_request_id,
     request_timeout,
     retry_delay,
+    safe_request_id,
     validate_request,
     validated_response,
 )
@@ -50,9 +53,12 @@ _MAX_MULTIPART_BYTES = 8 * 1024 * 1024
 _CLIENT_REQUEST_ID_PATTERN = re.compile(r"kreq_[0-9a-f]{32}\Z")
 _PUBLIC_ERROR_DETAIL_CODES = frozenset(
     {
+        "invalid_request",
         "case_step_limit_exceeded",
         "unsupported_difficulty",
         "strategy_capability_mismatch",
+        "model_invalid_response",
+        "model_invalid_result",
     }
 )
 WireTransport = Callable[
@@ -68,13 +74,21 @@ _InternalWireTransport = Callable[
 class _RemoteError(Exception):
     """Hold a bounded remote failure until it is mapped to a public SDK error."""
 
-    def __init__(self, status: int, payload: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        status: int,
+        payload: Mapping[str, Any] | None = None,
+        *,
+        request_id: str | None = None,
+    ) -> None:
         """Retain an HTTP failure for later conversion to a public SDK error.
 
         Args:
             status: HTTP status code returned by the public Backend.
             payload: Parsed public JSON error object. ``None`` means no usable
                 response object was available.
+            request_id: Optional HTTP response correlation header. Invalid
+                spellings are discarded; JSON-body IDs are not trusted.
 
         Preconditions:
             ``status`` comes from the HTTP boundary; ``payload`` has already
@@ -92,6 +106,7 @@ class _RemoteError(Exception):
             :func:`_mapped_remote_error` before exposing it to SDK users.
         """
         self.status = status
+        self.request_id = safe_request_id(request_id)
         self.payload = dict(payload or {})
         super().__init__(f"HTTP {status}")
 
@@ -162,14 +177,69 @@ def _read_response(response: Any, status: int) -> Mapping[str, Any]:
 
     Security/Privacy:
         Raw response bytes never appear in raised SDK messages.
+        Decoding and size failures retain only this response's safe header ID.
     """
+    request_id = header_request_id(getattr(response, "headers", None))
     raw = response.read(_MAX_RESPONSE_BYTES + 1)
     if len(raw) > _MAX_RESPONSE_BYTES:
         raise ServiceError(
             "The KUMA response exceeded the SDK size limit.",
             code="response_too_large",
+            request_id=request_id,
         )
-    return _decode(raw, status)
+    try:
+        return _decode(raw, status)
+    except _RemoteError as exc:
+        exc.request_id = request_id
+        raise
+
+
+class _RejectRedirects(HTTPRedirectHandler):
+    """Prevent authenticated Backend requests from leaving their validated URL."""
+
+    def http_error_302(
+        self,
+        req: Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Mapping[str, str],
+    ) -> NoReturn:
+        """Close a redirect response and fail before opening its target.
+
+        Args:
+            req: Original urllib request, potentially carrying authentication.
+            fp: Original response stream, owned and closed by this handler.
+            code: Redirect status (301, 302, 303, 307, or 308).
+            msg: Untrusted HTTP reason phrase; deliberately ignored.
+            headers: Untrusted response headers; Location is never followed.
+
+        Raises:
+            ServiceError: Always, with non-retryable ``http_redirect_rejected``.
+
+        Postconditions:
+            No redirect request is created, including same-origin redirects and
+            HTTPS downgrades. Credentials, bodies, and Location are not echoed.
+            BackendClient retains retry ownership; this failure is terminal for
+            the current call. Configure the final API URL to proceed.
+        """
+        fp.close()
+        raise ServiceError(
+            "The KUMA API returned a redirect. Configure the final API base URL; "
+            "authenticated requests do not follow redirects.",
+            code="http_redirect_rejected",
+            retryable=False,
+        )
+
+    http_error_301 = http_error_302
+    http_error_303 = http_error_302
+    http_error_307 = http_error_302
+    http_error_308 = http_error_302
+
+
+# Keep a private opener: process-global urllib handlers must not opt authentication
+# into redirects. The callable remains the transport's injectable I/O boundary.
+urlopen = build_opener(_RejectRedirects()).open
 
 
 def _wire_transport(
@@ -196,7 +266,8 @@ def _wire_transport(
     Raises:
         _RemoteError: The server returns an HTTP error response.
         KumaTimeoutError: The socket or URL layer reaches ``timeout``.
-        ServiceError: The service is unreachable or its response is oversized.
+        ServiceError: The service is unreachable, its response is oversized, or
+            it redirects (``http_redirect_rejected``, never automatically retried).
 
     Preconditions:
         ``BackendClient`` has validated the base URL, method, SDK path, body
@@ -216,6 +287,10 @@ def _wire_transport(
     Security/Privacy:
         Response text, provider details, and tracebacks are never interpolated
         into user-visible messages. The Authorization header is not logged.
+        All redirects are rejected before a follow-up request, even on the same
+        origin. Configure the final Backend URL rather than a redirecting alias.
+        HTTP error and decoded success responses carry only a validated
+        X-Request-ID as separate metadata; no other response headers are retained.
     """
     request = Request(url, data=body, headers=dict(headers), method=method)
     try:
@@ -223,10 +298,12 @@ def _wire_transport(
             result = WireResponse(
                 status=response.status,
                 payload=_read_response(response, response.status),
+                request_id=header_request_id(getattr(response, "headers", None)),
             )
         schedule_update_check()
         return result
     except HTTPError as exc:
+        request_id = header_request_id(exc.headers)
         try:
             try:
                 payload = _read_response(exc, exc.code)
@@ -234,7 +311,7 @@ def _wire_transport(
                 payload = nested.payload
         finally:
             exc.close()
-        raise _RemoteError(exc.code, payload) from None
+        raise _RemoteError(exc.code, payload, request_id=request_id) from None
     except TimeoutError as exc:
         raise KumaTimeoutError(
             "The KUMA request timed out.",
@@ -450,7 +527,7 @@ def _error_envelope(
 
     Postconditions:
         Only typed ``code``, ``retryable``, optional text ``message``, and the
-        explicitly validated Case-limit/difficulty/capability details remain.
+        explicitly validated per-code static public details remain.
 
     Security/Privacy:
         Backend/Core/provider diagnostics cannot flow through ``details``.
@@ -472,11 +549,14 @@ def _public_error_details(code: str, envelope: Mapping[str, Any]) -> Mapping[str
     Args:
         code: Validated public error code; unrelated HTTP details are discarded.
         envelope: Error fields from a bounded response. Historical omission is
-            accepted for difficulty/capability errors, not the required Case limit.
+            accepted for input/model/difficulty/capability diagnostics, not the
+            required Case limit. Exact empty dictionaries on the three input/model
+            codes also mean historical absence, never a fabricated diagnosis.
 
     Returns:
         A fresh mapping: Case integer limit, unique D0-D4 difficulty list in
-        server order, or canonical ordered missing Evidence capabilities.
+        server order, canonical ordered missing Evidence capabilities, static
+        input-field constraints, or one closed generated-result reason.
 
     Raises:
         ProviderError: Present supported-code details have extra keys, invalid
@@ -490,6 +570,27 @@ def _public_error_details(code: str, envelope: Mapping[str, Any]) -> Mapping[str
         return _case_step_limit_details(code, envelope)
     if code not in _PUBLIC_ERROR_DETAIL_CODES or "details" not in envelope:
         return {}
+    if (
+        code in {"invalid_request", "model_invalid_response", "model_invalid_result"}
+        and type(envelope["details"]) is dict
+        and not envelope["details"]
+    ):
+        return {}
+    if code == "invalid_request":
+        return validated_field_details(envelope["details"])
+    if code in {"model_invalid_response", "model_invalid_result"}:
+        details = envelope["details"]
+        if (
+            not isinstance(details, Mapping)
+            or set(details) != {"reason"}
+            or type(details["reason"]) is not str
+            or details["reason"] not in _MODEL_RESULT_REASONS
+        ):
+            raise ProviderError(
+                "The Backend returned invalid public error details",
+                code="invalid_response",
+            )
+        return {"reason": details["reason"]}
     field, allowed = (
         ("supported_difficulties", ("D0", "D1", "D2", "D3", "D4"))
         if code == "unsupported_difficulty"
@@ -563,21 +664,39 @@ def _case_step_limit_details(
 _ERROR_CLASSES: dict[str, type[KumaError]] = {
     "invalid_api_key": AuthenticationError,
     "forbidden": PermissionDeniedError,
+    "strategy_group_forbidden": PermissionDeniedError,
     "service_busy": ServiceBusyError,
-    "upstream_unavailable": ServiceBusyError,
-    "upload_not_configured": ServiceBusyError,
+    "upstream_unavailable": ServiceError,
+    "upload_not_configured": ServiceError,
     "model_timeout": KumaTimeoutError,
     "model_invalid_result": ServiceError,
+    "model_invalid_response": ServiceError,
+    "model_output_policy_conflict": ServiceError,
+    "model_output_privacy_rejected": ServiceError,
+    "capacity_exceeded": ServiceError,
     "request_failed": ServiceError,
+    "operation_failed": ServiceError,
+    "request_in_progress": ServiceError,
+    "api_key_service_unavailable": ServiceError,
+    "strategy_catalog_unavailable": ServiceError,
     "repo_state_mismatch": RepoStateMismatchError,
     "invalid_case_integrity": CaseIntegrityError,
     "log_size_exceeded": LimitExceededError,
     "payload_too_large": LimitExceededError,
     "quota_exhausted": LimitExceededError,
+    "rate_limited": LimitExceededError,
     "case_step_limit_exceeded": LimitExceededError,
     "sensitive_content_detected": SensitiveDataError,
+    "sensitive_data_blocked": SensitiveDataError,
 }
 _VALIDATION_CODES = {
+    "not_found",
+    "resource_not_found",
+    "operation_not_found",
+    "invalid_client_request_id",
+    "runtime_evidence_unsupported",
+    "tool_capabilities_invalid",
+    "strategy_catalog_changed",
     "case_not_found",
     "idempotency_conflict",
     "invalid_case_file",
@@ -595,6 +714,11 @@ _VALIDATION_CODES = {
     "evidence_integrity_error",
     "sensitive_content_detected",
     "unsupported_log_type",
+    "unsupported_difficulty",
+    "strategy_group_invalid",
+    "strategy_capability_mismatch",
+    "no_compatible_strategy_pair",
+    "unobservable_injection",
 }
 _STATUS_CLASSES: dict[int, type[KumaError]] = {
     401: AuthenticationError,
@@ -622,9 +746,96 @@ _CODE_ERROR_MESSAGES = {
     "idempotency_conflict": "这个请求已经提交过了，请不要重复提交。",  # noqa: RUF001
     "invalid_api_key": "密钥无效。",
     "invalid_request": "提交的内容有问题，请检查后重试。",  # noqa: RUF001
+    "request_failed": "服务端处理请求失败，请联系服务方；这不表示你的输入有误。",  # noqa: RUF001
+    "operation_failed": "任务未能完成，历史记录中没有更详细的原因。",  # noqa: RUF001
+    "model_invalid_result": "服务生成的结果未达到要求，请稍后重试。",  # noqa: RUF001
+    "model_invalid_response": "服务生成的结果未达到要求，请稍后重试。",  # noqa: RUF001
+    "model_output_policy_conflict": "服务生成的结果不符合任务要求，请稍后重试。",  # noqa: RUF001
+    "model_output_privacy_rejected": "服务生成的结果未通过安全检查，请稍后重试。",  # noqa: RUF001
+    "capacity_exceeded": "当前处理任务较多，请稍后重试。",  # noqa: RUF001
+    "request_in_progress": "请求仍在处理中，请查询原请求的结果，不要重复提交。",  # noqa: RUF001
+    "upstream_unavailable": "服务暂时不可用，请稍后重试。",  # noqa: RUF001
+    "upload_not_configured": "服务端尚未配置好证据上传，请联系服务方处理。",  # noqa: RUF001
+    "unsupported_difficulty": "所选难度不受支持，请选择服务允许的难度。",  # noqa: RUF001
+    "strategy_group_invalid": "所选策略组或版本无效，请从策略目录选择可用项。",  # noqa: RUF001
+    "strategy_capability_mismatch": "当前 Agent 或运行配置缺少所选策略要求的证据能力，请补齐后重试。",  # noqa: RUF001
+    "no_compatible_strategy_pair": "当前策略约束下没有兼容的测试组合，请调整策略选择。",  # noqa: RUF001
+    "unobservable_injection": "当前配置无法观测所选测试行为，请检查证据能力与策略约束。",  # noqa: RUF001
+    "quota_exhausted": "可用额度不足，请检查账户额度。",  # noqa: RUF001
+    "payload_too_large": "提交的数据超过大小限制，请减少数据量后重试。",  # noqa: RUF001
+    "log_size_exceeded": "提交的日志超过大小限制，请减少日志后重试。",  # noqa: RUF001
+    "sensitive_content_detected": "提交的内容包含敏感信息，请脱敏后重试。",  # noqa: RUF001
+    "invalid_client_request_id": "请求标识格式不正确，请使用 SDK 生成的请求标识。",  # noqa: RUF001
+    "rate_limited": "请求过于频繁，请按提示等待后重试。",  # noqa: RUF001
+    "api_key_service_unavailable": "密钥验证服务暂时不可用，请稍后重试。",  # noqa: RUF001
+    "runtime_evidence_unsupported": "当前服务不支持请求的证据能力，请检查客户端配置。",  # noqa: RUF001
+    "sensitive_data_blocked": "提交的内容包含敏感信息，请脱敏后重试。",  # noqa: RUF001
+    "invalid_manifest": "证据清单的结构或关联不正确，请重新生成证据后提交。",  # noqa: RUF001
+    "unsupported_log_type": "提交的证据文件类型不受支持。",
+    "repo_state_mismatch": "提交的仓库状态与 Case 不一致，请检查对应版本。",  # noqa: RUF001
+    "invalid_case_integrity": "提交的 Case 校验信息不匹配，请使用原始 Case。",  # noqa: RUF001
+    "invalid_case_id": "Case 标识格式不正确，请使用服务返回的标识。",  # noqa: RUF001
+    "invalid_case_reference": "Case 引用不正确，请检查对应的 Case。",  # noqa: RUF001
+    "invalid_case_file": "Case 文件格式不正确，请按公开格式重新提交。",  # noqa: RUF001
+    "invalid_content_length": "请求长度信息不正确，请重新构造请求。",  # noqa: RUF001
+    "invalid_idempotency_key": "请求幂等键格式不正确，请使用合法且稳定的键。",  # noqa: RUF001
+    "invalid_metadata": "请求元数据格式不正确，请检查后重新提交。",  # noqa: RUF001
+    "invalid_batch": "批量请求格式不正确，请检查条目数量和结构。",  # noqa: RUF001
+    "invalid_log_parts": "证据附件与清单不匹配，请重新生成附件。",  # noqa: RUF001
+    "duplicate_log_name": "证据附件名称重复，请使用唯一名称。",  # noqa: RUF001
+    "invalid_log_count": "证据附件数量不符合要求，请检查清单。",  # noqa: RUF001
+    "tool_capabilities_invalid": "工具能力声明不正确，请检查公开字段和类型。",  # noqa: RUF001
+    "model_timeout": "模型服务请求超时，请稍后重试。",  # noqa: RUF001
+    "strategy_group_forbidden": "此密钥没有权限使用所选策略组。",
+    "strategy_catalog_changed": "策略目录已更新，请刷新目录后重新选择。",  # noqa: RUF001
+    "strategy_catalog_unavailable": "策略目录暂时不可用，请稍后重试。",  # noqa: RUF001
 }
 _NOT_FOUND_MESSAGE = "你要找的内容不存在，或者已经被删除。"  # noqa: RUF001
 _READ_ONLY_FORBIDDEN_MESSAGE = "此密钥为只读密钥，无法生成 Case 或运行 Judge。"  # noqa: RUF001
+_MODEL_RESULT_REASONS = {
+    "invalid_structure": "服务生成的结果结构不符合要求，这是服务端生成失败。",  # noqa: RUF001
+    "invalid_type": "服务生成的结果类型不符合要求，这是服务端生成失败。",  # noqa: RUF001
+    "out_of_bounds": "服务生成的结果长度或数量超出允许范围，这是服务端生成失败。",  # noqa: RUF001
+    "invalid_format": "服务生成的结果格式无法解析，这是服务端生成失败。",  # noqa: RUF001
+}
+
+
+def _automatic_retry_blocked(error: KumaError) -> bool:
+    """Preserve transport retry policy independently of user-facing classes.
+
+    Args:
+        error: Mapped HTTP/poll failure with its original stable code and
+            retryable flag; no remote text is inspected.
+
+    Returns:
+        Whether HTTP and operation polling must return control without another
+        automatic attempt. Every public category split from the former generic
+        busy projection retains its stop behavior, including generated-result,
+        capacity, internal failure, in-progress and unsupported-strategy errors.
+        Historical public aliases are retained. Network failures and unrelated
+        codes still follow their existing retryable/budget policy.
+
+    Side Effects:
+        None. Callers remain responsible for retry budgets and pending identity;
+        this predicate neither mutates metadata nor starts a new operation.
+    """
+    return isinstance(error, ServiceBusyError) or error.code in {
+        "service_busy",
+        "upstream_unavailable",
+        "upload_not_configured",
+        "capacity_exceeded",
+        "request_failed",
+        "operation_failed",
+        "model_invalid_result",
+        "model_invalid_response",
+        "model_output_policy_conflict",
+        "model_output_privacy_rejected",
+        "request_in_progress",
+        "strategy_group_invalid",
+        "invalid_request",
+        "idempotency_conflict",
+        "resource_not_found",
+    }
 
 
 def _public_error_message(
@@ -663,7 +874,11 @@ def _public_error_message(
             "max_steps exceeds the Case service limit; maximum allowed is "
             f"{details['max_allowed_steps']}."
         )
-    if code == "resource_not_found" or code.endswith("_not_found"):
+    if code in {"model_invalid_response", "model_invalid_result"} and details:
+        return _MODEL_RESULT_REASONS[details["reason"]]
+    if code == "invalid_request" and details:
+        return field_error_message(details)
+    if code in {"not_found", "resource_not_found"} or code.endswith("_not_found"):
         canonical = _NOT_FOUND_MESSAGE
     else:
         canonical = _CODE_ERROR_MESSAGES.get(code, _ERROR_MESSAGES[error_type])
@@ -685,7 +900,8 @@ def _mapped_remote_error(error: _RemoteError) -> KumaError:
 
     Returns:
         Unraised ``KumaError`` subclass carrying safe message, stable code,
-        retryability, and a detached per-code safe details mapping.
+        retryability, sanitized response correlation ID, and a detached per-code
+        safe details mapping. JSON-body request IDs are never used.
 
     Preconditions:
         The response has already passed size and top-level JSON validation.
@@ -697,7 +913,11 @@ def _mapped_remote_error(error: _RemoteError) -> KumaError:
     Security/Privacy:
         Raw response content and unapproved remote messages are absent.
     """
-    code, retryable, message, details = _error_envelope(error)
+    try:
+        code, retryable, message, details = _error_envelope(error)
+    except KumaError as exc:
+        exc.request_id = error.request_id
+        raise
     error_type = _ERROR_CLASSES.get(code) or _STATUS_CLASSES.get(error.status)
     if error_type is None:
         error_type = (
@@ -710,6 +930,7 @@ def _mapped_remote_error(error: _RemoteError) -> KumaError:
         code=code,
         retryable=retryable,
         details=details,
+        request_id=error.request_id,
     )
 
 
@@ -720,6 +941,7 @@ def mapped_error(
     status: int = 400,
     message: str | None = None,
     details: Mapping[str, Any] | None = None,
+    request_id: str | None = None,
 ) -> KumaError:
     """Map already separated public error fields through the HTTP error policy.
 
@@ -729,8 +951,11 @@ def mapped_error(
         status: HTTP-equivalent status used for class fallback; defaults to 400.
         message: Optional frozen public wording. Arbitrary text is ignored by
             :func:`_public_error_message`.
-        details: Optional closed Case-limit, supported-difficulty or missing-
-            capability details; no other remote diagnostic fields are retained.
+        details: Optional per-code closed input constraints, generated-result
+            reason, Case limit, supported difficulties or missing capabilities.
+            Arbitrary remote diagnostics are not retained.
+        request_id: Safe HTTP response header ID for the response carrying this
+            failure. Never an operation ID, client ID, or JSON-body claim.
 
     Returns:
         Unraised public ``KumaError`` suitable for a batch item or asynchronous
@@ -758,6 +983,7 @@ def mapped_error(
         _RemoteError(
             status,
             {"error": envelope},
+            request_id=request_id,
         )
     )
 
@@ -1090,7 +1316,7 @@ class BackendClient:
                 error = exc
             if (
                 error.retryable
-                and not isinstance(error, ServiceBusyError)
+                and not _automatic_retry_blocked(error)
                 and attempts < self.max_retries
             ):
                 delay = retry_delay(attempts, deadline)

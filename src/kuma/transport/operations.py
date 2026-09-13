@@ -9,8 +9,8 @@ import os
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Mapping
-from contextlib import suppress
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -23,14 +23,15 @@ from ..errors import (
     KumaError,
     KumaTimeoutError,
     ProviderError,
-    ServiceBusyError,
 )
 from .backend import (
     _PUBLIC_ERROR_DETAIL_CODES,
     BackendClient,
+    _automatic_retry_blocked,
     _public_error_details,
     mapped_error,
 )
+from .http import response_request_id
 
 _DEFAULT_RESUME_POLL_MS = 1_000
 _MIN_POLL_MS = 100
@@ -505,6 +506,36 @@ def _record_failure(
         marker(state, code=code, retryable=retryable)
 
 
+@contextmanager
+def _response_validation(response: Mapping[str, Any]) -> Iterator[None]:
+    """Associate operation wire-validation errors with exactly one response.
+
+    Args:
+        response: The start or poll mapping currently being validated; only SDK
+            transport metadata, never JSON keys, supplies its optional header ID.
+
+    Yields:
+        None while the poller validates the envelope or its public result.
+
+    Raises:
+        KumaError: The same validation exception with its response ID attached.
+            Process-control exceptions are never caught or replaced.
+
+    Preconditions:
+        Place only response validation inside this scope, not local persistence
+        or another network request, so unrelated failures cannot acquire this ID.
+
+    Postconditions:
+        Error class, code, retryability, and pending state are unchanged. Missing
+        or invalid response metadata sets request_id to None, not a previous ID.
+    """
+    try:
+        yield
+    except KumaError as exc:
+        exc.request_id = response_request_id(response)
+        raise
+
+
 def await_operation(
     client: BackendClient,
     store: PendingOperationStore,
@@ -556,6 +587,10 @@ def await_operation(
     Security/Privacy:
         The store contains no credential, request payload, Evidence, or response
         body; errors expose only stable safe public fields.
+        Terminal errors retain only the current poll response's sanitized
+        X-Request-ID metadata, never a JSON-body ID or a prior start response ID.
+        Start/poll/result validation errors also retain the header of the exact
+        rejected response. Local persistence failures are not relabeled with it.
     """
 
     deadline = time.monotonic() + validate_operation_wait_timeout(wait_timeout)
@@ -563,7 +598,8 @@ def await_operation(
     poll_after_ms = _DEFAULT_RESUME_POLL_MS
     if state.operation_id is None:
         response = start(state.idempotency_key, deadline)
-        operation_id, poll_after_ms = _start_response(response)
+        with _response_validation(response):
+            operation_id, poll_after_ms = _start_response(response)
         state = store.set_operation_id(state, operation_id)
     while True:
         _ensure_time_remaining(deadline)
@@ -589,13 +625,15 @@ def await_operation(
                     retryable=exc.retryable,
                 )
                 raise
-            if not exc.retryable or isinstance(exc, ServiceBusyError):
+            if not exc.retryable or _automatic_retry_blocked(exc):
                 raise
             _sleep_bounded(poll_after_ms, deadline)
             continue
-        status, result, error = _poll_response(response, state.operation_id or "")
+        with _response_validation(response):
+            status, result, error = _poll_response(response, state.operation_id or "")
+            if status == "succeeded" and result is not None:
+                accepted = result if accept_result is None else accept_result(result)
         if status == "succeeded" and result is not None:
-            accepted = result if accept_result is None else accept_result(result)
             _record_success(store, state)
             return accepted
         if status == "failed" and error is not None:
@@ -610,6 +648,7 @@ def await_operation(
                 retryable=error[1],
                 message=error[2],
                 details=error[3],
+                request_id=response_request_id(response),
             )
         state = _record_active_status(store, state, status)
         _sleep_bounded(poll_after_ms, deadline)

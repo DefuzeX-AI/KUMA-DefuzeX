@@ -17,7 +17,7 @@ Backend 更小的限制仍有效，输出不会截断。JSON 引号及转义也�
 
 ## 安装
 
-KUMA 支持 Python 3.10 至 3.14。请先创建隔离环境：
+KUMA 支持 Python 3.10 至 3.14。请从 GitHub 安装（需要 Git）；当前 PyPI 无可用公开包。请先创建隔离环境：
 
 ```bash
 python -m venv .venv
@@ -28,7 +28,7 @@ Windows PowerShell：
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install "kuma-defuzex==0.1.0"
+python -m pip install "git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
 ```
 
 Linux 或 macOS：
@@ -36,13 +36,13 @@ Linux 或 macOS：
 ```bash
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "kuma-defuzex==0.1.0"
+python -m pip install "git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
 ```
 
 按需安装 OpenTelemetry 能力：
 
 ```bash
-python -m pip install "kuma-defuzex[otel]==0.1.0"
+python -m pip install "kuma-defuzex[otel] @ git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
 ```
 
 贡献者请按 [`CONTRIBUTING.md`](../CONTRIBUTING.md) 使用可编辑开发环境。
@@ -96,7 +96,7 @@ print(credential_path)
 |---|---|
 | `KUMA_API_KEY` | 官方 Provider 使用的凭证 |
 | `KUMA_CONFIG_HOME` | 覆盖用户凭证目录 |
-| `KUMA_BASE_URL` | 覆盖允许的公开或 loopback API 地址；非 loopback 地址必须使用 HTTPS |
+| `KUMA_BASE_URL` | 设置最终的公开或 loopback API 地址；非 loopback 地址必须使用 HTTPS。认证请求拒绝所有重定向（包括同源跳转），抛出不可自动重试的 `ServiceError(code="http_redirect_rejected")`。请修正地址，而不是重试会跳转的别名。 |
 
 ### Agent Profile 文件
 
@@ -238,7 +238,7 @@ OpenTelemetry（OTel）是 Agent 框架和 instrumentation 用来产生 span 的
 仅在需要 Trace Evidence 时安装可选能力，核心包不强制依赖 OTel：
 
 ```bash
-python -m pip install "kuma-defuzex[otel]"
+python -m pip install "kuma-defuzex[otel] @ git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
 ```
 
 声明的 `opentelemetry-sdk>=1.30,<2` 范围完整支持 Logs exporter 改名：
@@ -329,6 +329,12 @@ except KumaError as exc:
 常见子类包括 `ConfigurationError`、`AuthenticationError`、`PermissionDeniedError`、`ValidationError`、`SensitiveDataError`、`LimitExceededError`、`InputProtocolError`、`ProviderError`、`KumaTimeoutError`、`ServiceBusyError` 和 `ServiceError`。
 
 `timeout` 限制单次公开 HTTP 尝试；`operation_wait_timeout` 限制完整的官方单 Case 或 Judge operation。POST 重试会复用稳定幂等键；只有服务端声明的瞬态失败才会在 `max_retries` 范围内重试，`ServiceBusyError` 不会自动重试。
+
+`exc.request_id` 来自当前响应的可选 `X-Request-ID`，仅接受恰好 32 位小写十六进制值。缺失、非法或重复值均为 `None`，不会用 JSON 正文、私有服务或本地 `kreq_…` ID 替代。异步失败关联返回失败状态的轮询响应，而非首次启动请求。解码/大小/状态及 operation 启动/轮询/结果校验失败也保留对应合法 ID；无响应网络失败和本地持久化错误不继承旧 ID。响应头可能是服务端回显的值，不保证由服务端生成。
+
+Judge 中断（`KeyboardInterrupt`、`SystemExit`、取消异常）仍原样抛出，同时恢复 `completed`。应用捕获中断并保留 Run 后，可再次调用 `run.judge()`；已知官方 operation 只继续 GET 轮询。SDK 不伪造报告，停止本地等待不等于取消远端任务。强制终止进程无法执行这项清理。
+
+固定文案、安全字段约束和历史兼容见[公开错误诊断](public-error-diagnostics.zh-CN.md)。具体原因需要服务端实际提供；旧版通用错误仍保持通用，不补造原因。
 
 官方请求会在 `.kuma/requests/` 保留有界元数据，不保存凭证、请求正文、
 Evidence 或 Rubric。进程退出后，可使用 `kuma requests list`、

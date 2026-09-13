@@ -25,7 +25,25 @@ class KumaError(Exception):
         retryable: bool = False,
         details: Mapping[str, Any] | None = None,
     ) -> None:
-        """Store stable public code, retryability, request ID, and detached safe details."""
+        """Store public error attributes without adding diagnostics to the message.
+
+        Args:
+            message: Safe user-facing explanation; details are not appended.
+            code: Stable programmatic category, or the subclass default if None.
+            request_id: Optional response correlation ID. Official transport
+                accepts only a safe X-Request-ID header; missing or invalid IDs
+                remain None. For async terminal errors this identifies the poll
+                response, not the original operation. Custom callers own the
+                safety of values they explicitly supply here.
+            retryable: Whether the same logical request may succeed on retry;
+                this does not itself authorize automatic retries.
+            details: Safe public fields copied into a read-only mapping; None
+                means no details. Do not include credentials or raw responses.
+
+        Postconditions:
+            No ID is generated or derived from client_request_id, operation_id,
+            or private Core metadata. Construction performs no I/O.
+        """
         self.code = code or self.default_code
         self.request_id = request_id
         self.retryable = retryable

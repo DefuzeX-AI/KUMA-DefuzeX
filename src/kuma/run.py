@@ -706,6 +706,8 @@ class Run:
             InputProtocolError: If the Run is not completed and ready for Judge.
             ProviderError: If no Judge is configured or a custom Judge fails.
             KumaError: If an official Judge operation fails or times out.
+            BaseException: Cancellation, KeyboardInterrupt, and SystemExit are
+                propagated unchanged after restoring the retryable Run state.
 
         Preconditions:
             Every delivered input has a committed Submission, state is
@@ -715,6 +717,8 @@ class Run:
             Success stores the report and changes state to ``report_ready``.
             Failure restores ``completed`` so retry reuses the same immutable
             history, idempotency identity, and pending operation.
+            Interruptions do not create a report or cancel the remote operation;
+            call ``judge()`` again to resume an already-started official task.
 
         Side Effects:
             Calls the configured Judge for an unresolved report. Official Judge
@@ -745,6 +749,8 @@ class Run:
                 normalization error unchanged.
             ProviderError: Maps an unexpected non-KUMA exception to a safe
                 ``provider_failed`` error attributed to the actual Provider kind.
+            BaseException: Non-Exception interruptions propagate unchanged;
+                they are not converted into Provider errors or swallowed.
 
         Preconditions:
             The caller holds ``_mutex`` and committed history is immutable while
@@ -753,7 +759,8 @@ class Run:
         Postconditions:
             Success caches one report and sets ``report_ready``. Every Provider
             failure restores ``completed`` so the same history can be retried;
-            no report is fabricated.
+            no report is fabricated. Cancellation and process-control exceptions
+            restore the same state without clearing pending operation identity.
 
         Side Effects:
             Invokes the configured Judge. The official implementation may use
@@ -775,7 +782,6 @@ class Run:
             )
         if self._judge_provider is None:
             raise ProviderError("No Judge Provider is configured")
-        self._state = "judging"
         context = JudgeContext(
             case=self._case,
             history=tuple(self._history),
@@ -791,6 +797,7 @@ class Run:
                 self._evidence.upload_diff if self._evidence is not None else False
             ),
         )
+        self._state = "judging"
         try:
             raw_report = self._judge_provider.judge(context)
             report = normalize_report(raw_report, run_id=self.run_id)
@@ -800,6 +807,9 @@ class Run:
         except Exception as exc:
             self._state = "completed"
             raise _unexpected_judge_failure(self._judge_provider) from exc
+        except BaseException:
+            self._state = "completed"
+            raise
         self._report = report
         self._state = "report_ready"
         return report

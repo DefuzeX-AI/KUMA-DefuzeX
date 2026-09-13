@@ -487,6 +487,18 @@ message. Program logic should use `exc.code`, `exc.retryable`, and
 `exc.request_id`; `exc.details` is a bounded public mapping and should be logged
 only through an application-approved allowlist.
 
+`request_id: str | None` carries an actual `X-Request-ID` response header only
+when it matches 32 lowercase hexadecimal characters. Missing, malformed, or
+duplicate headers yield `None`; the SDK never generates a replacement or reads
+IDs from the JSON body. For async terminal failures it identifies that poll
+response, not the operation/start request. The separate `kreq_…`
+`client_request_id` remains the local recovery identity. A valid header can be
+server-echoed rather than server-generated; it is not an authentication token.
+
+The same ID is retained for decode/size/status failures and rejected operation
+start/poll/result schemas, using only the response being validated. No-response
+network failures and local persistence errors are not assigned a prior ID.
+
 Remote error details use exact per-code schemas (HTTP failures and async failed
 operations share validation):
 
@@ -503,9 +515,23 @@ supported value. Historical omission of difficulty/capability details yields
 codes raise `ProviderError(code="invalid_response")`; an invalid async response
 does not clear pending recovery state. The Case-limit contract is unchanged.
 
+`invalid_request` additionally accepts optional `details.fields`: 1–16 closed
+records with required `field` and `reason`. Fields are the static public serializer
+paths listed in [public error diagnostics](public-error-diagnostics.md), not
+submitted values. Reasons are required, invalid_type, blank, min_value, max_value,
+max_length, invalid_choice, or invalid. Optional expected_type, minimum, maximum,
+and allowed_values must match the frozen per-field constraints. The SDK includes
+these safe constraints in its Chinese correction message.
+
+`model_invalid_result` (and historical `model_invalid_response`) accepts only
+optional `{"reason": "invalid_structure"}` with reason from invalid_structure,
+invalid_type, out_of_bounds, or invalid_format. Its message explicitly describes
+a **service-generated result failure**, not a request to fix user input. Missing
+details stay empty: historical failures do not acquire guessed explanations.
+Only these two model codes and invalid_request also accept the legacy exact empty
+object `details: {}` as absence; null/lists/unknown nonempty details remain invalid.
+
 Other HTTP details remain discarded; unknown async detail shapes remain rejected.
-The service has not defined safe `field`, `location`, `pattern_id`, log-name or
-hash-pair detail contracts for the other validation errors, so they are not
-forwarded. Remote free-form messages are not trusted or interpolated into SDK
-messages. These details are diagnostics, not instructions to automatically retry
-a failed or billable request.
+Remote free-form messages, private paths and raw model responses are never shown.
+Details do not change retryability, pending identity, billing or automatic retry
+policy. See the [unreleased error change notes](public-error-diagnostics.md).

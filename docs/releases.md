@@ -1,5 +1,32 @@
 # Versions and releases / 版本与发布
 
+## 0.2.3
+
+- Authenticated HTTP requests reject 301/302/303/307/308 redirects before any
+  follow-up request, including same-origin redirects. Configure the final API
+  base URL; `http_redirect_rejected` is not automatically retried.
+- Judge interruption restores a retryable Run state while propagating the
+  interruption. A known official operation resumes GET-only; no new task or
+  fabricated report is created.
+- Safe response `X-Request-ID` correlation survives HTTP and async errors,
+  including decoding, size and schema rejection. Missing or invalid IDs remain
+  absent and are never replaced with local recovery IDs.
+- Fixed public error categories distinguish user-input and service-generated
+  failures; bounded field/reason details remain closed and privacy-safe. Old
+  server responses remain compatible and retry safeguards remain in force.
+- 认证请求拒绝所有上述重定向，防止凭据和正文转发；Judge 中断后可恢复；安全响应 ID
+  可用于错误排查；具体错误文案不再混淆用户输入与服务生成失败。
+- Specific error reasons depend on the service returning them. This SDK release
+  does **not** deploy the service or imply that current generic `service_busy`
+  responses now contain precise causes. Missing/history-only causes are not
+  guessed. 具体原因需要服务端提供，本次不部署服务、不补造历史原因。
+- Optional patch update from 0.2.2. GitHub source installation only; no PyPI
+  availability or automatic installation is implied. 这是可选补丁，不自动安装。
+
+```bash
+python -m pip install --upgrade "git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
+```
+
 ## 0.2.2
 
 - `service_busy` now consistently displays “服务繁忙，请稍后重试。” for

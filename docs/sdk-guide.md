@@ -19,7 +19,8 @@ This is the canonical user guide for KUMA configuration and integration. The pac
 
 ## Installation
 
-KUMA supports Python 3.10 through 3.14. Create an isolated environment:
+KUMA supports Python 3.10 through 3.14. Install from GitHub (Git required); the
+package is not currently available on PyPI. Create an isolated environment:
 
 ```bash
 python -m venv .venv
@@ -30,7 +31,7 @@ Windows PowerShell:
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install "kuma-defuzex==0.1.0"
+python -m pip install "git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
 ```
 
 Linux or macOS:
@@ -38,13 +39,13 @@ Linux or macOS:
 ```bash
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "kuma-defuzex==0.1.0"
+python -m pip install "git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
 ```
 
 Optional OpenTelemetry support:
 
 ```bash
-python -m pip install "kuma-defuzex[otel]==0.1.0"
+python -m pip install "kuma-defuzex[otel] @ git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
 ```
 
 Contributors should use the editable development setup in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
@@ -98,7 +99,7 @@ Credential precedence is: `create_run(api_key=...)`, `KUMA_API_KEY`, then the us
 |---|---|
 | `KUMA_API_KEY` | Credential for official Providers |
 | `KUMA_CONFIG_HOME` | Override the user credential directory |
-| `KUMA_BASE_URL` | Override the accepted public or loopback API base URL; non-loopback URLs must use HTTPS |
+| `KUMA_BASE_URL` | Set the final public or loopback API base URL; non-loopback URLs must use HTTPS. Authenticated requests reject all redirects, including same-origin redirects, with non-retryable `ServiceError(code="http_redirect_rejected")`. Correct the URL rather than retrying a redirecting alias. |
 
 ### Agent Profile file
 
@@ -247,7 +248,7 @@ OpenTelemetry (OTel) is the standard observability API used by Agent frameworks 
 Install OTel support only when trace capture is needed; the core package does not require it:
 
 ```bash
-python -m pip install "kuma-defuzex[otel]"
+python -m pip install "kuma-defuzex[otel] @ git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
 ```
 
 The declared `opentelemetry-sdk>=1.30,<2` range is supported across the Logs
@@ -339,6 +340,12 @@ except KumaError as exc:
 Common subclasses include `ConfigurationError`, `AuthenticationError`, `PermissionDeniedError`, `ValidationError`, `SensitiveDataError`, `LimitExceededError`, `InputProtocolError`, `ProviderError`, `KumaTimeoutError`, `ServiceBusyError`, and `ServiceError`.
 
 `timeout` bounds one public HTTP attempt. `operation_wait_timeout` bounds the complete official single-Case or Judge operation. POST retries reuse a stable idempotency key; only server-declared transient failures are retried within `max_retries`, and `ServiceBusyError` is not retried automatically.
+
+`exc.request_id` is the current response's optional `X-Request-ID`, accepted only as exactly 32 lowercase hexadecimal characters. Missing, invalid, or duplicate headers remain `None`; JSON-body, private service, and local `kreq_…` IDs are never substituted. Async failures use the failed poll response's ID, not the original start request. Decode/size/status and operation start/poll/result validation errors also retain that response's safe ID; no-response network failures and local persistence errors do not inherit a previous ID. A header may be server-echoed, not necessarily server-generated.
+
+Judge interruptions (`KeyboardInterrupt`, `SystemExit`, cancellation) propagate unchanged while restoring `completed`. If the application catches the interruption and retains the Run, `run.judge()` can be retried: a known official operation only resumes GET polling. No report is fabricated and stopping local waiting does not cancel the remote task. Forced process termination cannot run this cleanup.
+
+See [public error diagnostics](public-error-diagnostics.md) for fixed messages, safe field constraints and historical compatibility. Specific reasons require the service to supply them; older generic errors remain generic.
 
 Official starts retain bounded request metadata under `.kuma/requests/` without
 storing credentials, request content, Evidence, or Rubrics. After a process

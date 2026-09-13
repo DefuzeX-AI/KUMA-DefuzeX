@@ -395,6 +395,10 @@ Rubric、Prompt 或 Provider 响应。已知 operation 只通过 GET 继续轮�
 
 普通 SDK 失败统一捕获 `KumaError`。`str(exc)` 是安全的用户文案；程序判断使用 `exc.code`、`exc.retryable` 和 `exc.request_id`。`exc.details` 是有界公开 mapping，也只应通过应用自己的 allowlist 记录。
 
+`request_id: str | None` 仅保留实际 `X-Request-ID` 响应头中恰好 32 位小写十六进制值。缺失、非法或重复头均为 `None`；SDK 不生成替代值，也不从 JSON 正文取 ID。异步终态错误关联那次轮询响应，不是 operation 或启动请求。独立的 `kreq_…` 格式 `client_request_id` 仍是本地恢复身份。合法头也可能是服务端回显的值，而非服务端生成；它不是认证凭证。
+
+解码、大小、状态或 operation 启动/轮询/结果 schema 校验失败，也仅关联正在校验的响应 ID；无响应的网络失败及本地持久化错误不会使用之前的 ID。
+
 远端错误详情按错误码使用精确 schema，HTTP 失败和异步 failed operation 共用校验：
 
 | `exc.code` | 允许的 `exc.details` | 校验规则 |
@@ -409,7 +413,20 @@ Rubric、Prompt 或 Provider 响应。已知 operation 只通过 GET 继续轮�
 越界或错误顺序的详情，则抛 `ProviderError(code="invalid_response")`。
 异步响应校验失败不会清除待恢复状态。Case 步数上限的既有合同不变。
 
-其它 HTTP 详情仍丢弃，未知异步详情结构仍拒绝。其它校验错误尚无安全的
-`field`、`location`、`pattern_id`、日志名或哈希对详情合同，因此不会透传。
-SDK 不信任任意远端 message，也不会将其插入异常文案。这些详情仅用于诊断，
-不意味着可以自动重试失败请求或再次发起计费操作。
+`invalid_request` 还允许可选的 `details.fields`：1–16 条封闭记录，必填
+`field` 和 `reason`。字段限于[公开错误诊断](public-error-diagnostics.zh-CN.md)
+列出的静态公开 serializer 路径，不是用户提交值。reason 限 required、invalid_type、
+blank、min_value、max_value、max_length、invalid_choice、invalid。可选
+expected_type、minimum、maximum、allowed_values 必须与字段的冻结约束一致。
+SDK 将这些安全约束显示为中文改正提示。
+
+`model_invalid_result`（以及历史 `model_invalid_response`）只接受可选的
+`{"reason": "invalid_structure"}`，reason 限 invalid_structure、invalid_type、
+out_of_bounds、invalid_format。提示明确是**服务生成的结果不合格**，不要求用户修改输入。
+历史缺少 details 时仍为空，不猜造具体原因。
+仅这两个模型错误码和 invalid_request 也将历史精确空对象 `details: {}` 视为省略；
+null、列表、非空未知详情仍然非法。
+
+其它 HTTP 详情仍丢弃，未知异步详情结构仍拒绝。不展示任意远端 message、私有路径
+或模型原文。详情不改变 retryable、待恢复身份、计费或自动重试规则。
+参见[未发布错误语义变更说明](public-error-diagnostics.zh-CN.md)。
