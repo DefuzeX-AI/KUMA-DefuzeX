@@ -19,8 +19,9 @@ This is the canonical user guide for KUMA configuration and integration. The pac
 
 ## Installation
 
-KUMA supports Python 3.10 through 3.14. We recommend installing the pinned GitHub
-release below (Git required). Create an isolated environment:
+KUMA supports Python 3.10 through 3.14. Install from PyPI; Git is not required.
+The package name is `kuma-defuzex`; imports and the CLI use `kuma`.
+Create an isolated environment:
 
 ```bash
 python -m venv .venv
@@ -31,7 +32,7 @@ Windows PowerShell:
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install "git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
+python -m pip install "kuma-defuzex==0.2.3"
 ```
 
 Linux or macOS:
@@ -39,13 +40,13 @@ Linux or macOS:
 ```bash
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
+python -m pip install "kuma-defuzex==0.2.3"
 ```
 
 Optional OpenTelemetry support:
 
 ```bash
-python -m pip install "kuma-defuzex[otel] @ git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
+python -m pip install "kuma-defuzex[otel]==0.2.3"
 ```
 
 Contributors should use the editable development setup in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
@@ -248,7 +249,7 @@ OpenTelemetry (OTel) is the standard observability API used by Agent frameworks 
 Install OTel support only when trace capture is needed; the core package does not require it:
 
 ```bash
-python -m pip install "kuma-defuzex[otel] @ git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
+python -m pip install "kuma-defuzex[otel]==0.2.3"
 ```
 
 The declared `opentelemetry-sdk>=1.30,<2` range is supported across the Logs

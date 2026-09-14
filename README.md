@@ -31,14 +31,14 @@ KUMA is the public Python SDK for testing Agent behavior through a strict `Run` 
 
 ## Install
 
-Install the tagged GitHub release. Requires Python 3.10 or newer and Git:
+Install from PyPI. Requires Python 3.10 or newer; Git is not required:
 
 ```bash
-python -m pip install --upgrade "git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
+python -m pip install --upgrade kuma-defuzex
 ```
 
 Run this in the Python environment used by your Agent, then restart the Agent.
-The package is not currently available on PyPI; install from GitHub as above.
+The package name is `kuma-defuzex`; Python imports and the CLI remain `kuma`.
 For optional OTel dependencies and Trace setup, see the
 [Runtime Trace guide](docs/runtime-trace.md).
 

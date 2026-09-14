@@ -17,7 +17,7 @@ Backend 更小的限制仍有效，输出不会截断。JSON 引号及转义也�
 
 ## 安装
 
-KUMA 支持 Python 3.10 至 3.14。建议安装下方指定版本的 GitHub Release（需要 Git）。请先创建隔离环境：
+KUMA 支持 Python 3.10 至 3.14。从 PyPI 安装，无需 Git。安装包名为 `kuma-defuzex`，导入和命令行使用 `kuma`。请先创建隔离环境：
 
 ```bash
 python -m venv .venv
@@ -28,7 +28,7 @@ Windows PowerShell：
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install "git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
+python -m pip install "kuma-defuzex==0.2.3"
 ```
 
 Linux 或 macOS：
@@ -36,13 +36,13 @@ Linux 或 macOS：
 ```bash
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
+python -m pip install "kuma-defuzex==0.2.3"
 ```
 
 按需安装 OpenTelemetry 能力：
 
 ```bash
-python -m pip install "kuma-defuzex[otel] @ git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
+python -m pip install "kuma-defuzex[otel]==0.2.3"
 ```
 
 贡献者请按 [`CONTRIBUTING.md`](../CONTRIBUTING.md) 使用可编辑开发环境。
@@ -238,7 +238,7 @@ OpenTelemetry（OTel）是 Agent 框架和 instrumentation 用来产生 span 的
 仅在需要 Trace Evidence 时安装可选能力，核心包不强制依赖 OTel：
 
 ```bash
-python -m pip install "kuma-defuzex[otel] @ git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
+python -m pip install "kuma-defuzex[otel]==0.2.3"
 ```
 
 声明的 `opentelemetry-sdk>=1.30,<2` 范围完整支持 Logs exporter 改名：
