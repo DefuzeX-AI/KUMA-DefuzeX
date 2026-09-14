@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import math
@@ -11,6 +12,7 @@ import socket
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from http.client import HTTPException
 from typing import Any, NoReturn
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -162,7 +164,8 @@ def _read_response(response: Any, status: int) -> Mapping[str, Any]:
         Parsed top-level JSON mapping from the bounded response body.
 
     Raises:
-        ServiceError: The body exceeds the 8 MiB SDK response limit.
+        ServiceError: The body exceeds the 8 MiB SDK response limit, or an HTTP
+            protocol/read interruption occurs (retryable ``network_error``).
         _RemoteError: The bounded body is not a valid UTF-8 JSON object.
 
     Preconditions:
@@ -177,10 +180,21 @@ def _read_response(response: Any, status: int) -> Mapping[str, Any]:
 
     Security/Privacy:
         Raw response bytes never appear in raised SDK messages.
-        Decoding and size failures retain only this response's safe header ID.
+        Decoding, size and interrupted-read failures retain only this response's
+        safe header ID. Partial bytes and protocol exception text are discarded.
+        User interrupts such as KeyboardInterrupt are not caught.
     """
     request_id = header_request_id(getattr(response, "headers", None))
-    raw = response.read(_MAX_RESPONSE_BYTES + 1)
+    raw = None
+    with contextlib.suppress(HTTPException):
+        raw = response.read(_MAX_RESPONSE_BYTES + 1)
+    if raw is None:
+        raise ServiceError(
+            "The KUMA service could not be reached.",
+            code="network_error",
+            retryable=True,
+            request_id=request_id,
+        )
     if len(raw) > _MAX_RESPONSE_BYTES:
         raise ServiceError(
             "The KUMA response exceeded the SDK size limit.",
@@ -268,6 +282,8 @@ def _wire_transport(
         KumaTimeoutError: The socket or URL layer reaches ``timeout``.
         ServiceError: The service is unreachable, its response is oversized, or
             it redirects (``http_redirect_rejected``, never automatically retried).
+            HTTP protocol failures are retryable ``network_error``; failures
+            before response headers carry no request ID. User interrupts propagate.
 
     Preconditions:
         ``BackendClient`` has validated the base URL, method, SDK path, body
@@ -330,6 +346,15 @@ def _wire_transport(
             code="network_error",
             retryable=True,
         ) from exc
+    except HTTPException:
+        pass
+    # Raise outside the handler so protocol exceptions cannot retain partial
+    # response bytes or arbitrary remote text in the public exception chain.
+    raise ServiceError(
+        "The KUMA service could not be reached.",
+        code="network_error",
+        retryable=True,
+    )
 
 
 def new_idempotency_key(operation: str) -> str:
