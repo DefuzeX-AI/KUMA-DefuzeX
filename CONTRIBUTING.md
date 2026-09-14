@@ -23,6 +23,8 @@ python -m ruff format --check --exclude "*.ipynb" .
 python -m ruff check --exclude "*.ipynb" .
 python tools/verify_public_api_docs.py
 python tools/verify_executed_strategy_group.py
+python tools/verify_cli_atomic_output.py
+python tools/verify_transport_failures.py
 python -m compileall -q src examples tools
 kuma quickstart
 python examples/minimal_local.py
@@ -38,6 +40,10 @@ Maintainers run those private checks before accepting a release.
 The execution-group regression check uses synthetic responses and temporary
 repositories. It needs no account or network and exercises Run metadata,
 invalid-response recovery without another Case POST, and saved Case reuse.
+
+The CLI cleanup check uses temporary files. Transport interruption checks use
+synthetic credentials and a local loopback HTTP server only; no hosted API,
+model, or paid evaluation is called.
 
 ## Pull requests
 

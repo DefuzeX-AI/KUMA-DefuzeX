@@ -1,5 +1,28 @@
 # Versions and releases / 版本与发布
 
+## 0.2.4
+
+- Interrupted HTTP protocol/body reads become safe, retryable `network_error`
+  errors rather than raw `HTTPException`. A safe `X-Request-ID` already received
+  stays attached; no header means no invented ID. Responses close on failure.
+  Existing retry limits and POST idempotency keys remain unchanged; user
+  interrupts still propagate, and authenticated redirects remain blocked.
+- CLI output cleanup failures no longer mask the original stable save error.
+  Cleanup is best-effort: an OS-denied unlink may leave a temporary file.
+- Offline regressions cover executed Strategy Group metadata, saved Cases, and
+  GET-only recovery without another Case POST. No new strategy behavior.
+- HTTP 协议或正文读取中断现在返回安全的 `network_error`，保留当前响应的合法
+  请求 ID；不改变重试上限或 POST 幂等键，不吞用户中断、不放开认证重定向。
+  CLI 临时文件清理失败不再覆盖原保存错误；操作系统拒绝删除时可能保留临时文件。
+  补充策略组元数据、保存 Case 和 GET-only 恢复的离线回归，不增加策略功能。
+- Thanks to @Moshiii (PRs #80/#81) and @luochen211 (PR #69). 感谢社区贡献。
+- Optional patch update from 0.2.3; no automatic installation. Availability
+  follows the official Release. 这是可选补丁，不自动安装，以正式 Release 为准。
+
+```bash
+python -m pip install --upgrade kuma-defuzex
+```
+
 ## 0.2.3
 
 - Authenticated HTTP requests reject 301/302/303/307/308 redirects before any
@@ -20,11 +43,11 @@
   does **not** deploy the service or imply that current generic `service_busy`
   responses now contain precise causes. Missing/history-only causes are not
   guessed. 具体原因需要服务端提供，本次不部署服务、不补造历史原因。
-- Optional patch update from 0.2.2. GitHub source installation only; no PyPI
-  availability or automatic installation is implied. 这是可选补丁，不自动安装。
+- Optional patch update from 0.2.2, published on GitHub and PyPI. No automatic
+  installation. 已发布到 GitHub 与 PyPI；这是可选补丁，不自动安装。
 
 ```bash
-python -m pip install --upgrade "git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@v0.2.3"
+python -m pip install --upgrade "kuma-defuzex==0.2.3"
 ```
 
 ## 0.2.2
