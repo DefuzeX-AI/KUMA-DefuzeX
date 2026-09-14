@@ -3,12 +3,18 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published release tag to retry
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: pypi-${{ github.event.release.tag_name }}
+  group: pypi-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -16,9 +22,28 @@ jobs:
     name: Build distributions
     runs-on: ubuntu-latest
     steps:
+      - name: Validate published release selection
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$GITHUB_REF" != refs/heads/main ]]; then
+            echo 'Manual publishing must run from main.' >&2
+            exit 1
+          fi
+          if [[ ! "$RELEASE_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'An existing numeric release tag is required.' >&2
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" |
+            jq -e --arg tag "$RELEASE_TAG" '.tag_name == $tag and .draft == false and .prerelease == false' >/dev/null
+          printf 'tag=%s\n' "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: refs/tags/${{ steps.release.outputs.tag }}
           fetch-depth: 0
           persist-credentials: false
       - name: Set up Python
@@ -29,7 +54,7 @@ jobs:
       - name: Install build tools
         run: python -m pip install --upgrade build twine
       - name: Verify release commit is on main
-        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+        run: git merge-base --is-ancestor HEAD origin/main
       - name: Verify release tag matches package version
         run: |
           python - <<'PY'
@@ -45,7 +70,7 @@ jobs:
           PY
         env:
           PYTHONPATH: src
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
       - name: Build wheel and source distribution
         run: python -m build
       - name: Validate package metadata
