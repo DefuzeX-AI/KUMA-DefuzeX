@@ -32,7 +32,7 @@ Windows PowerShell:
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install "kuma-defuzex==0.2.5"
+python -m pip install "kuma-defuzex==0.2.6"
 ```
 
 Linux or macOS:
@@ -40,13 +40,13 @@ Linux or macOS:
 ```bash
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "kuma-defuzex==0.2.5"
+python -m pip install "kuma-defuzex==0.2.6"
 ```
 
 Optional OpenTelemetry support:
 
 ```bash
-python -m pip install "kuma-defuzex[otel]==0.2.5"
+python -m pip install "kuma-defuzex[otel]==0.2.6"
 ```
 
 Contributors should use the editable development setup in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
@@ -249,7 +249,7 @@ OpenTelemetry (OTel) is the standard observability API used by Agent frameworks 
 Install OTel support only when trace capture is needed; the core package does not require it:
 
 ```bash
-python -m pip install "kuma-defuzex[otel]==0.2.5"
+python -m pip install "kuma-defuzex[otel]==0.2.6"
 ```
 
 The declared `opentelemetry-sdk>=1.30,<2` range is supported across the Logs

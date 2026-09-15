@@ -38,6 +38,7 @@ from .repository.metadata import collect_repo_meta
 from .repository.privacy import enforce_sensitive_policy, scan_sensitive_text
 from .repository.strategy_groups import (
     ResolvedStrategyGroup,
+    _resolve_safety_baseline,
     available_evidence_capabilities,
     is_legacy_strategy_catalog,
     resolve_strategy_group,
@@ -425,6 +426,8 @@ def _resolve_official_strategy_group(
     Default transports share credential-isolated catalogs for at most 60 seconds
     after validation; custom transports bypass caching. Failed refreshes never
     use stale entries. No paid request identity or Run lifecycle is changed.
+    The local safety-baseline mode samples one group only when no explicit
+    profile group exists. Automatic capability matching remains disabled.
     """
     if backend is None:
         return None
@@ -433,12 +436,17 @@ def _resolve_official_strategy_group(
     )
     explicit = None if agent_profile is None else agent_profile.strategy_group
     if is_legacy_strategy_catalog(catalog_value):
-        if explicit is not None:
+        if explicit is not None or config.strategy == "safety-baseline":
             raise ValidationError(
                 "The public service does not support Strategy Groups",
                 code="strategy_group_unsupported",
             )
         return None
+    if config.strategy == "safety-baseline" and explicit is None:
+        return _resolve_safety_baseline(
+            validate_strategy_group_catalog(catalog_value),
+            available_capabilities=available_capabilities,
+        )
     if config.strategy != "auto" and explicit is None:
         raise ValidationError(
             "Declare strategy_group in the Agent Profile for an explicit selection",
@@ -547,7 +555,9 @@ def create_run(
             may opt out. Its prose supplies context to the selected Strategy Group
             and never selects, replaces, or overrides that group. A closed
             ``strategy_group`` front-matter object is the only explicit selection;
-            if omitted, the catalog default remains authoritative.
+            if omitted, normal ``auto`` uses the catalog default;
+            ``safety-baseline`` instead samples one Basic Safety
+            group. Profile prose never affects either selection.
             Front matter may link a reviewed local capability JSON through the
             relative ``tool_capabilities`` field. The linked file is validated
             before Provider I/O and remains local on the current official wire.
@@ -561,8 +571,16 @@ def create_run(
             falls back to custom. max_steps=None accepts the full saved count.
         judge_provider: :class:`JudgeProvider` or compatible callable. ``None``
             selects the official provider when ``judge=True``.
-        strategy: ``"auto"`` or an explicit public strategy ID. The SDK never
-            invents or silently substitutes an unknown strategy.
+        strategy: Defaults to ``"auto"`` with existing catalog-default behavior.
+            ``"safety-baseline"`` samples one of seven Basic Safety groups for
+            one official Case, after validating every group's unique available
+            version and capabilities. Explicit Profile groups take precedence.
+            This SDK mode is not sent as a member/group ID. Custom providers
+            receive the value unchanged and are not forced to sample. New calls
+            may resample; use ``resume_request`` with the original request ID for
+            recovery, not another ``create_run``. Existing same-payload pending
+            reuse remains unchanged. Other explicit strategy IDs retain their
+            existing validation; no unknown strategy is invented.
         max_steps: Maximum number of Case steps allowed. For example, ``3``
             permits one, two, or three inputs; it does not require exactly three.
             In official mode a value above the current service limit is rejected
@@ -724,7 +742,11 @@ def create_run(
             ),
             input_type="auto" if agent_profile is None else agent_profile.input_type,
             input_schema=None if agent_profile is None else agent_profile.input_schema,
-            strategy=config.strategy,
+            strategy=(
+                "auto"
+                if official_case and config.strategy == "safety-baseline"
+                else config.strategy
+            ),
             max_steps=effective_max_steps,
             strategy_group_selection=(
                 None

@@ -1,5 +1,26 @@
 # Versions and releases / 版本与发布
 
+## 0.2.6
+
+- Explicit `strategy="safety-baseline"` validates seven Basic Safety groups,
+  then uniformly selects one for one Case and one Run. Versions and catalog
+  release come from validated discovery. Missing/ambiguous groups or unsupported
+  capabilities fail before a Case POST; no silent fallback or seven-Case batch.
+- An explicit Agent Profile group wins. Default `auto`, disabled automatic
+  matching, custom Providers, Judge lifecycle and request recovery are unchanged.
+  Use the original request ID for recovery; a new `create_run` may sample again.
+- Documentation now describes actual multipart Evidence metadata, recovery
+  headers, current errors and live catalog coordinates. Thanks to @YiWang24 for
+  PR #88; integrates the safety-baseline work from PR #62 and README PR #54.
+- 显式 `strategy="safety-baseline"` 验证七个基础安全组后等概率选一个，只生成一个
+  Case、返回一个 Run。版本以目录为准；缺组、多版本歧义或能力不足会在 Case POST
+  前拒绝，不静默回退、不批量生成七个 Case。Profile 显式选组优先。
+- 默认 `auto`、禁用的自动匹配、custom Provider、Judge 与恢复行为不变。恢复请用
+  原请求 ID，重新 `create_run` 可能重新抽组。文档同步实际 Evidence、错误和目录行为。
+- Optional patch from 0.2.5: the new mode is opt-in and defaults do not change.
+  Availability follows the official Release/PyPI; no automatic installation.
+  这是可选补丁，默认行为不变、不自动安装；是否发布以正式 Release/PyPI 为准。
+
 ## 0.2.5
 
 - Official Judge internal invalid-result failures now show `service_busy` with
