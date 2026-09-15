@@ -28,6 +28,7 @@ from .backend import (
     _PUBLIC_ERROR_DETAIL_CODES,
     BackendClient,
     _automatic_retry_blocked,
+    _judge_error,
     _public_error_details,
     mapped_error,
 )
@@ -536,6 +537,22 @@ def _response_validation(response: Mapping[str, Any]) -> Iterator[None]:
         raise
 
 
+def _operation_error(state: PendingOperation, error: KumaError) -> KumaError:
+    """Select safe error presentation from the persisted operation identity.
+
+    Args:
+        state: Validated Case/Judge resume metadata, not server-supplied context.
+        error: Already mapped public failure from a poll or failed result.
+
+    Returns:
+        Judge busy projection or the unchanged Case/non-generation error.
+        Neither the state nor the retry flag is modified.
+    """
+    return (
+        _judge_error(error) if state.operation_type in {"judge", "judgment"} else error
+    )
+
+
 def await_operation(
     client: BackendClient,
     store: PendingOperationStore,
@@ -591,6 +608,8 @@ def await_operation(
         X-Request-ID metadata, never a JSON-body ID or a prior start response ID.
         Start/poll/result validation errors also retain the header of the exact
         rejected response. Local persistence failures are not relabeled with it.
+        Official Judge internal result failures use safe busy wording without
+        changing terminal metadata, retry policy, or Case generation errors.
     """
 
     deadline = time.monotonic() + validate_operation_wait_timeout(wait_timeout)
@@ -626,7 +645,7 @@ def await_operation(
                 )
                 raise
             if not exc.retryable or _automatic_retry_blocked(exc):
-                raise
+                raise _operation_error(state, exc) from None
             _sleep_bounded(poll_after_ms, deadline)
             continue
         with _response_validation(response):
@@ -643,13 +662,14 @@ def await_operation(
                 code=error[0],
                 retryable=error[1],
             )
-            raise mapped_error(
+            failure = mapped_error(
                 error[0],
                 retryable=error[1],
                 message=error[2],
                 details=error[3],
                 request_id=response_request_id(response),
             )
+            raise _operation_error(state, failure)
         state = _record_active_status(store, state, status)
         _sleep_bounded(poll_after_ms, deadline)
 

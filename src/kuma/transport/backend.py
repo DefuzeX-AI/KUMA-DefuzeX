@@ -959,6 +959,31 @@ def _mapped_remote_error(error: _RemoteError) -> KumaError:
     )
 
 
+def _judge_error(error: KumaError) -> KumaError:
+    """Project official Judge generation failures without changing retry policy.
+
+    Args:
+        error: Already sanitized HTTP, poll, or batch error in a known Judge
+            context; never call this for Case generation or custom Providers.
+
+    Returns:
+        A fixed ``service_busy`` error for new/legacy internal Judge failures,
+        retaining only retryable and request_id; otherwise the original object.
+
+    Postconditions:
+        No response details or remote wording survive the busy projection.
+        This pure presentation adapter neither retries nor changes stored state.
+    """
+    if error.code in {"model_invalid_result", "model_invalid_response", "service_busy"}:
+        return ServiceBusyError(
+            "服务忙，请稍后再试",  # noqa: RUF001
+            code="service_busy",
+            retryable=error.retryable,
+            request_id=error.request_id,
+        )
+    return error
+
+
 def mapped_error(
     code: str,
     *,
@@ -1309,6 +1334,8 @@ class BackendClient:
         Security/Privacy:
             Sends only to the validated public base URL plus validated SDK path;
             mapped exceptions never include the credential or raw response.
+            Judge POST generation failures use fixed busy wording without
+            changing Case generation errors or automatic retry eligibility.
         """
         method = validate_request(method, path, idempotency_key)
         if client_request_id is not None and (
@@ -1339,6 +1366,12 @@ class BackendClient:
                 error = _mapped_remote_error(exc)
             except KumaError as exc:
                 error = exc
+            if method == "POST" and path in {
+                "/sdk/judge/",
+                "/sdk/v2/judge/",
+                "/sdk/judge/batch/",
+            }:
+                error = _judge_error(error)
             if (
                 error.retryable
                 and not _automatic_retry_blocked(error)

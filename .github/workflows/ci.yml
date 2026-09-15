@@ -34,6 +34,7 @@ jobs:
       - run: python tools/verify_evidence_capacity.py
       - run: python tools/verify_cli_atomic_output.py
       - run: python tools/verify_transport_failures.py
+      - run: python tools/verify_judge_busy.py
       - run: python -m compileall -q src examples tools
 
   test:
@@ -58,6 +59,7 @@ jobs:
       - run: python tools/verify_executed_strategy_group.py
       - run: python tools/verify_cli_atomic_output.py
       - run: python tools/verify_transport_failures.py
+      - run: python tools/verify_judge_busy.py
 
   windows:
     name: Windows
@@ -77,6 +79,7 @@ jobs:
       - run: python tools/verify_executed_strategy_group.py
       - run: python tools/verify_cli_atomic_output.py
       - run: python tools/verify_transport_failures.py
+      - run: python tools/verify_judge_busy.py
 
   macos:
     name: macOS
@@ -96,6 +99,7 @@ jobs:
       - run: python tools/verify_executed_strategy_group.py
       - run: python tools/verify_cli_atomic_output.py
       - run: python tools/verify_transport_failures.py
+      - run: python tools/verify_judge_busy.py
 
   otel-compatibility:
     name: OTel ${{ matrix.otel-version }}

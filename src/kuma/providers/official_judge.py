@@ -17,6 +17,7 @@ from ..repository.privacy import enforce_sensitive_policy, scan_sensitive_json
 from ..transport.backend import (
     BackendClient,
     UploadPart,
+    _judge_error,
     mapped_error,
     new_idempotency_key,
 )
@@ -309,7 +310,11 @@ def _batch_item(upload: _JudgeUpload) -> tuple[dict[str, Any], list[UploadPart]]
 
 
 def _batch_result(upload: _JudgeUpload, raw: Any) -> JudgeBatchResult:
-    """Validate one ordered batch item as either a Judgment or safe public error."""
+    """Validate a correlated batch item; project internal Judge failures to busy.
+
+    Successful items retain normal report validation. Failed items keep their
+    retry flag, never fabricate a report, and omit internal generation details.
+    """
     if (
         not isinstance(raw, Mapping)
         or raw.get("client_item_id") != upload.run_id
@@ -342,7 +347,7 @@ def _batch_result(upload: _JudgeUpload, raw: Any) -> JudgeBatchResult:
     return JudgeBatchResult(
         upload.run_id,
         upload.run_id,
-        error=mapped_error(code, retryable=retryable),
+        error=_judge_error(mapped_error(code, retryable=retryable)),
     )
 
 

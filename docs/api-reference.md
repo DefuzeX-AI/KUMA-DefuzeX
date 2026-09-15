@@ -523,6 +523,14 @@ max_length, invalid_choice, or invalid. Optional expected_type, minimum, maximum
 and allowed_values must match the frozen per-field constraints. The SDK includes
 these safe constraints in its Chinese correction message.
 
+For official Judge only, internal `model_invalid_result` / `model_invalid_response`
+failures (including older servers) are presented as `ServiceBusyError` with code
+`service_busy`, message `服务忙，请稍后再试`, and no details. The original `retryable`
+and response-header `request_id` remain available. No automatic retry, new task,
+or fabricated report is created; committed Run history is retained. Input,
+authentication, permission and quota errors are not converted. Case generation
+keeps the following existing policy.
+
 `model_invalid_result` (and historical `model_invalid_response`) accepts only
 optional `{"reason": "invalid_structure"}` with reason from invalid_structure,
 invalid_type, out_of_bounds, or invalid_format. Its message explicitly describes

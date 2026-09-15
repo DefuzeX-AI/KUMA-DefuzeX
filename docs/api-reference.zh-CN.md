@@ -420,6 +420,12 @@ blank、min_value、max_value、max_length、invalid_choice、invalid。可选
 expected_type、minimum、maximum、allowed_values 必须与字段的冻结约束一致。
 SDK 将这些安全约束显示为中文改正提示。
 
+仅对官方 Judge，内部 `model_invalid_result` / `model_invalid_response` 失败
+（含旧服务响应）显示为 `ServiceBusyError`：code 为 `service_busy`，文案为
+`服务忙，请稍后再试`，details 为空。保留原 `retryable` 和响应头 `request_id`，
+不自动重试、不创建新任务、不伪造报告；已提交的 Run history 保留。
+输入、鉴权、权限和额度错误不转换。Case 生成仍遵循下面的原有规则。
+
 `model_invalid_result`（以及历史 `model_invalid_response`）只接受可选的
 `{"reason": "invalid_structure"}`，reason 限 invalid_structure、invalid_type、
 out_of_bounds、invalid_format。提示明确是**服务生成的结果不合格**，不要求用户修改输入。
