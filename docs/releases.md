@@ -1,5 +1,26 @@
 # Versions and releases / 版本与发布
 
+## 0.2.5
+
+- Official Judge internal invalid-result failures now show `service_busy` with
+  the fixed message “服务忙，请稍后再试” and no diagnostic details. Older service
+  responses are supported; `retryable` and safe response `request_id` remain.
+- This changes presentation, not the underlying Judge result: no automatic
+  retry, new task, or fabricated report. Committed Run history stays available.
+  Case generation, input validation, authentication, permissions and quotas
+  keep their existing error behavior.
+- 官方 Judge 内部结果失败统一显示“服务忙，请稍后再试”，不显示内部详情；兼容旧
+  服务响应，保留 `retryable` 与安全请求 ID。本次只改展示，不修饰实际失败结果，
+  不自动重试、不创建新任务、不伪造报告，保留已提交历史。不影响 Case 生成、输入、
+  鉴权、权限与额度错误。
+- Optional patch update from 0.2.4. Availability follows the official GitHub
+  Release and PyPI listing; this candidate does not imply publication.
+  这是可选补丁，不自动安装；是否发布以正式 GitHub Release 和 PyPI 为准。
+
+```bash
+python -m pip install --upgrade kuma-defuzex
+```
+
 ## 0.2.4
 
 - Interrupted HTTP protocol/body reads become safe, retryable `network_error`
