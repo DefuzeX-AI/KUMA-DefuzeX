@@ -309,10 +309,13 @@ def _adapted_providers(
         api_key: Optional explicit public Backend credential.
         repo_path: Canonical repository root used for safe pending-state paths.
         trace_evidence: Active in-process OTel capture, or ``None``.
+        agent_profile: Agent Profile validated by preflight, or ``None`` when the
+            Run carries no Profile.
 
     Returns:
-        Adapted Case provider, optional Judge provider, and booleans identifying
-        whether each side is official.
+        Adapted Case provider, optional Judge provider, booleans identifying
+        whether each side is official, and the resolved Strategy Group or
+        ``None``.
 
     Raises:
         ConfigurationError: If a custom Case lacks ``max_steps`` or a provider

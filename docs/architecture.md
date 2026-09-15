@@ -278,7 +278,7 @@ span 在 start 时绑定到 capture 当前唯一 active step，因此同进程�
 
 `evidence/trace_mapping.py` 是纯映射边界。它保留标准 ID、时间、kind/status、events、resource 和 scope，并使用拒绝式 allowlist 过滤 attributes。`max_attributes` 在 allowlist 后限制保留项；每个排除项都计入 dropped accounting，普通未允许键与明确敏感键分别使用稳定 reason，privacy 分类不再依靠含糊 substring 决定是否计数。仅允许受控 `gen_ai` 模型/usage/latency 字段及少量 service/OTel resource 字段；prompt、completion、源码、文件/日志正文、token/key 和 Private Rubric 永远不允许。限制覆盖 span、attribute、event、文本和整个 Run 的完整紧凑 JSON envelope；任何丢失或截断都不得报告 `complete`，Exporter/serialization/flush 异常不得破坏 Run。
 
-`_otel_log_mapping.py` 将同一 active step 内的原生 LogRecord 映射到一个版本化 JSON log segment。它只保留时间、severity、trace/span 关联、安全 resource/scope、正文/event hash 和 attribute 计数；原始 body、event name 与普通 attribute 值不会进入内存中的 Evidence payload。segment 复用既有 `Submission.logs` wire，并在 `runtime_evidence` 中投影为 hash-only `artifact_snapshot`，不新增 Core component 类型。record 数与每 Run 完整 JSON 字节均有独立硬上限；prepare/commit/abort 与 span Evidence 共用事务生命周期。
+`evidence/otel_log_mapping.py` 将同一 active step 内的原生 LogRecord 映射到一个版本化 JSON log segment。它只保留时间、severity、trace/span 关联、安全 resource/scope、正文/event hash 和 attribute 计数；原始 body、event name 与普通 attribute 值不会进入内存中的 Evidence payload。segment 复用既有 `Submission.logs` wire，并在 `runtime_evidence` 中投影为 hash-only `artifact_snapshot`，不新增 Core component 类型。record 数与每 Run 完整 JSON 字节均有独立硬上限；prepare/commit/abort 与 span Evidence 共用事务生命周期。
 
 当前协商的公共 wire extension 是：
 

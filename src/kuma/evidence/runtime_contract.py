@@ -293,10 +293,14 @@ def _valid_component_value(
     Args:
         component: Closed-field mapping that already passed
             :func:`_valid_component_fields`.
+        schema_version: Runtime Evidence schema the component must satisfy. It
+            reaches ``agent_response_claim`` validation, where v2 additionally
+            requires ``agent_output`` on a completed claim.
 
     Returns:
         ``True`` only when kind-specific enums, hashes, identifiers, paths,
-        counts, sizes, and required values satisfy the canonical v1 contract.
+        counts, sizes, and required values satisfy the canonical contract for
+        ``schema_version``.
 
     Preconditions:
         ``kind`` and every required field exist; callers must run the closed-field

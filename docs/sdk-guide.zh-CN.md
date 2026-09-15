@@ -351,7 +351,7 @@ Evidence 或 Rubric。进程退出后，可使用 `kuma requests list`、
 | Agent Profile 被拒绝 | 检查 UTF-8、front matter、必需标题和结构化 Input schema |
 | `DockerRequiredError` | 使用同一个受控容器；仅可信开发环境设置 `allow_local=True` |
 | `submit()` 返回 `None` | 检查剩余 Input、`judge`、`run.state` 与 `run.history` |
-| `input_protocol` | 严格交替执行一次 `get_input()` 与一次 `submit()`，不要并发推进 |
+| `InputProtocolError` | 严格交替执行一次 `get_input()` 与一次 `submit()`，不要并发推进 |
 | 敏感数据被拒绝 | 从 output、路径、日志、diff 与自定义 Case 中移除 secret |
 | operation 超时或响应丢失 | 查看 `.kuma/requests/`，再恢复同一个客户端请求 ID |
 | 缺少 Trace 输出 | 显式提交 JSON 输出，或正确安装并 attach `[otel]` |

@@ -364,7 +364,7 @@ Judge report is written to `.kuma/reports/<run_id>.json`.
 | Agent Profile rejected | Check UTF-8, front matter, required headings, and structured-input schema |
 | `DockerRequiredError` | Use one controlled container; enable `allow_local=True` only for trusted development |
 | `submit()` returns `None` | Check remaining Inputs, `judge`, `run.state`, and `run.history` |
-| `input_protocol` | Alternate one `get_input()` with one `submit()` and avoid concurrent advancement |
+| `InputProtocolError` | Alternate one `get_input()` with one `submit()` and avoid concurrent advancement |
 | Sensitive-data rejection | Remove secrets from output, paths, logs, diffs, and custom Cases |
 | Operation timeout or lost response | Inspect `.kuma/requests/`, then resume the same client request ID |
 | Missing Trace output | Submit explicit JSON output or install and attach `[otel]` correctly |

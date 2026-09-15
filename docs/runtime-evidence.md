@@ -79,13 +79,19 @@ Missing observations remain absent; the Judge decides whether that produces
 ## Official transport and compatibility
 
 Official Judge revalidates every envelope against its actual Run/Input/step and
-stable Submission identity before upload. It sends one public `EvidenceItem`
-per history item with:
+stable Submission identity before upload. It sends one multipart part per
+history item. The part carries the canonical UTF-8 JSON above under media type
+`application/vnd.defuzex.runtime-evidence+json` and the display-only filename
+`kuma-runtime-evidence-NNNN.json`, where `NNNN` is the zero-padded history
+index. Every part also has one `manifest.files` entry in the multipart
+metadata, whose `manifest.schema_version` is the version the Backend
+advertised:
 
-- `source`: the stable outer marker `defuzex.runtime_evidence.v1`
-- `media_type`: `application/vnd.defuzex.runtime-evidence+json`
-- `content`: the canonical UTF-8 JSON above
-- `name`: display-only filename
+- `name`: that display-only filename
+- `sha256`: SHA-256 of the exact uploaded bytes
+- `evidence_type`: the schema actually negotiated for this part, which is
+  `defuzex.runtime_evidence.capabilities.v1`, `defuzex.runtime_evidence.v2` or
+  `defuzex.runtime_evidence.v1`
 
 Transport is negotiated through the Backend's public Judge config. A current
 service advertises `defuzex.runtime_evidence.capabilities.v1`; the SDK then sends

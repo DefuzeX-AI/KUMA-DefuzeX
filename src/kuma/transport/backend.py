@@ -1254,7 +1254,8 @@ class BackendClient:
 
         Returns:
             New header dictionary containing Accept, Authorization, Content-Type,
-            User-Agent, and optional Idempotency-Key.
+            User-Agent, and the optional Idempotency-Key and
+            X-Kuma-Client-Request-Id.
 
         Raises:
             ConfigurationError: The idempotency key is not header-safe.
