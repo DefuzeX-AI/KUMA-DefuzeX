@@ -74,8 +74,9 @@ The command performs an authenticated catalog read, validates the complete respo
 Versions are not grouped into a nested list. If one group ID has multiple
 selectable versions, the response contains multiple `groups[]` entries with the
 same `id` and different `version` values. Always choose an entry whose
-`available` value is `true`. In the current catalog, for example, `BASE-01` is
-available at version `"1"`.
+`available` value is `true`, and take both `id` and `version` from that live
+response rather than from this page: the catalog is served by the Backend, and
+its identifiers can be renamed between catalog releases.
 
 The top-level `default.id` and `default.version` identify the exact default group. Save the same validated JSON atomically when you need a reviewable local copy:
 

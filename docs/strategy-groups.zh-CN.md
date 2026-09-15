@@ -67,7 +67,8 @@ kuma strategies list
 
 版本不会嵌套为单独列表。如果同一个策略组 ID 有多个可选版本，响应会
 用多条 `groups[]` 记录表示：它们的 `id` 相同、`version` 不同。只能选择
-`available: true` 的条目。例如当前目录中的 `BASE-01` 可用版本为 `"1"`。
+`available: true` 的条目，并且 `id` 与 `version` 都应取自该实时响应，而不是
+本页：目录由 Backend 下发，其标识符可能在不同 catalog release 之间被改名。
 
 顶层 `default.id` 与 `default.version` 指向精确默认组。需要可审查的本地副本时，可原子保存同一份已校验 JSON：
 
