@@ -18,7 +18,7 @@ causes or retroactively classify historical `service_busy` records.
 
 Authentication, permissions, quota, idempotency and not-found retain their distinct
 codes. Program logic uses code/retryable, not translated messages. SDK messages
-are fixed Chinese text; arbitrary remote text is ignored. Historical
+are fixed English text; arbitrary remote text is ignored. Historical
 upstream_unavailable/upload_not_configured now use ServiceError, but preserve their
 previous no-automatic-retry behavior. Known completed failures preserve their
 original code and retryable value; the SDK does not rewrite stored history.

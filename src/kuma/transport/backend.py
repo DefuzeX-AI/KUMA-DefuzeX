@@ -766,62 +766,66 @@ _ERROR_MESSAGES = {
     ServiceError: "The KUMA service request failed.",
 }
 _CODE_ERROR_MESSAGES = {
-    "service_busy": "服务繁忙，请稍后重试。",  # noqa: RUF001
-    "forbidden": "此密钥没有权限使用该功能。",
-    "idempotency_conflict": "这个请求已经提交过了，请不要重复提交。",  # noqa: RUF001
-    "invalid_api_key": "密钥无效。",
-    "invalid_request": "提交的内容有问题，请检查后重试。",  # noqa: RUF001
-    "request_failed": "服务端处理请求失败，请联系服务方；这不表示你的输入有误。",  # noqa: RUF001
-    "operation_failed": "任务未能完成，历史记录中没有更详细的原因。",  # noqa: RUF001
-    "model_invalid_result": "服务生成的结果未达到要求，请稍后重试。",  # noqa: RUF001
-    "model_invalid_response": "服务生成的结果未达到要求，请稍后重试。",  # noqa: RUF001
-    "model_output_policy_conflict": "服务生成的结果不符合任务要求，请稍后重试。",  # noqa: RUF001
-    "model_output_privacy_rejected": "服务生成的结果未通过安全检查，请稍后重试。",  # noqa: RUF001
-    "capacity_exceeded": "当前处理任务较多，请稍后重试。",  # noqa: RUF001
-    "request_in_progress": "请求仍在处理中，请查询原请求的结果，不要重复提交。",  # noqa: RUF001
-    "upstream_unavailable": "服务暂时不可用，请稍后重试。",  # noqa: RUF001
-    "upload_not_configured": "服务端尚未配置好证据上传，请联系服务方处理。",  # noqa: RUF001
-    "unsupported_difficulty": "所选难度不受支持，请选择服务允许的难度。",  # noqa: RUF001
-    "strategy_group_invalid": "所选策略组或版本无效，请从策略目录选择可用项。",  # noqa: RUF001
-    "strategy_capability_mismatch": "当前 Agent 或运行配置缺少所选策略要求的证据能力，请补齐后重试。",  # noqa: RUF001
-    "no_compatible_strategy_pair": "当前策略约束下没有兼容的测试组合，请调整策略选择。",  # noqa: RUF001
-    "unobservable_injection": "当前配置无法观测所选测试行为，请检查证据能力与策略约束。",  # noqa: RUF001
-    "quota_exhausted": "可用额度不足，请检查账户额度。",  # noqa: RUF001
-    "payload_too_large": "提交的数据超过大小限制，请减少数据量后重试。",  # noqa: RUF001
-    "log_size_exceeded": "提交的日志超过大小限制，请减少日志后重试。",  # noqa: RUF001
-    "sensitive_content_detected": "提交的内容包含敏感信息，请脱敏后重试。",  # noqa: RUF001
-    "invalid_client_request_id": "请求标识格式不正确，请使用 SDK 生成的请求标识。",  # noqa: RUF001
-    "rate_limited": "请求过于频繁，请按提示等待后重试。",  # noqa: RUF001
-    "api_key_service_unavailable": "密钥验证服务暂时不可用，请稍后重试。",  # noqa: RUF001
-    "runtime_evidence_unsupported": "当前服务不支持请求的证据能力，请检查客户端配置。",  # noqa: RUF001
-    "sensitive_data_blocked": "提交的内容包含敏感信息，请脱敏后重试。",  # noqa: RUF001
-    "invalid_manifest": "证据清单的结构或关联不正确，请重新生成证据后提交。",  # noqa: RUF001
-    "unsupported_log_type": "提交的证据文件类型不受支持。",
-    "repo_state_mismatch": "提交的仓库状态与 Case 不一致，请检查对应版本。",  # noqa: RUF001
-    "invalid_case_integrity": "提交的 Case 校验信息不匹配，请使用原始 Case。",  # noqa: RUF001
-    "invalid_case_id": "Case 标识格式不正确，请使用服务返回的标识。",  # noqa: RUF001
-    "invalid_case_reference": "Case 引用不正确，请检查对应的 Case。",  # noqa: RUF001
-    "invalid_case_file": "Case 文件格式不正确，请按公开格式重新提交。",  # noqa: RUF001
-    "invalid_content_length": "请求长度信息不正确，请重新构造请求。",  # noqa: RUF001
-    "invalid_idempotency_key": "请求幂等键格式不正确，请使用合法且稳定的键。",  # noqa: RUF001
-    "invalid_metadata": "请求元数据格式不正确，请检查后重新提交。",  # noqa: RUF001
-    "invalid_batch": "批量请求格式不正确，请检查条目数量和结构。",  # noqa: RUF001
-    "invalid_log_parts": "证据附件与清单不匹配，请重新生成附件。",  # noqa: RUF001
-    "duplicate_log_name": "证据附件名称重复，请使用唯一名称。",  # noqa: RUF001
-    "invalid_log_count": "证据附件数量不符合要求，请检查清单。",  # noqa: RUF001
-    "tool_capabilities_invalid": "工具能力声明不正确，请检查公开字段和类型。",  # noqa: RUF001
-    "model_timeout": "模型服务请求超时，请稍后重试。",  # noqa: RUF001
-    "strategy_group_forbidden": "此密钥没有权限使用所选策略组。",
-    "strategy_catalog_changed": "策略目录已更新，请刷新目录后重新选择。",  # noqa: RUF001
-    "strategy_catalog_unavailable": "策略目录暂时不可用，请稍后重试。",  # noqa: RUF001
+    "service_busy": "Service is busy. Please try again later.",
+    "forbidden": "This API key does not have permission to use this feature.",
+    "idempotency_conflict": "This request conflicts with a previously submitted request.",
+    "invalid_api_key": "Invalid API key.",
+    "invalid_request": "Invalid request. Please check the submitted data and try again.",
+    "request_failed": "The service could not process the request. Contact support; this is not an input error.",
+    "operation_failed": "The operation failed. No further reason is available in the historical record.",
+    "model_invalid_result": "The generated result failed validation. Please try again later.",
+    "model_invalid_response": "The generated result failed validation. Please try again later.",
+    "model_output_policy_conflict": "The generated result does not satisfy the task requirements. Please try again later.",
+    "model_output_privacy_rejected": "The generated result failed safety validation. Please try again later.",
+    "capacity_exceeded": "Processing capacity is currently exhausted. Please try again later.",
+    "request_in_progress": "The request is still processing. Check the original request instead of resubmitting.",
+    "upstream_unavailable": "The service is temporarily unavailable. Please try again later.",
+    "upload_not_configured": "Evidence upload is not configured. Please contact support.",
+    "unsupported_difficulty": "The selected difficulty is not supported. Choose a supported difficulty.",
+    "strategy_group_invalid": "Invalid strategy group or version. Select an available entry from the catalog.",
+    "strategy_capability_mismatch": "The Agent or runtime lacks required evidence capabilities. Add them before retrying.",
+    "no_compatible_strategy_pair": "No compatible test combination satisfies the strategy constraints. Adjust your selection.",
+    "unobservable_injection": "The selected behavior cannot be observed. Check evidence capabilities and strategy constraints.",
+    "quota_exhausted": "Insufficient quota. Please check your account allowance.",
+    "payload_too_large": "The request exceeds the size limit. Reduce its size and try again.",
+    "log_size_exceeded": "The logs exceed the size limit. Reduce their size and try again.",
+    "sensitive_content_detected": "The submitted content contains sensitive information. Redact it before retrying.",
+    "invalid_client_request_id": "Invalid request. Please check the submitted data and try again.",
+    "rate_limited": "Too many requests. Please wait before trying again.",
+    "api_key_service_unavailable": "API key verification is temporarily unavailable. Please try again later.",
+    "runtime_evidence_unsupported": "The requested evidence capabilities are not supported. Check your client configuration.",
+    "sensitive_data_blocked": "The submitted content contains sensitive information. Redact it before retrying.",
+    "invalid_manifest": "The evidence manifest or its associations are invalid. Regenerate the evidence.",
+    "unsupported_log_type": "The evidence file type is not supported.",
+    "repo_state_mismatch": "The repository state does not match the Case. Check the repository version.",
+    "invalid_case_integrity": "Case integrity verification failed. Use the original Case.",
+    "invalid_case_id": "Invalid Case ID. Use the ID returned by the service.",
+    "invalid_case_reference": "Invalid Case reference. Check the referenced Case.",
+    "invalid_case_file": "Invalid Case file. Submit a file in the supported public format.",
+    "invalid_content_length": "Invalid content length. Rebuild the request.",
+    "invalid_idempotency_key": "Invalid idempotency key. Use a valid, stable key.",
+    "invalid_metadata": "Invalid request metadata. Check its format and resubmit.",
+    "invalid_batch": "Invalid batch request. Check the item count and structure.",
+    "invalid_log_parts": "Evidence attachments do not match the manifest. Regenerate the attachments.",
+    "duplicate_log_name": "Duplicate evidence attachment names. Use unique names.",
+    "invalid_log_count": "Invalid evidence attachment count. Check the manifest.",
+    "tool_capabilities_invalid": "Invalid tool capabilities. Check the public fields and their types.",
+    "model_timeout": "The model service timed out.",
+    "strategy_group_forbidden": "This API key cannot use the requested Strategy Group.",
+    "strategy_catalog_changed": "The Strategy Group catalog changed. Refresh it and try again.",
+    "strategy_catalog_unavailable": "The Strategy Group catalog is temporarily unavailable.",
 }
-_NOT_FOUND_MESSAGE = "你要找的内容不存在，或者已经被删除。"  # noqa: RUF001
-_READ_ONLY_FORBIDDEN_MESSAGE = "此密钥为只读密钥，无法生成 Case 或运行 Judge。"  # noqa: RUF001
+_NOT_FOUND_MESSAGE = "The requested resource does not exist or has been deleted."
+_READ_ONLY_FORBIDDEN_MESSAGE = (
+    "This API key is read-only and cannot generate Cases or run Judge."
+)
+# Historical wire input only; never return this text to the caller.
+_LEGACY_READ_ONLY_MESSAGE = "此密钥为只读密钥，无法生成 Case 或运行 Judge。"  # noqa: RUF001
 _MODEL_RESULT_REASONS = {
-    "invalid_structure": "服务生成的结果结构不符合要求，这是服务端生成失败。",  # noqa: RUF001
-    "invalid_type": "服务生成的结果类型不符合要求，这是服务端生成失败。",  # noqa: RUF001
-    "out_of_bounds": "服务生成的结果长度或数量超出允许范围，这是服务端生成失败。",  # noqa: RUF001
-    "invalid_format": "服务生成的结果格式无法解析，这是服务端生成失败。",  # noqa: RUF001
+    "invalid_structure": "The generated result has an invalid structure. This is a service-side generation failure.",
+    "invalid_type": "The generated result has an invalid type. This is a service-side generation failure.",
+    "out_of_bounds": "The generated result exceeds length or count limits. This is a service-side generation failure.",
+    "invalid_format": "The generated result cannot be parsed. This is a service-side generation failure.",
 }
 
 
@@ -878,8 +882,9 @@ def _public_error_message(
         details: Closed safe details for codes that define them.
 
     Returns:
-        Canonical SDK wording, except for an exact match to an approved frozen
-        Backend message (including the read-only ``forbidden`` specialization).
+        Canonical English SDK wording, including the read-only ``forbidden``
+        specialization. The exact historical Chinese read-only wire message is
+        recognized as input only and projected to its English equivalent.
 
     Preconditions:
         ``error_type`` exists in ``_ERROR_MESSAGES`` and ``code`` has already
@@ -910,10 +915,11 @@ def _public_error_message(
     # Backend may send the same frozen public wording so async and synchronous
     # errors retain it exactly. Any other text falls back to the SDK mapping;
     # this prevents an upstream detail or traceback from becoming user-visible.
-    if remote_message == canonical or (
-        code == "forbidden" and remote_message == _READ_ONLY_FORBIDDEN_MESSAGE
+    if code == "forbidden" and remote_message in (
+        _READ_ONLY_FORBIDDEN_MESSAGE,
+        _LEGACY_READ_ONLY_MESSAGE,
     ):
-        return remote_message
+        return _READ_ONLY_FORBIDDEN_MESSAGE
     return canonical
 
 
@@ -976,7 +982,7 @@ def _judge_error(error: KumaError) -> KumaError:
     """
     if error.code in {"model_invalid_result", "model_invalid_response", "service_busy"}:
         return ServiceBusyError(
-            "服务忙，请稍后再试",  # noqa: RUF001
+            "Service is busy. Please try again later.",
             code="service_busy",
             retryable=error.retryable,
             request_id=error.request_id,

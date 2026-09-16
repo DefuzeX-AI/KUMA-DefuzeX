@@ -13,7 +13,7 @@ SDK 0.2.3 支持以下安全公开分类，并保留请求身份与重试保护�
 | 历史原因不明 | operation_failed | 任务失败，但历史记录无法确定细分原因。使用 ServiceError，不归咎用户或猜测模型故障。 |
 
 鉴权、权限、额度、幂等和不存在错误仍有各自分类。程序应依据 code/retryable，
-不要解析翻译文案。SDK 使用固定中文文案，不信任任意远端文本。
+不要解析翻译文案。SDK 使用固定英文文案，不信任任意远端文本。
 历史 upstream_unavailable/upload_not_configured 改用 ServiceError，但维持此前
 不自动重试的行为。已完成失败保留原 code/retryable，不重写历史记录。
 

@@ -35,14 +35,14 @@ FIELD_CONSTRAINTS = {
     "manifest": {"expected_type": "object"},
 }
 _FIELD_REASONS = {
-    "required": "必须提供",
-    "invalid_type": "类型不正确",
-    "blank": "不能为空",
-    "min_value": "低于允许下限",
-    "max_value": "超过允许上限",
-    "max_length": "长度超过允许上限",
-    "invalid_choice": "不在允许值中",
-    "invalid": "不符合要求",
+    "required": "is required",
+    "invalid_type": "has an invalid type",
+    "blank": "must not be blank",
+    "min_value": "is below the minimum",
+    "max_value": "exceeds the maximum",
+    "max_length": "exceeds the maximum length",
+    "invalid_choice": "is not an allowed value",
+    "invalid": "is invalid",
 }
 
 
@@ -112,7 +112,7 @@ def validated_field_details(details: object) -> dict[str, Any]:
 
 
 def field_error_message(details: Mapping[str, Any]) -> str:
-    """Format only validated public constraints into actionable Chinese text.
+    """Format only validated public constraints into actionable English text.
 
     Args:
         details: Detached output of validated_field_details, never raw wire data.
@@ -127,24 +127,28 @@ def field_error_message(details: Mapping[str, Any]) -> str:
     """
     messages = []
     types = {
-        "integer": "整数",
-        "string": "字符串",
-        "boolean": "布尔值",
-        "array": "数组",
-        "object": "对象",
+        "integer": "integer",
+        "string": "string",
+        "boolean": "boolean",
+        "array": "array",
+        "object": "object",
     }
     for record in details["fields"]:
-        text = f"{record['field']}：{_FIELD_REASONS[record['reason']]}"  # noqa: RUF001
+        text = f"{record['field']}: {_FIELD_REASONS[record['reason']]}"
         kind = record.get("expected_type")
         if kind:
-            text += f"（要求{types[kind]}）"  # noqa: RUF001
-        unit = {"string": "字符", "array": "项"}.get(
+            text += f" (expected {types[kind]})"
+        unit = {"string": " characters", "array": " items"}.get(
             FIELD_CONSTRAINTS[record["field"]]["expected_type"], ""
         )
-        for bound, label in (("minimum", "最小"), ("maximum", "最大")):
+        for bound, label in (("minimum", "minimum"), ("maximum", "maximum")):
             if bound in record:
-                text += f"，{label}{record[bound]}{unit}"  # noqa: RUF001
+                text += f", {label} {record[bound]}{unit}"
         if "allowed_values" in record:
-            text += "，允许值：" + ", ".join(record["allowed_values"])  # noqa: RUF001
+            text += ", allowed values: " + ", ".join(record["allowed_values"])
         messages.append(text)
-    return "提交的内容有问题：" + "；".join(messages) + "。请修改这些字段后重试。"  # noqa: RUF001
+    return (
+        "Invalid request: "
+        + "; ".join(messages)
+        + ". Correct these fields and try again."
+    )

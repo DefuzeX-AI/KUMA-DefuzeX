@@ -53,7 +53,7 @@ class JudgeBusyTests(unittest.TestCase):
     def assert_busy(self, error, retryable):
         self.assertIsInstance(error, ServiceBusyError)
         self.assertEqual(error.code, "service_busy")
-        self.assertEqual(str(error), "服务忙，请稍后再试")  # noqa: RUF001
+        self.assertEqual(str(error), "Service is busy. Please try again later.")
         self.assertEqual(error.retryable, retryable)
         self.assertEqual(dict(error.details), {})
 

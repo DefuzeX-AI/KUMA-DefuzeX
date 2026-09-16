@@ -1,5 +1,5 @@
 """Single source of truth for the package version."""
 
-__version__ = "0.2.6"
+__version__ = "0.2.7"
 
 __all__ = ["__version__"]

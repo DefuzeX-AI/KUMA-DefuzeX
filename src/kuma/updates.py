@@ -194,14 +194,12 @@ def _background_check() -> None:
         return
     try:
         label = (
-            "需要更新 / Update required"
-            if result["status"] == "required"
-            else "可选更新 / Update optional"
+            "Update required" if result["status"] == "required" else "Update optional"
         )
         print(
             f"KUMA: {label}: {result['current_version']} -> "
             f"{result['latest_version']}. {result['release_url']} "
-            "(Reminder only; current work continues. 不会自动安装或中断任务。)",
+            "(Reminder only; no automatic installation or interruption of current work.)",
             file=sys.stderr,
         )
     except Exception:

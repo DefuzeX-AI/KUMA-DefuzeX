@@ -418,11 +418,11 @@ Rubric、Prompt 或 Provider 响应。已知 operation 只通过 GET 继续轮�
 列出的静态公开 serializer 路径，不是用户提交值。reason 限 required、invalid_type、
 blank、min_value、max_value、max_length、invalid_choice、invalid。可选
 expected_type、minimum、maximum、allowed_values 必须与字段的冻结约束一致。
-SDK 将这些安全约束显示为中文改正提示。
+SDK 将这些安全约束显示为英文改正提示。
 
 仅对官方 Judge，内部 `model_invalid_result` / `model_invalid_response` 失败
 （含旧服务响应）显示为 `ServiceBusyError`：code 为 `service_busy`，文案为
-`服务忙，请稍后再试`，details 为空。保留原 `retryable` 和响应头 `request_id`，
+`Service is busy. Please try again later.`，details 为空。保留原 `retryable` 和响应头 `request_id`，
 不自动重试、不创建新任务、不伪造报告；已提交的 Run history 保留。
 输入、鉴权、权限和额度错误不转换。Case 生成仍遵循下面的原有规则。
 

@@ -1,5 +1,19 @@
 # Versions and releases / 版本与发布
 
+## 0.2.7
+
+- SDK-authored errors, field correction messages, update reminders and example
+  prompts now use English. Official Judge invalid-result failures display
+  `Service is busy. Please try again later.`
+- Stable error codes, `retryable`, request IDs, privacy safeguards and billing
+  behavior are unchanged. Historical Chinese service messages are recognized
+  only as input; Chinese user content and Agent Profile headings remain supported.
+- SDK 自产报错、字段改正提示、更新提醒及示例运行提示统一英文；Judge 固定文案为
+  `Service is busy. Please try again later.`。错误代码、重试、请求 ID、隐私和计费不变。
+  保留中文用户数据和 Agent Profile 标题兼容；旧中文服务文案仅作为输入识别。
+- Optional patch update; no automatic installation. Publication status follows
+  the official GitHub Release and PyPI. 可选补丁，不自动安装，以正式发布状态为准。
+
 ## 0.2.6
 
 - Explicit `strategy="safety-baseline"` validates seven Basic Safety groups,
