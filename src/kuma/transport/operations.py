@@ -369,6 +369,17 @@ def _operation_id(value: Any) -> str:
     return value
 
 
+def _bounded_poll_after_ms(value: Any, *, error: str) -> int:
+    """Return a poll interval inside the documented 100..60000 ms range."""
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not _MIN_POLL_MS <= value <= _MAX_POLL_MS
+    ):
+        raise ProviderError(error, code="invalid_response")
+    return value
+
+
 def _start_response(response: Mapping[str, Any]) -> tuple[str, int]:
     """Validate the closed 202 operation envelope and bounded poll interval."""
     if set(response) != {"operation_id", "status", "poll_after_ms"}:
@@ -376,17 +387,15 @@ def _start_response(response: Mapping[str, Any]) -> tuple[str, int]:
             "The Backend returned an invalid operation start response",
             code="invalid_response",
         )
-    poll_after_ms = response["poll_after_ms"]
-    if (
-        response["status"] not in {"queued", "running", "succeeded", "failed"}
-        or isinstance(poll_after_ms, bool)
-        or not isinstance(poll_after_ms, int)
-        or not _MIN_POLL_MS <= poll_after_ms <= _MAX_POLL_MS
-    ):
+    if response["status"] not in {"queued", "running", "succeeded", "failed"}:
         raise ProviderError(
             "The Backend returned an invalid operation start response",
             code="invalid_response",
         )
+    poll_after_ms = _bounded_poll_after_ms(
+        response["poll_after_ms"],
+        error="The Backend returned an invalid operation start response",
+    )
     return _operation_id(response["operation_id"]), poll_after_ms
 
 
@@ -406,7 +415,8 @@ def _poll_response(
     Returns:
         Status plus either a succeeded result mapping or a closed failed-error
         tuple. Known codes may carry closed Case-limit, difficulty or missing-
-        capability details validated by the same policy as HTTP errors.
+        capability details validated by the same policy as HTTP errors. Active
+        queued/running envelopes may include optional bounded ``poll_after_ms``.
 
     Raises:
         ProviderError: If IDs differ, status/fields violate the closed union, or
@@ -427,10 +437,15 @@ def _poll_response(
             "The Backend returned a mismatched operation_id",
             code="invalid_response",
         )
-    if status in {"queued", "running"} and set(response) == {
-        "operation_id",
-        "status",
-    }:
+    if status in {"queued", "running"} and set(response) in (
+        {"operation_id", "status"},
+        {"operation_id", "status", "poll_after_ms"},
+    ):
+        if "poll_after_ms" in response:
+            _bounded_poll_after_ms(
+                response["poll_after_ms"],
+                error="The Backend returned an invalid operation status response",
+            )
         return status, None, None
     if status == "succeeded" and set(response) == {
         "operation_id",
@@ -599,7 +614,9 @@ def await_operation(
 
     Side Effects:
         May atomically transition recovery metadata, issue one idempotent POST,
-        sleep according to bounded server polling guidance, and issue status GETs.
+        sleep from the latest bounded ``poll_after_ms`` with geometric backoff
+        toward 60s, honor an optional mid-flight revision on queued/running GET
+        responses, and issue status GETs.
 
     Security/Privacy:
         The store contains no credential, request payload, Evidence, or response
@@ -646,7 +663,7 @@ def await_operation(
                 raise
             if not exc.retryable or _automatic_retry_blocked(exc):
                 raise _operation_error(state, exc) from None
-            _sleep_bounded(poll_after_ms, deadline)
+            poll_after_ms = _sleep_then_grow(poll_after_ms, deadline)
             continue
         with _response_validation(response):
             status, result, error = _poll_response(response, state.operation_id or "")
@@ -670,8 +687,9 @@ def await_operation(
                 request_id=response_request_id(response),
             )
             raise _operation_error(state, failure)
+        poll_after_ms = response.get("poll_after_ms", poll_after_ms)
         state = _record_active_status(store, state, status)
-        _sleep_bounded(poll_after_ms, deadline)
+        poll_after_ms = _sleep_then_grow(poll_after_ms, deadline)
 
 
 def _ensure_time_remaining(deadline: float) -> None:
@@ -690,6 +708,12 @@ def _sleep_bounded(poll_after_ms: int, deadline: float) -> None:
     if remaining <= 0:
         _ensure_time_remaining(deadline)
     time.sleep(min(poll_after_ms / 1_000, remaining))
+
+
+def _sleep_then_grow(poll_after_ms: int, deadline: float) -> int:
+    """Sleep the current interval, then double it without exceeding the ceiling."""
+    _sleep_bounded(poll_after_ms, deadline)
+    return min(poll_after_ms * 2, _MAX_POLL_MS)
 
 
 __all__ = [

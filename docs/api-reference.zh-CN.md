@@ -80,7 +80,7 @@ run = create_run(repo_path=".", agent_profile_path="agent-profile.md")
 | `save_local` | `bool` | `False` | 把每个已成功提交的 Submission 额外保存为 `.kuma/runs/<run_id>/` 下的 JSON，便于调试和审计。它只是本地副本，不能替代提交给官方 Judge。 |
 | `allow_sensitive` | `bool` | `False` | 当普通 Evidence 被扫描器判断为可能敏感时，是否仍允许继续。默认应保持 `False`；只有人工确认内容可以披露时才开启，而且它永远不能让秘密进入 OTel Trace Evidence。 |
 | `timeout` | `float` | `300.0` 秒 | 限制一次连接 KUMA 公网服务的 HTTP 请求最多等待多久。调小后单次网络失败会更快返回；它不限制 Case 生成或 Judge 的总等待时间。 |
-| `operation_wait_timeout` | `float` | `600.0` 秒 | 限制一次官方 Case/Judge operation 连同轮询在内总共等待多久。超时后 KUMA 抛出可重试错误，并保留安全恢复信息，以便继续同一个 operation。 |
+| `operation_wait_timeout` | `float` | `600.0` 秒 | 限制一次官方 Case/Judge operation 连同轮询在内总共等待多久。轮询从 Backend `poll_after_ms` 起步（恢复路径为 1000 ms），按几何退避升至 60 秒，并接受 queued/running GET 上可选的 `poll_after_ms` 修订。超时后 KUMA 抛出可重试错误，并保留安全恢复信息，以便继续同一个 operation。 |
 | `max_retries` | `int` | `2` | 设置一次瞬态 HTTP 失败后最多再尝试几次，允许 0–5。重试会复用同一个幂等键，不会故意创建第二个 Case/Judge operation。 |
 | `api_key` | `str \| None` | `None` | 为“这一个 Run”提供官方服务凭证，用于临时覆盖环境变量或已保存凭证。`None` 时依次读取 `KUMA_API_KEY` 和用户凭证文件；Case/Judge 都是本地 Provider 时不需要 Key。 |
 | `trace_evidence` | `TraceEvidenceCapture \| None` | `None` | 为本次 Run 指定一份 OTel Trace 采集器及其资源上限。需要显式控制时传入 `configure_trace_evidence()` 的返回值；`None` 时 KUMA 会尝试复用兼容的全局 Provider，没有则继续运行并记录非阻断 warning。 |

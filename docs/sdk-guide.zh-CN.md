@@ -328,7 +328,7 @@ except KumaError as exc:
 
 常见子类包括 `ConfigurationError`、`AuthenticationError`、`PermissionDeniedError`、`ValidationError`、`SensitiveDataError`、`LimitExceededError`、`InputProtocolError`、`ProviderError`、`KumaTimeoutError`、`ServiceBusyError` 和 `ServiceError`。
 
-`timeout` 限制单次公开 HTTP 尝试；`operation_wait_timeout` 限制完整的官方单 Case 或 Judge operation。POST 重试会复用稳定幂等键；只有服务端声明的瞬态失败才会在 `max_retries` 范围内重试，`ServiceBusyError` 不会自动重试。
+`timeout` 限制单次公开 HTTP 尝试；`operation_wait_timeout` 限制完整的官方单 Case 或 Judge operation。Operation 轮询从 Backend `poll_after_ms` 起步（恢复已知 operation 时为 1000 ms），按几何退避升至 60 秒，并接受 queued/running GET 上可选的 `poll_after_ms`。POST 重试会复用稳定幂等键；只有服务端声明的瞬态失败才会在 `max_retries` 范围内重试，`ServiceBusyError` 不会自动重试。
 
 `exc.request_id` 来自当前响应的可选 `X-Request-ID`，仅接受恰好 32 位小写十六进制值。缺失、非法或重复值均为 `None`，不会用 JSON 正文、私有服务或本地 `kreq_…` ID 替代。异步失败关联返回失败状态的轮询响应，而非首次启动请求。解码/大小/状态及 operation 启动/轮询/结果校验失败也保留对应合法 ID；无响应网络失败和本地持久化错误不继承旧 ID。响应头可能是服务端回显的值，不保证由服务端生成。
 

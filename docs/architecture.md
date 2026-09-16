@@ -151,7 +151,7 @@ sequenceDiagram
         B-->>C: 202 operation_id + poll_after_ms
         loop while queued/running within operation_wait_timeout
             C->>B: GET /sdk/v2/operations/{operation_id}/
-            B-->>C: queued/running or terminal wrapper
+            B-->>C: queued/running (optional poll_after_ms) or terminal wrapper
         end
         C->>C: validate succeeded result as public signed Case
     else custom Case
@@ -179,7 +179,7 @@ sequenceDiagram
             B-->>J: 202 operation_id + poll_after_ms
             loop while queued/running within operation_wait_timeout
                 J->>B: GET /sdk/v2/operations/{operation_id}/
-                B-->>J: queued/running or terminal wrapper
+                B-->>J: queued/running (optional poll_after_ms) or terminal wrapper
             end
             J->>J: validate succeeded result as public Judgment
         end
@@ -190,7 +190,7 @@ sequenceDiagram
 
 只有 official Provider 分支访问网络。自定义 Case + 自定义 Judge（或 `judge=False`）可完全本地运行。混合组合只为官方那一侧创建 `BackendClient`。
 
-Python API 表面仍是同步的：`create_run()` 和 `judge()` 在有界等待内返回终态或抛出稳定异常，不向调用者暴露 operation polling。只有单 Case/单 Judge 使用 v2 operation；`POST /sdk/judge/batch/` 保持 v1 同步批量合同。
+Python API 表面仍是同步的：`create_run()` 和 `judge()` 在有界等待内返回终态或抛出稳定异常，不向调用者暴露 operation polling。轮询从 202 的 `poll_after_ms` 起步（恢复路径默认为 1000 ms），按几何退避升至 60 s，并接受活动 GET 上可选的 `poll_after_ms` 修订。只有单 Case/单 Judge 使用 v2 operation；`POST /sdk/judge/batch/` 保持 v1 同步批量合同。
 
 ## Run 状态机
 

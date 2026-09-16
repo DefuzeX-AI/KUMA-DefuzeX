@@ -25,6 +25,7 @@ python tools/verify_public_api_docs.py
 python tools/verify_executed_strategy_group.py
 python tools/verify_cli_atomic_output.py
 python tools/verify_transport_failures.py
+python tools/verify_operation_poll_backoff.py
 python -m compileall -q src examples tools
 kuma quickstart
 python examples/minimal_local.py

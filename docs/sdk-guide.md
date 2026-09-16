@@ -340,7 +340,7 @@ except KumaError as exc:
 
 Common subclasses include `ConfigurationError`, `AuthenticationError`, `PermissionDeniedError`, `ValidationError`, `SensitiveDataError`, `LimitExceededError`, `InputProtocolError`, `ProviderError`, `KumaTimeoutError`, `ServiceBusyError`, and `ServiceError`.
 
-`timeout` bounds one public HTTP attempt. `operation_wait_timeout` bounds the complete official single-Case or Judge operation. POST retries reuse a stable idempotency key; only server-declared transient failures are retried within `max_retries`, and `ServiceBusyError` is not retried automatically.
+`timeout` bounds one public HTTP attempt. `operation_wait_timeout` bounds the complete official single-Case or Judge operation. Operation polling starts at the Backend `poll_after_ms` (1000 ms when resuming a known operation), grows geometrically toward 60 seconds, and accepts an optional `poll_after_ms` on queued/running GET responses. POST retries reuse a stable idempotency key; only server-declared transient failures are retried within `max_retries`, and `ServiceBusyError` is not retried automatically.
 
 `exc.request_id` is the current response's optional `X-Request-ID`, accepted only as exactly 32 lowercase hexadecimal characters. Missing, invalid, or duplicate headers remain `None`; JSON-body, private service, and local `kreq_…` IDs are never substituted. Async failures use the failed poll response's ID, not the original start request. Decode/size/status and operation start/poll/result validation errors also retain that response's safe ID; no-response network failures and local persistence errors do not inherit a previous ID. A header may be server-echoed, not necessarily server-generated.
 
