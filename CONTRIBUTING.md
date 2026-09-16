@@ -11,12 +11,36 @@ Use Python 3.10 or newer in an isolated environment:
 
 ```bash
 python -m venv .venv
+```
+
+Activate the environment before installing dependencies.
+
+**Windows PowerShell:**
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+**macOS/Linux:**
+
+```bash
+source .venv/bin/activate
+```
+
+Verify that the virtual environment's Python interpreter is active:
+
+```bash
+python -c "import sys; print(sys.executable)"
+```
+
+Then install the development dependencies:
+
+```bash
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-Activate the environment using the command appropriate for your shell, then
-run the canonical checks:
+Run the canonical checks:
 
 ```bash
 python -m ruff format --check --exclude "*.ipynb" .
@@ -35,6 +59,7 @@ python -m twine check dist/*
 Public CI checks lint, supported-Python installation and imports, the CLI,
 offline examples, and package construction. This public repository does not
 ship the maintainers' complete security and contract regression suite.
+
 Maintainers run those private checks before accepting a release.
 
 The execution-group regression check uses synthetic responses and temporary
