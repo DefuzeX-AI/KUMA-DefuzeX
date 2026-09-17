@@ -37,6 +37,7 @@ from .http import response_request_id
 _DEFAULT_RESUME_POLL_MS = 1_000
 _MIN_POLL_MS = 100
 _MAX_POLL_MS = 60_000
+_MAX_FALLBACK_POLL_MS = 8_000
 _MAX_OPERATION_ID_CHARS = 64
 _STATE_SCHEMA = "defuzex.pending_operation.v1"
 _STATE_LOCK = threading.RLock()
@@ -614,9 +615,11 @@ def await_operation(
 
     Side Effects:
         May atomically transition recovery metadata, issue one idempotent POST,
-        sleep from the latest bounded ``poll_after_ms`` with geometric backoff
-        toward 60s, honor an optional mid-flight revision on queued/running GET
-        responses, and issue status GETs.
+        sleep from the latest bounded ``poll_after_ms``, honor an optional
+        mid-flight revision on queued/running GET responses (documented
+        ``100..60000`` ms), grow a local fallback geometrically toward 8s when
+        a poll omits that field, cap each wait by remaining deadline so a final
+        GET can still collect a completed result, and issue status GETs.
 
     Security/Privacy:
         The store contains no credential, request payload, Evidence, or response
@@ -638,7 +641,6 @@ def await_operation(
             operation_id, poll_after_ms = _start_response(response)
         state = store.set_operation_id(state, operation_id)
     while True:
-        _ensure_time_remaining(deadline)
         try:
             if isinstance(client, BackendClient):
                 response = client.json(
@@ -663,6 +665,7 @@ def await_operation(
                 raise
             if not exc.retryable or _automatic_retry_blocked(exc):
                 raise _operation_error(state, exc) from None
+            _ensure_time_remaining(deadline)
             poll_after_ms = _sleep_then_grow(poll_after_ms, deadline)
             continue
         with _response_validation(response):
@@ -687,6 +690,7 @@ def await_operation(
                 request_id=response_request_id(response),
             )
             raise _operation_error(state, failure)
+        _ensure_time_remaining(deadline)
         poll_after_ms = response.get("poll_after_ms", poll_after_ms)
         state = _record_active_status(store, state, status)
         poll_after_ms = _sleep_then_grow(poll_after_ms, deadline)
@@ -703,7 +707,12 @@ def _ensure_time_remaining(deadline: float) -> None:
 
 
 def _sleep_bounded(poll_after_ms: int, deadline: float) -> None:
-    """Sleep for the server interval without crossing the operation deadline."""
+    """Sleep for the current interval without crossing the operation deadline.
+
+    The caller polls first and only sleeps while the operation is still active
+    with time remaining, so sleeping the leftover budget still leaves one GET
+    at the deadline before ``KumaTimeoutError``.
+    """
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         _ensure_time_remaining(deadline)
@@ -711,9 +720,14 @@ def _sleep_bounded(poll_after_ms: int, deadline: float) -> None:
 
 
 def _sleep_then_grow(poll_after_ms: int, deadline: float) -> int:
-    """Sleep the current interval, then double it without exceeding the ceiling."""
+    """Sleep the current interval, then double the local fallback toward 8s.
+
+    Explicit Backend ``poll_after_ms`` values may be as large as
+    ``_MAX_POLL_MS``; the next unguided interval is capped at
+    ``_MAX_FALLBACK_POLL_MS`` so completion detection stays responsive.
+    """
     _sleep_bounded(poll_after_ms, deadline)
-    return min(poll_after_ms * 2, _MAX_POLL_MS)
+    return min(poll_after_ms * 2, _MAX_FALLBACK_POLL_MS)
 
 
 __all__ = [

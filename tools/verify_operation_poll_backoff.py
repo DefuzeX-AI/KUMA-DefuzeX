@@ -7,14 +7,16 @@ from collections.abc import Callable, Mapping
 from typing import Any
 from unittest.mock import patch
 
-from kuma.errors import ProviderError
+from kuma.errors import KumaTimeoutError, ProviderError
 from kuma.transport import operations as ops
 from kuma.transport.operations import PendingOperationStore, await_operation
 
 OPERATION_ID = "0999c499-81d9-4228-9dac-a9ce4ce4cbc7"
 BACKEND_POLL_AFTER_MS = 500
 LONG_OP_SECONDS = 77.4
-MAX_POLL_SECONDS = 60.0
+DEADLINE_SECONDS = 120.0
+MAX_SERVER_POLL_SECONDS = 60.0
+MAX_FALLBACK_POLL_SECONDS = ops._MAX_FALLBACK_POLL_MS / 1_000
 
 
 class _Clock:
@@ -48,15 +50,22 @@ class StubClient:
 class TimedStubClient:
     """Return running until the patched clock reaches the captured Judge span."""
 
-    def __init__(self, clock: _Clock, *, revise_ms: int | None = None) -> None:
+    def __init__(
+        self,
+        clock: _Clock,
+        *,
+        revise_ms: int | None = None,
+        complete_at: float = LONG_OP_SECONDS,
+    ) -> None:
         self.clock = clock
         self.revise_ms = revise_ms
+        self.complete_at = complete_at
         self.calls = 0
 
     def json(self, method: str, path: str, **_kwargs: Any) -> Mapping[str, Any]:
         del method, path
         self.calls += 1
-        if self.clock.now >= LONG_OP_SECONDS:
+        if self.clock.now >= self.complete_at:
             return {
                 "operation_id": OPERATION_ID,
                 "status": "succeeded",
@@ -92,8 +101,29 @@ def _expected_backoff(start_ms: int, sleeps: int) -> list[float]:
     values: list[float] = []
     for _ in range(sleeps):
         values.append(current / 1_000)
-        current = min(current * 2, 60_000)
+        current = min(current * 2, ops._MAX_FALLBACK_POLL_MS)
     return values
+
+
+def _await_with_clock(
+    client: TimedStubClient,
+    clock: _Clock,
+    *,
+    store: PendingOperationStore | None = None,
+    wait_timeout: float,
+    start: Callable[[str, float], Mapping[str, Any]] = _start,
+) -> Mapping[str, Any]:
+    with (
+        patch.object(ops.time, "sleep", clock.sleep),
+        patch.object(ops.time, "monotonic", clock.monotonic),
+    ):
+        return await_operation(
+            client,
+            _store() if store is None else store,
+            key_factory=lambda: "repro-stable-key",
+            start=start,
+            wait_timeout=wait_timeout,
+        )
 
 
 class OperationPollBackoffTests(unittest.TestCase):
@@ -109,7 +139,8 @@ class OperationPollBackoffTests(unittest.TestCase):
         self.assertEqual(calls, 70)
         self.assertEqual(slept, _expected_backoff(BACKEND_POLL_AFTER_MS, 69))
         self.assertGreater(slept[1], slept[0])
-        self.assertEqual(slept[-1], MAX_POLL_SECONDS)
+        self.assertEqual(slept[-1], MAX_FALLBACK_POLL_SECONDS)
+        self.assertLess(slept[-1], MAX_SERVER_POLL_SECONDS)
         self.assertNotEqual(set(slept), {0.5})
 
     def test_mid_flight_poll_after_ms_is_accepted_and_used(self) -> None:
@@ -131,39 +162,43 @@ class OperationPollBackoffTests(unittest.TestCase):
     def test_long_operation_poll_count_drops_via_backoff(self) -> None:
         clock = _Clock()
         client = TimedStubClient(clock)
-        with (
-            patch.object(ops.time, "sleep", clock.sleep),
-            patch.object(ops.time, "monotonic", clock.monotonic),
-        ):
-            result = await_operation(
-                client,
-                _store(),
-                key_factory=lambda: "repro-stable-key",
-                start=_start,
-                wait_timeout=600.0,
-            )
+        result = _await_with_clock(client, clock, wait_timeout=600.0)
         self.assertEqual(result, {"ok": True})
-        self.assertLessEqual(client.calls, 13)
+        self.assertLessEqual(client.calls, 15)
         self.assertGreater(client.calls, 1)
         self.assertEqual(
             clock.slept, _expected_backoff(BACKEND_POLL_AFTER_MS, len(clock.slept))
         )
         self.assertLess(client.calls, 70)
+        self.assertGreaterEqual(clock.now, LONG_OP_SECONDS)
+        self.assertLess(clock.now, DEADLINE_SECONDS)
+
+    def test_long_operation_is_observed_before_120s_deadline(self) -> None:
+        clock = _Clock()
+        client = TimedStubClient(clock)
+        result = _await_with_clock(client, clock, wait_timeout=DEADLINE_SECONDS)
+        self.assertEqual(result, {"ok": True})
+        self.assertGreaterEqual(clock.now, LONG_OP_SECONDS)
+        self.assertLess(clock.now, DEADLINE_SECONDS)
+        self.assertLess(clock.now - LONG_OP_SECONDS, MAX_FALLBACK_POLL_SECONDS)
+        self.assertEqual(
+            clock.slept, _expected_backoff(BACKEND_POLL_AFTER_MS, len(clock.slept))
+        )
+        self.assertLessEqual(client.calls, 15)
+
+    def test_deadline_sleep_still_collects_completed_result(self) -> None:
+        clock = _Clock()
+        client = TimedStubClient(clock, complete_at=89.0)
+        result = _await_with_clock(client, clock, wait_timeout=90.0)
+        self.assertEqual(result, {"ok": True})
+        self.assertGreaterEqual(clock.now, 89.0)
+        self.assertLessEqual(clock.now, 90.0)
+        self.assertGreater(client.calls, 1)
 
     def test_backend_revision_also_reduces_poll_count(self) -> None:
         clock = _Clock()
         client = TimedStubClient(clock, revise_ms=30_000)
-        with (
-            patch.object(ops.time, "sleep", clock.sleep),
-            patch.object(ops.time, "monotonic", clock.monotonic),
-        ):
-            result = await_operation(
-                client,
-                _store(),
-                key_factory=lambda: "repro-stable-key",
-                start=_start,
-                wait_timeout=600.0,
-            )
+        result = _await_with_clock(client, clock, wait_timeout=600.0)
         self.assertEqual(result, {"ok": True})
         self.assertLessEqual(client.calls, 6)
         self.assertEqual(clock.slept, [30.0] * len(clock.slept))
@@ -190,7 +225,7 @@ class OperationPollBackoffTests(unittest.TestCase):
         )
         self.assertIsNone(error)
         self.assertEqual(calls, 3)
-        self.assertEqual(slept, [5.0, 10.0])
+        self.assertEqual(slept, [5.0, MAX_FALLBACK_POLL_SECONDS])
 
     def test_resume_without_revision_grows_from_default(self) -> None:
         store = _store()
@@ -240,6 +275,74 @@ class OperationPollBackoffTests(unittest.TestCase):
         self.assertEqual(calls, 1)
         self.assertIsInstance(error, ProviderError)
         self.assertEqual(error.code, "invalid_response")
+
+    def test_invalid_optional_interval_types_and_bounds_are_rejected(self) -> None:
+        invalid_values: tuple[Any, ...] = (
+            True,
+            False,
+            500.0,
+            "500",
+            None,
+            0,
+            -1,
+            99,
+            60_001,
+        )
+        for value in invalid_values:
+            with self.subTest(poll_after_ms=value):
+                _, calls, error = self._drive(
+                    [
+                        {
+                            "operation_id": OPERATION_ID,
+                            "status": "running",
+                            "poll_after_ms": value,
+                        }
+                    ]
+                )
+                self.assertEqual(calls, 1)
+                self.assertIsInstance(error, ProviderError)
+                self.assertEqual(error.code, "invalid_response")
+
+    def test_documented_optional_interval_bounds_are_accepted(self) -> None:
+        done = {
+            "operation_id": OPERATION_ID,
+            "status": "succeeded",
+            "result": {"ok": True},
+        }
+        for value, expected_sleep in ((100, 0.1), (60_000, 60.0)):
+            with self.subTest(poll_after_ms=value):
+                slept, calls, error = self._drive(
+                    [
+                        {
+                            "operation_id": OPERATION_ID,
+                            "status": "running",
+                            "poll_after_ms": value,
+                        },
+                        done,
+                    ]
+                )
+                self.assertIsNone(error)
+                self.assertEqual(calls, 2)
+                self.assertEqual(slept, [expected_sleep])
+
+    def test_timeout_retains_recovery_metadata(self) -> None:
+        clock = _Clock()
+        store = _store()
+        client = TimedStubClient(clock)
+        with self.assertRaises(KumaTimeoutError) as raised:
+            _await_with_clock(
+                client, clock, store=store, wait_timeout=DEADLINE_SECONDS / 4
+            )
+        error = raised.exception
+        self.assertEqual(error.code, "operation_wait_timeout")
+        self.assertTrue(error.retryable)
+        state = store.load()
+        self.assertIsNotNone(state)
+        assert state is not None
+        self.assertEqual(state.operation_id, OPERATION_ID)
+        self.assertEqual(state.idempotency_key, "repro-stable-key")
+        self.assertGreater(client.calls, 1)
+        self.assertLess(clock.now, LONG_OP_SECONDS)
 
     def _drive(
         self,

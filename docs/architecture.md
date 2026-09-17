@@ -190,7 +190,7 @@ sequenceDiagram
 
 只有 official Provider 分支访问网络。自定义 Case + 自定义 Judge（或 `judge=False`）可完全本地运行。混合组合只为官方那一侧创建 `BackendClient`。
 
-Python API 表面仍是同步的：`create_run()` 和 `judge()` 在有界等待内返回终态或抛出稳定异常，不向调用者暴露 operation polling。轮询从 202 的 `poll_after_ms` 起步（恢复路径默认为 1000 ms），按几何退避升至 60 s，并接受活动 GET 上可选的 `poll_after_ms` 修订。只有单 Case/单 Judge 使用 v2 operation；`POST /sdk/judge/batch/` 保持 v1 同步批量合同。
+The Python API remains synchronous: `create_run()` and `judge()` return a terminal result or raise a stable exception within the bounded wait, without exposing operation polling. Polling starts at the 202 `poll_after_ms` (1000 ms when resuming), grows geometrically with an 8-second local fallback cap when a GET omits the field, and honors an optional `poll_after_ms` revision on queued/running GETs within the documented `100..60000` ms range. Each wait is capped by remaining deadline so a final GET can still collect a completed result. Only single Case/Judge operations use v2 operations; `POST /sdk/judge/batch/` remains the v1 synchronous batch contract.
 
 ## Run 状态机
 

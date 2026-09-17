@@ -58,7 +58,7 @@ Accept: application/json
 
 `status` 可为 `queued`、`running`、`succeeded` 或 `failed`；`poll_after_ms` 是 `100..60000` 的权威毫秒间隔。SDK 使用同一 `Idempotency-Key` 重试完全相同的 POST，不回退到 v1。
 
-SDK 通过 `GET /sdk/v2/operations/{operation_id}/` 获取终态。活动响应含 `operation_id` 和 `status`，并可选择带上与 202 相同范围的 `poll_after_ms`（`100..60000`）。SDK 在收到该字段时用它作为下一次间隔；否则从最近一次权威间隔做几何退避，上限 60000 ms。成功响应加入 `result`（既有 Case 或 Judgment payload）；失败响应加入 `error: {code, retryable}`。未知 operation 返回稳定的 HTTP `404 operation_not_found`。失败 operation 本身是 HTTP `200` wrapper。
+The SDK obtains a terminal state via `GET /sdk/v2/operations/{operation_id}/`. Active responses include `operation_id` and `status`, and may include optional `poll_after_ms` in the same documented `100..60000` range as the 202 envelope. When that field is present, the SDK uses it as the next interval. When it is absent, the SDK grows geometrically from the latest interval with a local fallback cap of 8000 ms; explicit server guidance may still use the full documented range. Each wait is capped by remaining `operation_wait_timeout` so a final GET can still collect a completed result before `KumaTimeoutError`. Success responses add `result` (the existing Case or Judgment payload); failure responses add `error: {code, retryable}`. An unknown operation returns a stable HTTP `404 operation_not_found`. A failed operation is itself an HTTP `200` wrapper.
 
 单次 HTTP `timeout` 与总 `operation_wait_timeout` 相互独立。v2 首次 POST 可带
 `X-Kuma-Client-Request-Id: kreq_<32位小写十六进制>`。Backend 将它与创建者、
