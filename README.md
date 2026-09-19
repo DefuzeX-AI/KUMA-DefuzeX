@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> &nbsp;|&nbsp; <a href="README.zh-CN.md">简体中文</a>
+  <a href="README.md">English</a> &nbsp;|&nbsp; <a href="README.zh-CN.md">Simplified Chinese</a>
 </p>
 
 KUMA is a framework-neutral Python SDK for evaluating AI Agents. It delivers a
