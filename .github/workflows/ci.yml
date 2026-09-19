@@ -35,6 +35,7 @@ jobs:
       - run: python tools/verify_cli_atomic_output.py
       - run: python tools/verify_transport_failures.py
       - run: python tools/verify_judge_busy.py
+      - run: python tools/verify_operation_poll_backoff.py
       - run: python -m compileall -q src examples tools
 
   test:
@@ -60,6 +61,7 @@ jobs:
       - run: python tools/verify_cli_atomic_output.py
       - run: python tools/verify_transport_failures.py
       - run: python tools/verify_judge_busy.py
+      - run: python tools/verify_operation_poll_backoff.py
 
   windows:
     name: Windows
@@ -80,6 +82,7 @@ jobs:
       - run: python tools/verify_cli_atomic_output.py
       - run: python tools/verify_transport_failures.py
       - run: python tools/verify_judge_busy.py
+      - run: python tools/verify_operation_poll_backoff.py
 
   macos:
     name: macOS
@@ -100,6 +103,7 @@ jobs:
       - run: python tools/verify_cli_atomic_output.py
       - run: python tools/verify_transport_failures.py
       - run: python tools/verify_judge_busy.py
+      - run: python tools/verify_operation_poll_backoff.py
 
   otel-compatibility:
     name: OTel ${{ matrix.otel-version }}

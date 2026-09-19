@@ -1,5 +1,8 @@
 # KUMA Python API reference
 
+For active operation interval revisions, bounded backoff and strict timeout
+behavior, see [Operation polling and deadlines](operation-polling.md).
+
 [简体中文](api-reference.zh-CN.md) | English
 
 This page documents the stable user-facing Python entry points. Types, defaults,

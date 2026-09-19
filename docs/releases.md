@@ -1,5 +1,17 @@
 # Versions and releases / 版本与发布
 
+## 0.2.8
+
+- Operation polling now uses geometric fallback backoff capped at 8 seconds,
+  while honoring validated server interval revisions. This reduces repetitive
+  status requests without extending the total operation deadline.
+- A deadline-clipped wait reserves a small positive budget for one last poll;
+  scheduling/network delays can still exhaust it. Timeouts retain the original
+  operation for GET-only recovery. No extra billable start is introduced.
+- Thanks to @li872 for PR #97 and the original polling regression tests.
+  See [polling and deadline semantics](operation-polling.md).
+- Optional patch update. Availability follows the official Release and PyPI.
+
 ## 0.2.7
 
 - SDK-authored errors, field correction messages, update reminders and example

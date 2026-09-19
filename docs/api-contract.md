@@ -1,5 +1,8 @@
 # KUMA SDK API Contract
 
+For active operation interval revisions, bounded backoff and strict timeout
+behavior, see [Operation polling and deadlines](operation-polling.md).
+
 ## 保存的 Case 与官方 Judge 原件
 
 `Run.save_case(path)` / `create_run(case_path=...)` 使用本地 closed

@@ -37,6 +37,8 @@ from .http import response_request_id
 _DEFAULT_RESUME_POLL_MS = 1_000
 _MIN_POLL_MS = 100
 _MAX_POLL_MS = 60_000
+_MAX_FALLBACK_POLL_MS = 8_000
+_FINAL_POLL_RESERVE_SECONDS = 0.1
 _MAX_OPERATION_ID_CHARS = 64
 _STATE_SCHEMA = "defuzex.pending_operation.v1"
 _STATE_LOCK = threading.RLock()
@@ -369,6 +371,22 @@ def _operation_id(value: Any) -> str:
     return value
 
 
+def _bounded_poll_after_ms(value: Any, *, error: str) -> int:
+    """Validate start/active wire guidance as a strict integer in 100..60000 ms.
+
+    The operation envelope validators call this before changing the schedule.
+    Return the unchanged value or raise safe ProviderError(invalid_response);
+    booleans and malformed values never control sleeps or enter pending state.
+    """
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not _MIN_POLL_MS <= value <= _MAX_POLL_MS
+    ):
+        raise ProviderError(error, code="invalid_response")
+    return value
+
+
 def _start_response(response: Mapping[str, Any]) -> tuple[str, int]:
     """Validate the closed 202 operation envelope and bounded poll interval."""
     if set(response) != {"operation_id", "status", "poll_after_ms"}:
@@ -376,17 +394,15 @@ def _start_response(response: Mapping[str, Any]) -> tuple[str, int]:
             "The Backend returned an invalid operation start response",
             code="invalid_response",
         )
-    poll_after_ms = response["poll_after_ms"]
-    if (
-        response["status"] not in {"queued", "running", "succeeded", "failed"}
-        or isinstance(poll_after_ms, bool)
-        or not isinstance(poll_after_ms, int)
-        or not _MIN_POLL_MS <= poll_after_ms <= _MAX_POLL_MS
-    ):
+    if response["status"] not in {"queued", "running", "succeeded", "failed"}:
         raise ProviderError(
             "The Backend returned an invalid operation start response",
             code="invalid_response",
         )
+    poll_after_ms = _bounded_poll_after_ms(
+        response["poll_after_ms"],
+        error="The Backend returned an invalid operation start response",
+    )
     return _operation_id(response["operation_id"]), poll_after_ms
 
 
@@ -406,7 +422,8 @@ def _poll_response(
     Returns:
         Status plus either a succeeded result mapping or a closed failed-error
         tuple. Known codes may carry closed Case-limit, difficulty or missing-
-        capability details validated by the same policy as HTTP errors.
+        capability details validated by the same policy as HTTP errors. Active
+        queued/running envelopes may include optional bounded ``poll_after_ms``.
 
     Raises:
         ProviderError: If IDs differ, status/fields violate the closed union, or
@@ -427,10 +444,15 @@ def _poll_response(
             "The Backend returned a mismatched operation_id",
             code="invalid_response",
         )
-    if status in {"queued", "running"} and set(response) == {
-        "operation_id",
-        "status",
-    }:
+    if status in {"queued", "running"} and set(response) in (
+        {"operation_id", "status"},
+        {"operation_id", "status", "poll_after_ms"},
+    ):
+        if "poll_after_ms" in response:
+            _bounded_poll_after_ms(
+                response["poll_after_ms"],
+                error="The Backend returned an invalid operation status response",
+            )
         return status, None, None
     if status == "succeeded" and set(response) == {
         "operation_id",
@@ -599,7 +621,13 @@ def await_operation(
 
     Side Effects:
         May atomically transition recovery metadata, issue one idempotent POST,
-        sleep according to bounded server polling guidance, and issue status GETs.
+        sleep from the latest bounded ``poll_after_ms``, honor an optional
+        mid-flight revision on queued/running GET responses (documented
+        ``100..60000`` ms), grow a local fallback geometrically toward 8s when
+        a poll omits that field, and issue status GETs. A deadline-clipped wait
+        reserves at most 100 ms (half the remaining time if smaller) for one
+        last poll. Its HTTP timeout still uses the original deadline; completion
+        is not guaranteed if network latency or scheduling consumes that budget.
 
     Security/Privacy:
         The store contains no credential, request payload, Evidence, or response
@@ -615,6 +643,7 @@ def await_operation(
     deadline = time.monotonic() + validate_operation_wait_timeout(wait_timeout)
     state = store.load_or_create(key_factory)
     poll_after_ms = _DEFAULT_RESUME_POLL_MS
+    final_poll = False
     if state.operation_id is None:
         response = start(state.idempotency_key, deadline)
         with _response_validation(response):
@@ -646,8 +675,12 @@ def await_operation(
                 raise
             if not exc.retryable or _automatic_retry_blocked(exc):
                 raise _operation_error(state, exc) from None
-            _sleep_bounded(poll_after_ms, deadline)
+            _ensure_time_remaining(deadline)
+            poll_after_ms, final_poll = _sleep_then_grow(
+                poll_after_ms, deadline, final_poll=final_poll
+            )
             continue
+        _ensure_time_remaining(deadline)
         with _response_validation(response):
             status, result, error = _poll_response(response, state.operation_id or "")
             if status == "succeeded" and result is not None:
@@ -670,8 +703,12 @@ def await_operation(
                 request_id=response_request_id(response),
             )
             raise _operation_error(state, failure)
+        _ensure_time_remaining(deadline)
+        poll_after_ms = response.get("poll_after_ms", poll_after_ms)
         state = _record_active_status(store, state, status)
-        _sleep_bounded(poll_after_ms, deadline)
+        poll_after_ms, final_poll = _sleep_then_grow(
+            poll_after_ms, deadline, final_poll=final_poll
+        )
 
 
 def _ensure_time_remaining(deadline: float) -> None:
@@ -685,11 +722,53 @@ def _ensure_time_remaining(deadline: float) -> None:
 
 
 def _sleep_bounded(poll_after_ms: int, deadline: float) -> None:
-    """Sleep for the server interval without crossing the operation deadline."""
+    """Sleep for the current interval without crossing the operation deadline."""
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         _ensure_time_remaining(deadline)
     time.sleep(min(poll_after_ms / 1_000, remaining))
+
+
+def _sleep_then_grow(
+    poll_after_ms: int, deadline: float, *, final_poll: bool
+) -> tuple[int, bool]:
+    """Wait within the original budget and schedule at most one final poll.
+
+    Args:
+        poll_after_ms: Validated server guidance or current bounded fallback.
+        deadline: Absolute monotonic deadline shared with BackendClient retries.
+        final_poll: Whether the single reserved-budget poll was already attempted.
+
+    Returns:
+        The doubled fallback capped at 8000 ms and whether the next GET is the
+        final opportunity. Explicit server intervals up to 60000 ms are honored
+        unless the overall deadline requires a shorter wait.
+
+    Raises:
+        KumaTimeoutError: Budget exhausted, or a final poll was still active or
+            transiently failed. Pending metadata remains available for resume.
+
+    Side Effects:
+        Sleeps only. A clipped wait reserves min(100 ms, remaining/2) once;
+        after that attempt, wait out the residual budget without more polling.
+        This avoids geometric tiny sleeps/busy-spin and never extends deadlines.
+        The caller rechecks time before GET; oversleep may prevent the last poll.
+    """
+    _ensure_time_remaining(deadline)
+    remaining = deadline - time.monotonic()
+    if final_poll:
+        time.sleep(max(0.0, remaining))
+        raise KumaTimeoutError(
+            "The KUMA operation wait timeout elapsed.",
+            code="operation_wait_timeout",
+            retryable=True,
+        )
+    interval = poll_after_ms / 1_000
+    clipped = interval >= remaining
+    if clipped:
+        interval = max(0.0, remaining - min(_FINAL_POLL_RESERVE_SECONDS, remaining / 2))
+    time.sleep(interval)
+    return min(poll_after_ms * 2, _MAX_FALLBACK_POLL_MS), clipped
 
 
 __all__ = [
