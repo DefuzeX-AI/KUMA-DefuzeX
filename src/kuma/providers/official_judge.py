@@ -14,6 +14,7 @@ from ..contracts import JudgeBatchResult
 from ..errors import ConfigurationError, LimitExceededError, ProviderError
 from ..repository.case_artifacts import MAX_CASE_ARTIFACT_BYTES, official_original
 from ..repository.privacy import enforce_sensitive_policy, scan_sensitive_json
+from ..timeline import StageTimeline
 from ..transport.backend import (
     BackendClient,
     UploadPart,
@@ -28,6 +29,7 @@ from ..transport.request_records import (
     find_active_request,
     store_for_existing,
 )
+from ._official_correlation import upload_run_context
 from ._official_evidence_upload import JudgeUploadConfig as _JudgeConfig
 from ._official_evidence_upload import evidence_upload as _evidence_upload
 from ._official_evidence_upload import judge_upload_config as _judge_config
@@ -376,6 +378,7 @@ class OfficialJudgeProvider:
         self._operation_stores: dict[str, PendingOperationStore] = {}
         self._run_locks: dict[str, threading.Lock] = {}
         self._idempotency_lock = threading.Lock()
+        self._timelines: dict[str, StageTimeline] = {}
 
     def _run_lock(self, run_id: str) -> threading.Lock:
         """Return a stable per-Run lock so concurrent Judge calls submit only once."""
@@ -443,6 +446,9 @@ class OfficialJudgeProvider:
             "allow_sensitive": self.allow_sensitive,
             "manifest": manifest,
         }
+        correlation = upload_run_context(context, config)
+        if correlation is not None:
+            metadata["run_context"] = correlation
         official = _official_case_reference(context)
         case_id: str | None = None
         case_part: UploadPart | None = None
@@ -531,7 +537,22 @@ class OfficialJudgeProvider:
             allow_sensitive=self.allow_sensitive,
         )
         with self._run_lock(run_id):
-            return self._judge_locked(context, run_id)
+            timeline = self._timelines.setdefault(run_id, StageTimeline())
+            with timeline.measure("judge_request_wait"):
+                return self._judge_locked(context, run_id)
+
+    def timeline(self, run_id: str) -> Mapping[str, Any]:
+        """Return detached client request timings for an already tracked Run.
+
+        These intervals include transport/response or polling; they are not
+        isolated network upload, queue or model compute time. Missing process-local
+        measurements remain absent and must be displayed as unknown by Run.
+        """
+        with self._idempotency_lock:
+            timeline = self._timelines.get(run_id)
+            return (
+                StageTimeline().snapshot() if timeline is None else timeline.snapshot()
+            )
 
     def _judge_locked(self, context: JudgeContext, run_id: str) -> Mapping[str, Any]:
         """Resume an accepted Judge operation or prepare and submit one new operation."""
@@ -549,7 +570,9 @@ class OfficialJudgeProvider:
             store = self._legacy_operation_store(run_id)
         pending = store.load()
         if pending is not None and pending.operation_id is not None:
-            return self._resume_judgment(store, pending.idempotency_key)
+            return self._resume_judgment(
+                store, pending.idempotency_key, context.run_context
+            )
         config = _judge_config(self.client.json("GET", "/sdk/judge/config/"))
         key = pending.idempotency_key if pending else self._idempotency_key(run_id)
         upload = self._prepare_upload(
@@ -594,7 +617,10 @@ class OfficialJudgeProvider:
         )
 
     def _resume_judgment(
-        self, store: PendingOperationStore, idempotency_key: str
+        self,
+        store: PendingOperationStore,
+        idempotency_key: str,
+        run_context: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         """Poll the stored Judge operation without issuing a replacement POST."""
         response = await_operation(
@@ -603,7 +629,9 @@ class OfficialJudgeProvider:
             key_factory=lambda: idempotency_key,
             start=lambda _key, _deadline: {},
             wait_timeout=self.operation_wait_timeout,
-            accept_result=lambda value: self._accept_judgment(store, value),
+            accept_result=lambda value: self._accept_judgment(
+                store, value, run_context
+            ),
         )
         return response
 
@@ -651,12 +679,14 @@ class OfficialJudgeProvider:
             if isinstance(self.client, BackendClient):
                 kwargs["_deadline"] = deadline
                 kwargs["_expected_status"] = 202
-            return self.client.multipart(
-                "/sdk/v2/judge/",
-                fields,
-                parts,
-                **kwargs,
-            )
+            timeline = self._timelines.setdefault(upload.run_id, StageTimeline())
+            with timeline.measure("evidence_upload_request"):
+                return self.client.multipart(
+                    "/sdk/v2/judge/",
+                    fields,
+                    parts,
+                    **kwargs,
+                )
 
         response = await_operation(
             self.client,
@@ -664,13 +694,17 @@ class OfficialJudgeProvider:
             key_factory=lambda: upload.idempotency_key,
             start=start_operation,
             wait_timeout=self.operation_wait_timeout,
-            accept_result=lambda value: self._accept_judgment(store, value),
+            accept_result=lambda value: self._accept_judgment(
+                store, value, upload.metadata.get("run_context")
+            ),
         )
         return response
 
     @staticmethod
     def _accept_judgment(
-        store: PendingOperationStore, response: Mapping[str, Any]
+        store: PendingOperationStore,
+        response: Mapping[str, Any],
+        run_context: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         """Validate a public Judgment and save its normalized public report.
 
@@ -678,7 +712,12 @@ class OfficialJudgeProvider:
         succeeded state. Durable stores therefore never advertise a report until
         both remote validation and atomic local report persistence succeed.
         """
-        normalized = _normalize_judgment(response)
+        pending = store.load()
+        normalized = _normalize_judgment(
+            response,
+            expected_run_context=run_context,
+            operation_id=None if pending is None else pending.operation_id,
+        )
         if isinstance(store, RequestOperationStore):
             record = store.public_record()
             if record.run_id is None:
@@ -729,6 +768,11 @@ class OfficialJudgeProvider:
         """
 
         _validate_batch_contexts(contexts)
+        if any(context.run_context is not None for context in contexts):
+            raise ConfigurationError(
+                "Run correlation is supported only by single Judge; submit correlated Runs individually",
+                code="run_context_unsupported",
+            )
         for context in contexts:
             _preflight_custom_case_privacy(
                 context,

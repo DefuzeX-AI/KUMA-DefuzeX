@@ -251,7 +251,7 @@ def _validate_source_docstrings(
 
 
 def main() -> int:
-    """Validate bilingual table coverage, order, content, and source docstrings."""
+    """Validate both reference paths' tables, order, and source docstrings."""
     source_contracts = {api.name: _source_contract(api) for api in PUBLIC_APIS}
     errors = _validate_source_docstrings(source_contracts)
 
@@ -264,7 +264,7 @@ def main() -> int:
         return 1
     print(
         f"Public API documentation verified: {len(PUBLIC_APIS)} APIs, "
-        f"{len(DOCS)} languages"
+        f"{len(DOCS)} reference paths"
     )
     return 0
 

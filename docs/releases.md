@@ -1,252 +1,145 @@
-# Versions and releases / 版本与发布
+# Version and Release policy
 
-## 0.2.8
+`src/kuma/_version.py` is the version source; build metadata reads it dynamically.
+Every candidate must pass independent review, public PR/CI and merge into public
+main before receiving its own immutable version tag and GitHub Release. This document is policy,
+not evidence that the candidate has shipped. Never move an existing tag or append
+new functionality to an old release as a substitute for a new version.
 
-- Operation polling now uses geometric fallback backoff capped at 8 seconds,
-  while honoring validated server interval revisions. This reduces repetitive
-  status requests without extending the total operation deadline.
-- A deadline-clipped wait reserves a small positive budget for one last poll;
-  scheduling/network delays can still exhaust it. Timeouts retain the original
-  operation for GET-only recovery. No extra billable start is introduced.
-- Thanks to @li872 for PR #97 and the original polling regression tests.
-  See [polling and deadline semantics](operation-polling.md).
-- Optional patch update. Availability follows the official Release and PyPI.
+## 0.3.0 release notes
 
-## 0.2.7
+These notes describe the `0.3.0` source release. The matching GitHub Release
+and PyPI version establish publication; source metadata alone does not.
+Install into the Agent's Python environment and restart it after upgrading.
+Moving from 0.2.x to 0.3.0 produces a required-upgrade reminder under the policy
+below, but never automatically installs software or blocks an Agent workload.
 
-- SDK-authored errors, field correction messages, update reminders and example
-  prompts now use English. Official Judge invalid-result failures display
-  `Service is busy. Please try again later.`
-- Stable error codes, `retryable`, request IDs, privacy safeguards and billing
-  behavior are unchanged. Historical Chinese service messages are recognized
-  only as input; Chinese user content and Agent Profile headings remain supported.
-- SDK 自产报错、字段改正提示、更新提醒及示例运行提示统一英文；Judge 固定文案为
-  `Service is busy. Please try again later.`。错误代码、重试、请求 ID、隐私和计费不变。
-  保留中文用户数据和 Agent Profile 标题兼容；旧中文服务文案仅作为输入识别。
-- Optional patch update; no automatic installation. Publication status follows
-  the official GitHub Release and PyPI. 可选补丁，不自动安装，以正式发布状态为准。
+User-facing changes:
 
-## 0.2.6
+- Local `observe()` sessions, detached redacted export, readable timelines and
+  explicit atomic saving without a Case, account, Judge or automatic upload.
+- Optional authenticated cloud observation storage through explicit client
+  calls, separate from local capture and evaluation.
+- Bounded OpenInference model/tool projections and real, offline OpenAI,
+  LangChain and LangGraph instrumentation examples.
+- Optional external Run/invocation labels, validated server receipts and
+  measured client-stage timings. Unknown server/model timings remain unknown.
+- Reuse of an already successful identical Judge request within the same Run,
+  preserving the original operation rather than starting another evaluation.
 
-- Explicit `strategy="safety-baseline"` validates seven Basic Safety groups,
-  then uniformly selects one for one Case and one Run. Versions and catalog
-  release come from validated discovery. Missing/ambiguous groups or unsupported
-  capabilities fail before a Case POST; no silent fallback or seven-Case batch.
-- An explicit Agent Profile group wins. Default `auto`, disabled automatic
-  matching, custom Providers, Judge lifecycle and request recovery are unchanged.
-  Use the original request ID for recovery; a new `create_run` may sample again.
-- Documentation now describes actual multipart Evidence metadata, recovery
-  headers, current errors and live catalog coordinates. Thanks to @YiWang24 for
-  PR #88; integrates the safety-baseline work from PR #62 and README PR #54.
-- 显式 `strategy="safety-baseline"` 验证七个基础安全组后等概率选一个，只生成一个
-  Case、返回一个 Run。版本以目录为准；缺组、多版本歧义或能力不足会在 Case POST
-  前拒绝，不静默回退、不批量生成七个 Case。Profile 显式选组优先。
-- 默认 `auto`、禁用的自动匹配、custom Provider、Judge 与恢复行为不变。恢复请用
-  原请求 ID，重新 `create_run` 可能重新抽组。文档同步实际 Evidence、错误和目录行为。
-- Optional patch from 0.2.5: the new mode is opt-in and defaults do not change.
-  Availability follows the official Release/PyPI; no automatic installation.
-  这是可选补丁，默认行为不变、不自动安装；是否发布以正式 Release/PyPI 为准。
+See [observation](observation.md), [cloud storage](cloud-observations.md),
+[framework examples](instrumentation-examples.md) and
+[Run correlation](run-correlation.md) for exact scope and limitations.
+Local observation requires no KUMA account or service. Cloud observation and
+official Run correlation require a server implementing their matching public
+contracts, with the necessary authorization and capability advertisement.
+An SDK upgrade does not enable those server features. Unavailable or unsupported
+services fail explicitly; local observation remains usable without cloud storage.
+No Agent runner, automatic instrumentation install, UI, guaranteed complete
+capture, automatic package upgrade or service deployment is introduced.
 
-## 0.2.5
+The verified framework matrix records exact optional dependency versions and
+known gaps; it is not a promise of support for every framework/version combination.
 
-- Official Judge internal invalid-result failures now show `service_busy` with
-  the fixed message “服务忙，请稍后再试” and no diagnostic details. Older service
-  responses are supported; `retryable` and safe response `request_id` remain.
-- This changes presentation, not the underlying Judge result: no automatic
-  retry, new task, or fabricated report. Committed Run history stays available.
-  Case generation, input validation, authentication, permissions and quotas
-  keep their existing error behavior.
-- 官方 Judge 内部结果失败统一显示“服务忙，请稍后再试”，不显示内部详情；兼容旧
-  服务响应，保留 `retryable` 与安全请求 ID。本次只改展示，不修饰实际失败结果，
-  不自动重试、不创建新任务、不伪造报告，保留已提交历史。不影响 Case 生成、输入、
-  鉴权、权限与额度错误。
-- Optional patch update from 0.2.4. Availability follows the official GitHub
-  Release and PyPI listing; this candidate does not imply publication.
-  这是可选补丁，不自动安装；是否发布以正式 GitHub Release 和 PyPI 为准。
+## Update classification
 
-```bash
-python -m pip install --upgrade kuma-defuzex
-```
-
-## 0.2.4
-
-- Interrupted HTTP protocol/body reads become safe, retryable `network_error`
-  errors rather than raw `HTTPException`. A safe `X-Request-ID` already received
-  stays attached; no header means no invented ID. Responses close on failure.
-  Existing retry limits and POST idempotency keys remain unchanged; user
-  interrupts still propagate, and authenticated redirects remain blocked.
-- CLI output cleanup failures no longer mask the original stable save error.
-  Cleanup is best-effort: an OS-denied unlink may leave a temporary file.
-- Offline regressions cover executed Strategy Group metadata, saved Cases, and
-  GET-only recovery without another Case POST. No new strategy behavior.
-- HTTP 协议或正文读取中断现在返回安全的 `network_error`，保留当前响应的合法
-  请求 ID；不改变重试上限或 POST 幂等键，不吞用户中断、不放开认证重定向。
-  CLI 临时文件清理失败不再覆盖原保存错误；操作系统拒绝删除时可能保留临时文件。
-  补充策略组元数据、保存 Case 和 GET-only 恢复的离线回归，不增加策略功能。
-- Thanks to @Moshiii (PRs #80/#81) and @luochen211 (PR #69). 感谢社区贡献。
-- Optional patch update from 0.2.3; no automatic installation. Availability
-  follows the official Release. 这是可选补丁，不自动安装，以正式 Release 为准。
-
-```bash
-python -m pip install --upgrade kuma-defuzex
-```
-
-## 0.2.3
-
-- Authenticated HTTP requests reject 301/302/303/307/308 redirects before any
-  follow-up request, including same-origin redirects. Configure the final API
-  base URL; `http_redirect_rejected` is not automatically retried.
-- Judge interruption restores a retryable Run state while propagating the
-  interruption. A known official operation resumes GET-only; no new task or
-  fabricated report is created.
-- Safe response `X-Request-ID` correlation survives HTTP and async errors,
-  including decoding, size and schema rejection. Missing or invalid IDs remain
-  absent and are never replaced with local recovery IDs.
-- Fixed public error categories distinguish user-input and service-generated
-  failures; bounded field/reason details remain closed and privacy-safe. Old
-  server responses remain compatible and retry safeguards remain in force.
-- 认证请求拒绝所有上述重定向，防止凭据和正文转发；Judge 中断后可恢复；安全响应 ID
-  可用于错误排查；具体错误文案不再混淆用户输入与服务生成失败。
-- Specific error reasons depend on the service returning them. This SDK release
-  does **not** deploy the service or imply that current generic `service_busy`
-  responses now contain precise causes. Missing/history-only causes are not
-  guessed. 具体原因需要服务端提供，本次不部署服务、不补造历史原因。
-- Optional patch update from 0.2.2, published on GitHub and PyPI. No automatic
-  installation. 已发布到 GitHub 与 PyPI；这是可选补丁，不自动安装。
-
-```bash
-python -m pip install --upgrade "kuma-defuzex==0.2.3"
-```
-
-## 0.2.2
-
-- `service_busy` now consistently displays “服务繁忙，请稍后重试。” for
-  synchronous and asynchronous failures. The exception remains `ServiceBusyError`;
-  its stable code and server-provided retryable flag, including false, are unchanged.
-- 同步和异步服务繁忙错误统一中文提示；仅接受固定文案，任意服务端内部文字仍被
-  安全回退。提示不改变重试资格、不触发自动重试；`retryable=false` 时不要自动重试。
-- Optional patch update from 0.2.1, with no automatic installation or PyPI
-  publication implied. Availability follows the official GitHub Release.
-  这是可选补丁，是否发行以正式 Release 为准，不自动安装。
-
-## 0.2.1
-
-Availability is determined by the corresponding official GitHub Release, not
-this document or a development branch. 是否可用以对应正式 Release 为准。
-
-- Corrects Judge file-count preflight: Case plus Evidence count toward the
-  advertised per-item limit for both official and custom Cases. Batch counts
-  each item independently rather than rejecting their combined file count.
-- The matching Backend derives the file count as twice its supported maximum
-  step count (currently 20 files); clients consume that value, not a hardcoded
-  20 or a limit based on this Run's actual steps. Deploy the Backend first.
-- 修复官方/自定义 Judge 文件计数；Case 与 Evidence 都占名额，batch 按每项
-  分别计算。服务端按支持的最大步数 × 2 返回上限，客户端直接遵守配置。
-- Existing byte budgets, privacy checks and request identities are unchanged.
-  Combined bytes for custom single Judge remain enforced by the Backend; this
-  patch does not add a new local combined-byte preflight for that path.
-- 字节预算、敏感检查与请求身份不变；自定义 Case 单次 Judge 的合计字节仍由
-  Backend 强制检查，本补丁不新增该路径的本地合计预检。
-- This is an optional patch update from 0.2.0. It does not publish to PyPI or
-  automatically install itself. 0.2.0 → 0.2.1 是可选补丁，不自动安装。
-
-## 0.2.0
-
-Release availability is determined by the corresponding official
-[GitHub Release](https://github.com/DefuzeX-AI/KUMA-DefuzeX/releases), not by a
-development branch or each new main commit. 发行状态以对应正式 Release 为准。
-
-- Consolidates public source improvements since 0.1.0: Agent Profile naming,
-  reusable complete Case files, bounded Agent output and Trace Evidence, optional
-  unified file diffs and captured tool arguments/results. See the existing
-  [Trace and file-diff guide](runtime-trace.md) for opt-in and privacy limits.
-- Adds anonymous, nonblocking update reminders plus explicit Python/CLI checks.
-- 独立版本汇总上述已有公开能力，并新增更新提醒。0.1.0 用户需手动升级一次并重启
-  Agent，旧安装无法自行获得提醒；更新器不执行 pip、不自动安装。
-- A GitHub Release does not imply PyPI publication or a service deployment.
-  GitHub 发行版不代表已经发布 PyPI 包或变更服务部署。
-
-## Version rules / 版本规则
-
-| Installed → latest stable | Status | Meaning / 含义 |
+| Installed → latest stable | Status | Meaning |
 | --- | --- | --- |
-| 0.2.0 → 0.2.1 | optional | Patch-only: optional / 补丁升级，可选 |
-| 0.1.9 → 0.2.0 | required | Higher minor: upgrade required reminder / 次版本，必须升级提醒 |
-| 0.2.9 → 1.0.0 | required | Higher major: upgrade required reminder / 主版本，必须升级提醒 |
-| 0.2.0 → 0.2.0 or 0.1.9 | up_to_date | Equal or ahead: silent / 相等或领先，不提醒 |
+| 0.2.0 → 0.2.1 | optional | Patch-only, optional update |
+| 0.1.9 → 0.2.0 | required | Higher minor, upgrade required reminder |
+| 0.2.9 → 1.0.0 | required | Higher major, upgrade required reminder |
+| 0.2.0 → 0.2.0 or 0.1.9 | up_to_date | Equal/ahead, no reminder |
 
-These are KUMA's rules, including pre-1.0. Required is a strong reminder, not a
-denied API request, interrupted task, changed billing or automatic install.
-主/次版本提示必须升级，但不阻断已有业务、不收费重试、不自动安装。
-Only strict stable `vX.Y.Z` GitHub Release tags are compared; drafts/prereleases,
-main commits and PyPI are not update sources. 不将草稿或每次提交当作新正式版。
+These are KUMA's user-facing update rules, including pre-1.0 releases. Required
+means a strong reminder, **not** automatic installation, interrupted work, denied
+requests, or changed billing. Neither checks nor reminders retry paid operations.
+Only strict `vX.Y.Z` stable Releases count; drafts, prereleases and main commits do not.
 
-## Check explicitly / 手动检查
+## API and CLI
 
-```bash
-kuma updates check
-```
-
-```python
-from kuma import check_for_updates
-
-result = check_for_updates()
-print(result["status"], result["latest_version"], result["release_url"])
-```
-
-No options/arguments. Both interfaces provide the same detached JSON-compatible
-object; the CLI prints JSON to stdout and returns zero for all these statuses:
+`kuma updates check` and `kuma.check_for_updates()` accept no options/arguments.
+They return/print a detached JSON-compatible mapping with exactly:
 
 | Field | Type / Meaning |
 | --- | --- |
 | status | disabled / checking / unavailable / up_to_date / optional / required |
-| current_version | Installed package version / 本地包版本字符串 |
-| latest_version | Validated stable version, or null / 已校验正式版本或 null |
-| release_url | Official tag URL derived from that version, or null |
-| cached | Boolean; true for a cached success/failure / 是否命中进程缓存 |
+| current_version | Installed package's version string |
+| latest_version | Validated stable version, or null when unavailable/disabled/checking |
+| release_url | Fixed official GitHub tag URL derived from that version, or null |
+| cached | boolean; true when using the process's cached success/failure |
 
-无需参数；离线/限流/畸形响应返回 unavailable，不输出原始错误或响应正文。
-已有并发检查时立即返回 checking，不等待或重复联网。Required 也不会使 CLI 失败。
+Explicit calls may wait for one bounded read; when another check is in flight,
+they immediately return checking without a new request. All listed CLI statuses
+exit 0 rather than treating update availability as a business failure. Background
+checks print optional/required reminders once to stderr, leaving JSON stdout intact.
 
-## Background checks and privacy / 后台检查与隐私
+Automatic scheduling occurs centrally after real official Backend transport
+succeeds, covering Python and CLI. No import/help/local/custom check or blocking
+join. Background threads are daemons: process exit does not wait, so short-lived
+commands can end without a reminder. Use the explicit command for a result.
 
-Successful real official Python/CLI transport schedules a daemon check centrally.
-It never waits for GitHub; import/help/local/custom workflows do not check.
-The cache contains one result for 24 hours per process, including failures, with
-one request in flight and a nonblocking reservation lock. There is no disk cache.
-Short-lived commands may exit before a reminder appears; use the explicit check
-when you need its result. Reminders go to stderr, leaving business JSON intact.
+`KUMA_DISABLE_UPDATE_CHECK=1` is checked before cache access and before dispatch;
+it disables explicit and automatic checks. Other values leave checks enabled.
+Set it before starting a workflow; an HTTPS request already in flight cannot be
+unsent, but no later reminder is printed after opt-out is observed.
 
-官方实际请求成功后后台检查，不等待 GitHub；import/help/local/custom 不检查。
-成功/失败均在当前进程缓存 24 小时、并发去重、不写磁盘；新进程重新开始。
-短命进程可能先退出而没有提醒，可用显式命令；提醒仅写 stderr。
+The cache is one process-local entry, success/failure TTL 24 hours with monotonic
+time, no disk storage. A new process starts a fresh cache. There is one request in
+flight, no retry, a one-second socket timeout and 65536-byte response cap. Socket
+timeout is not a hard wall-clock deadline for DNS/OS scheduling. No business
+request waits on this check. Network/rate-limit/TLS/parse failures become safe
+unavailable status, never raw exceptions or response bodies.
 
-Set `KUMA_DISABLE_UPDATE_CHECK=1` to disable both explicit and automatic checks,
-including cached reminders. Other values leave checks enabled. Set it before a
-workflow; a request already sent cannot be unsent. 设置此开关可全部禁用，但已发出的
-请求无法撤回。检测到禁用后不会再打印提醒。
+Only the fixed official GitHub releases/latest HTTPS endpoint is contacted.
+No authentication, proxies or redirects; no API keys, Agent/Evidence/repository
+data, local paths or original Backend headers are passed. GitHub sees ordinary
+network metadata such as the connection's IP address. TLS trust uses Python's
+default HTTPS verification; no arbitrary server-provided installation command
+or URL is executed. The updater never runs pip or any subprocess.
 
-The fixed official GitHub releases/latest HTTPS endpoint receives no credentials,
-Backend headers, Agent/Evidence/repository content or local paths. No proxies or
-redirects are followed; TLS uses Python's default verification. GitHub receives
-ordinary connection metadata such as the source IP. Only validated version fields
-are retained; arbitrary release text, URLs or commands are never executed.
+## Historical 0.2.2 draft
 
-固定官方 GitHub HTTPS 源；不发送 API Key/用户业务数据，不跟随代理或重定向。
-只保留已校验版本，不执行远端返回的 URL/命令。每次响应最多 64 KiB、socket 超时
-1 秒、不重试；socket 超时不是 DNS/操作系统调度的硬总时限，但业务不等待检查。
-Each explicit fetch has a one-second socket timeout, 64 KiB limit and no retry;
-socket timeout is not a hard DNS/OS wall-clock deadline. Ordinary failures are
-safe unavailable results and never change the original business result.
+- This historical draft standardized the localized `service_busy` message in
+  sync/async errors without changing `ServiceBusyError`, code or retryable
+  (including false). Current SDK-owned messages are English; this is not a
+  current message contract.
+- Raw server-internal text was not forwarded. Retry eligibility stayed unchanged;
+  the draft did not authorize automatic retries, installation or PyPI publication.
 
-## Publication / 发布约定
+## Historical 0.2.1 notes
 
-Every formal release has its own version, immutable tag and independent Release
-notes, created after its accepted source is merged to public main. Existing tags
-are never moved; new functionality must not be presented as a new release by
-merely appending to old notes. 每次正式发布独立版本/tag/Release，不改旧 tag 指向。
+- Counts Case and Evidence together per Judge item, including custom Cases;
+  batch counts each item independently rather than summing all files.
+- Consumes Backend max_files = supported maximum steps × 2 (currently 20),
+  without hardcoding that value or using the current Run's actual step count.
+  Deploy the matching Backend first; older advertised limits remain respected.
+- Bytes, privacy and request identity remain unchanged. Backend enforces custom
+  single Judge combined bytes; this patch adds no new local combined preflight.
+- The 0.2.0 to 0.2.1 patch is optional, not an automatic installation or proof
+  of PyPI publication.
 
-Package metadata reads the single source `kuma._version.__version__`. Version,
-docs and the tagged source must agree. Install a pinned release using its tag
-only once it exists; installing main gets the latest source, not a promise of a
-new formal release. 元数据、源码、文档版本必须一致；main 最新源码不等于新正式版。
+## Historical 0.2.0 notes
+
+- A distinct source release consolidates post-0.1.0 public features, including
+  Agent Profile terminology, Case save/load, bounded Agent output/Trace, optional
+  unified file diffs and captured tool argument/result Evidence. Verify each
+  feature exists in the sanitized public candidate before publishing these notes.
+- Adds optional/required version reminders and explicit CLI/Python checks with
+  the offline, privacy and nonblocking boundaries described above.
+- Users on 0.1.0 must upgrade manually once to gain update reminders, then restart
+  their Agent; old code cannot acquire this behavior without an upgrade.
+- No PyPI publication or service deployment is implied by a GitHub Release.
+
+## Publication checklist
+
+1. Update the single source version, API docs and bilingual README consistently;
+   verify wheel/sdist metadata and installed package version agree.
+2. Independently accept the private candidate and sanitized public scope; merge
+   the exact accepted public PR only after required CI succeeds.
+3. Create the **new** tag at the merged public commit, then create its independent
+   Release with matching version, changes, compatibility notes and limitations.
+   Preserve old tag targets and old release history.
+4. Source installs may pin the matching release tag **only after that tag exists**. Main installs
+   remain available for latest development source, not a promise of a new release.
+5. Confirm the published stable Release is discoverable by the updater, without
+   user credentials. Do not automatically upgrade user environments or publish PyPI.

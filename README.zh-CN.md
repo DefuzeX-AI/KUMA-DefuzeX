@@ -38,8 +38,10 @@ python -m pip install --upgrade kuma-defuzex
 
 ## 版本与更新提醒
 
-SDK 版本：**0.2.8**；是否已正式发布以
-[官方 Releases](https://github.com/DefuzeX-AI/KUMA-DefuzeX/releases) 为准。
+本文档对应 **KUMA SDK 0.3.0**。运行 `python -c "import kuma; print(kuma.__version__)"`
+确认安装版本；下述观察与关联 API 需要 0.3.0 或更新版本。
+是否可下载安装以 [PyPI](https://pypi.org/project/kuma-defuzex/) 和对应的
+[官方 Release](https://github.com/DefuzeX-AI/KUMA-DefuzeX/releases) 为准，源码版本本身不代表已发布。
 运行 `kuma updates check`（或 Python `kuma.check_for_updates()`）检查正式版：
 只升补丁号为**可选更新**，主/次版本提高为**必须升级提醒**，但不阻断任务、不自动安装。
 官方请求后台检查，import/help/local/custom 不联网检查；设置
@@ -54,6 +56,16 @@ SDK 版本：**0.2.8**；是否已正式发布以
 kuma quickstart
 ```
 
+## 本地观察
+
+[`observe()`](docs/observation.md) 可观察已有 instrumentation 的 Agent，
+无需账号、Case 或 Judge，不会自动上传。已识别的模型/工具内容采用有界、
+脱敏投影，不是放开任意属性。源码仓库提供[离线框架示例](docs/instrumentation-examples.md)。
+[云端保存](docs/cloud-observations.md) 必须显式认证调用；
+[Run 关联](docs/run-correlation.md) 区分执行、采集、评测和可测阶段耗时。
+本地观察不需要 KUMA 服务。云端保存与官方 Run 关联要求服务端实现对应公开合同，
+并启用所需权限和能力；安装 SDK 不会自动开通服务端功能，不可用时会明确报错。
+
 ## 全栈用户流程示例
 
 按照[全栈用户流程指南](examples/full_stack/README.zh-CN.md)，可在 Docker 中组合运行 KUMA 与 mini-SWE-agent。该流程会调用外部服务，可能消耗服务 Credit 和模型预算。
@@ -64,7 +76,7 @@ kuma quickstart
 
 [Runtime Trace 与可选文件 diff](docs/runtime-trace.zh-CN.md)
 
-[简体中文 SDK 指南](docs/sdk-guide.zh-CN.md) · [策略组](docs/strategy-groups.zh-CN.md) · [Agent 工具能力](docs/agent-tool-capabilities.zh-CN.md) · [中文 API 参考](docs/api-reference.zh-CN.md) · [Agent Profile 迁移说明](docs/migration-agent-profile.md) · [English SDK guide](docs/sdk-guide.md) · [Python API reference](docs/api-reference.md) · [Runtime Evidence 合同](docs/runtime-evidence.md)
+详细指南现统一使用英文：[SDK 指南](docs/sdk-guide.md) · [策略组](docs/strategy-groups.md) · [Agent 工具能力](docs/agent-tool-capabilities.md) · [API 参考](docs/api-reference.md) · [Agent Profile 迁移说明](docs/migration-agent-profile.md) · [Runtime Evidence 合同](docs/runtime-evidence.md)
 
 ## 项目链接
 

@@ -233,11 +233,15 @@ def _project_file_diffs(
         retained_bytes += outcome["utf8_bytes"]
 
 
-def _fit_capability_envelope(projected: dict[str, Any]) -> None:
-    """Drop whole optional diffs until the complete envelope fits 5 MiB.
+def _fit_capability_envelope(
+    projected: dict[str, Any], *, max_bytes: int = RUNTIME_EVIDENCE_MAX_BYTES
+) -> None:
+    """Omit optional model bodies, then whole diffs, to fit the complete 5 MiB.
 
     Args:
         projected: Detached capability envelope after output and diff projection.
+        max_bytes: Effective complete-part budget, already bounded by the
+            canonical 5 MiB ceiling and the advertised server file limit.
 
     Raises:
         LimitExceededError: If the hash-only metadata plus Agent output still
@@ -248,10 +252,9 @@ def _fit_capability_envelope(projected: dict[str, Any]) -> None:
         complete serialized envelope is within the frozen UTF-8 byte ceiling.
     """
 
-    while (
-        len(runtime_evidence_json(projected).encode("utf-8"))
-        > RUNTIME_EVIDENCE_MAX_BYTES
-    ):
+    while len(runtime_evidence_json(projected).encode("utf-8")) > max_bytes:
+        if _omit_optional_model_body(projected):
+            continue
         included = next(
             (
                 component
@@ -264,10 +267,37 @@ def _fit_capability_envelope(projected: dict[str, Any]) -> None:
             raise LimitExceededError(
                 "Runtime Evidence exceeds the canonical envelope limit",
                 code="runtime_evidence_too_large",
-                details={"max_utf8_bytes": RUNTIME_EVIDENCE_MAX_BYTES},
+                details={"max_utf8_bytes": max_bytes},
             )
         included.pop("diff")
         included["diff_omission_reason"] = "size_limit"
+
+
+def _omit_optional_model_body(projected: dict[str, Any]) -> bool:
+    """Fit detached transport content while retaining topology/tool/output facts.
+
+    Return whether a model body was omitted. Its stable status, partial capture,
+    observed-drop counter and hash/byte binding are updated together. The source
+    artifact was already validated; this function never repairs a supplied hash.
+    """
+    from .trace_model_content import omit_largest_model_body
+
+    for component in projected["components"]:
+        trace = component.get("trace_evidence")
+        if trace is None or not omit_largest_model_body(trace["spans"]):
+            continue
+        trace["reasons"] = sorted(
+            set(trace["reasons"]) | {"trace_model_content_size_limit"}
+        )
+        trace["dropped_count"] = min(999_999_999, trace["dropped_count"] + 1)
+        component["capture_summary"]["dropped_attributes_events"] += 1
+        component["capture_status"] = "partial"
+        encoded = runtime_evidence_json(trace).encode("utf-8")
+        component.update(
+            size_bytes=len(encoded), sha256=hashlib.sha256(encoded).hexdigest()
+        )
+        return True
+    return False
 
 
 def project_runtime_evidence_capabilities(
@@ -285,6 +315,9 @@ def project_runtime_evidence_capabilities(
     capture_status: str | None = None,
     capture_summary: Mapping[str, Any] | None = None,
     case_id: str | None = None,
+    model_content_supported: bool = False,
+    trace_redaction_supported: bool = False,
+    max_bytes: int = RUNTIME_EVIDENCE_MAX_BYTES,
 ) -> dict[str, Any]:
     """Build the negotiated named-capability transport view from stored v1.
 
@@ -304,6 +337,14 @@ def project_runtime_evidence_capabilities(
         capture_status: Actual trace component completeness, not tool status.
         capture_summary: Matching observation/drop counters from capture.
         case_id: Owning Judge Case used to verify nested Trace association.
+        model_content_supported: True only after explicit Backend schema
+            advertisement. False removes new model bodies with truthful loss
+            accounting and recomputes only the detached transport artifact.
+        trace_redaction_supported: Whether the existing redaction capability
+            was advertised. Otherwise retained redacted tool fields become
+            explicit whole-field omissions for legacy closed consumers.
+        max_bytes: Advertised complete-part budget; never increases the
+            canonical envelope ceiling. Optional model fields fit this budget.
 
     Returns:
         A detached closed ``defuzex.runtime_evidence.capabilities.v1`` mapping.
@@ -339,14 +380,109 @@ def project_runtime_evidence_capabilities(
         _project_trace(
             projected, trace_evidence, capture_status, capture_summary, case_id
         )
+        if not model_content_supported:
+            _omit_unnegotiated_model_content(projected)
+        _project_trace_redaction(projected, supported=trace_redaction_supported)
         projected["capabilities"].append("runtime_trace")
-    _fit_capability_envelope(projected)
+        if "redactions" in projected:
+            projected["capabilities"].append("redaction")
+    _fit_capability_envelope(
+        projected, max_bytes=min(max_bytes, RUNTIME_EVIDENCE_MAX_BYTES)
+    )
     validate_runtime_evidence(
         projected,
         **identifiers,
         schema_version=RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA,
     )
     return projected
+
+
+def _project_trace_redaction(projected: dict[str, Any], *, supported: bool) -> None:
+    """Negotiate component-scoped redaction of captured tool bodies.
+
+    This does not enable full Run redaction or modify Agent output/file policy.
+    Original artifact hashes were already validated by _project_trace. Legacy
+    consumers receive sensitive_content omission rather than an unknown status;
+    new consumers receive the existing component-scoped loss annotation. Local
+    immutable history is unchanged and no sensitive original is recoverable.
+    """
+    from .trace_tool_content import TOOL_CONTENT_KEYS
+
+    for component in projected["components"]:
+        trace = component.get("trace_evidence")
+        if trace is None or "trace_tool_content_redacted" not in trace["reasons"]:
+            continue
+        if supported:
+            projected["redactions"] = [
+                {
+                    "component_id": component["component_id"],
+                    "kind": "artifact_snapshot",
+                    "status": "redacted",
+                    "reason": "sensitive_content",
+                }
+            ]
+            continue
+        removed = 0
+        for span in trace["spans"]:
+            states = span.get("tool_content_status", {})
+            for key, field in TOOL_CONTENT_KEYS.items():
+                if states.get(field) == "redacted":
+                    span["attributes"].pop(key)
+                    states[field] = "sensitive_content"
+                    removed += 1
+        trace["reasons"] = sorted(
+            (set(trace["reasons"]) - {"trace_tool_content_redacted"})
+            | {"trace_tool_content_sensitive"}
+        )
+        trace["dropped_count"] = min(999_999_999, trace["dropped_count"] + removed)
+        component["capture_summary"]["dropped_attributes_events"] += removed
+        encoded = runtime_evidence_json(trace).encode("utf-8")
+        component.update(
+            size_bytes=len(encoded), sha256=hashlib.sha256(encoded).hexdigest()
+        )
+
+
+def _omit_unnegotiated_model_content(projected: dict[str, Any]) -> None:
+    """Safely project new optional bodies to the legacy closed Trace contract.
+
+    The caller first validates the original artifact digest and associations;
+    this function cannot repair tampering. It mutates only the detached upload
+    projection, not immutable history, and counts each observed removed body.
+    Missing bodies remain unknown rather than fabricated drops. Model-specific
+    reasons become the existing allowlist reason understood by old consumers.
+    No network, content logging or change to recorded topology occurs.
+    """
+    for component in projected["components"]:
+        trace = component.get("trace_evidence")
+        if trace is None:
+            continue
+        removed = 0
+        changed = False
+        for span in trace["spans"]:
+            content = span.pop("model_content", None)
+            if content is not None:
+                changed = True
+                removed += sum(
+                    content[key]["status"] in {"present", "redacted"}
+                    for key in ("input", "output")
+                )
+        if not changed:
+            continue
+        trace["reasons"] = sorted(
+            {
+                reason
+                for reason in trace["reasons"]
+                if not reason.startswith("trace_model_content_")
+            }
+            | {"trace_attribute_not_allowlisted"}
+        )
+        trace["dropped_count"] = min(999_999_999, trace["dropped_count"] + removed)
+        component["capture_summary"]["dropped_attributes_events"] += removed
+        component["capture_status"] = "partial"
+        encoded = runtime_evidence_json(trace).encode("utf-8")
+        component.update(
+            size_bytes=len(encoded), sha256=hashlib.sha256(encoded).hexdigest()
+        )
 
 
 def _project_trace(

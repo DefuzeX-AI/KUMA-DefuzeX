@@ -312,22 +312,53 @@ class RequestOperationStore:
         return read_record(self.directory / f"{self._client_request_id}.json")
 
     def _find_matching(self) -> StoredRequest | None:
-        """Find the sole matching nonterminal request in the bounded ledger."""
-        matches = [
-            stored
-            for stored in (read_record(path) for path in record_paths(self.directory))
-            if stored.public.request_type == self.request_type
-            and stored.request_sha256 == self.request_sha256
-            and stored.backend_sha256 == self.backend_sha256
-            and stored.api_key_sha256 == self.api_key_sha256
-            and stored.public.status not in {"succeeded", "failed"}
-        ]
+        """Reuse active identities and successful same-Run Judge operations.
+
+        Called under the ledger lock by load/load_or_create. A successful Judge
+        is immutable for its Run, Backend and credential: changed request bytes
+        fail before POST; identical bytes select the original operation for GET.
+        Case generation and failed-request behavior remain unchanged. No request
+        body or credentials are persisted, only their existing canonical hashes.
+        """
+        matches = []
+        for path in record_paths(self.directory):
+            stored = read_record(path)
+            if not (
+                stored.public.request_type == self.request_type
+                and stored.backend_sha256 == self.backend_sha256
+                and stored.api_key_sha256 == self.api_key_sha256
+            ):
+                continue
+            terminal = self._retained_judgment(stored)
+            if stored.request_sha256 != self.request_sha256:
+                if terminal:
+                    raise ProviderError(
+                        "This Run already has a Judgment for different Evidence",
+                        code="operation_state_conflict",
+                    )
+                continue
+            if terminal or stored.public.status not in {"succeeded", "failed"}:
+                matches.append(stored)
         if len(matches) > 1:
             raise ProviderError(
                 "The request ledger contains conflicting active records",
                 code="operation_state_conflict",
             )
         return matches[0] if matches else None
+
+    def _retained_judgment(self, stored: StoredRequest) -> bool:
+        """Identify a successful owner-bound Judge for this exact non-null Run.
+
+        The caller first checks request type, Backend and key hashes. Run binding
+        prevents another execution from inheriting a terminal result merely
+        because its Evidence happens to have the same canonical request hash.
+        """
+        return (
+            self.request_type == "judgment"
+            and self.run_id is not None
+            and stored.public.run_id == self.run_id
+            and stored.public.status == "succeeded"
+        )
 
     @contextmanager
     def _locked(self, *, create: bool) -> Iterator[None]:

@@ -48,6 +48,12 @@ class JudgeUploadConfig:
             by the Backend.
         runtime_evidence_capabilities: Validated ordered named capabilities.
             Missing advertisement means Trace is unsupported, not hash fallback.
+        trace_content_schemas: Explicitly supported optional Trace body schemas.
+            Missing or empty advertisement omits new model bodies with loss
+            accounting; existing topology and legacy tool content stay supported.
+        supported_run_context_schemas: Optional explicitly advertised correlation
+            schema. Missing/empty preserves legacy omission; explicit caller
+            correlation requires support and never silently downgrades.
     """
 
     max_files: int
@@ -57,6 +63,8 @@ class JudgeUploadConfig:
     max_batch_items: int
     evidence_types: frozenset[str]
     runtime_evidence_capabilities: tuple[str, ...] = ()
+    trace_content_schemas: tuple[str, ...] = ()
+    supported_run_context_schemas: tuple[str, ...] = ()
 
 
 def judge_upload_config(response: Mapping[str, Any]) -> JudgeUploadConfig:
@@ -70,9 +78,26 @@ def judge_upload_config(response: Mapping[str, Any]) -> JudgeUploadConfig:
     evidence_types = response.get("evidence_types")
     max_batch_items = response.get("max_batch_items", _MAX_BATCH_ITEMS)
     capabilities = response.get("runtime_evidence_capabilities")
+    base_capabilities = (
+        capabilities[:-1]
+        if isinstance(capabilities, list) and capabilities[-1:] == ["redaction"]
+        else capabilities
+    )
+    trace_schemas = response.get("trace_content_schemas", [])
+    context_schemas = response.get("supported_run_context_schemas", [])
+    if context_schemas not in ([], ["kuma.run_context.v1"]):
+        raise ProviderError(
+            "The Backend returned invalid Run context configuration",
+            code="invalid_response",
+        )
+    if trace_schemas not in ([], ["kuma.model_content.v1"]):
+        raise ProviderError(
+            "The Backend returned invalid Trace content configuration",
+            code="invalid_response",
+        )
     if "runtime_evidence_capabilities" in response and (
         not isinstance(capabilities, list)
-        or capabilities
+        or base_capabilities
         not in [
             list(RUNTIME_EVIDENCE_CAPABILITY_ORDER[:2]),
             list(RUNTIME_EVIDENCE_CAPABILITY_ORDER[:3]),
@@ -118,6 +143,8 @@ def judge_upload_config(response: Mapping[str, Any]) -> JudgeUploadConfig:
         max_batch_items=max_batch_items,
         evidence_types=frozenset(evidence_types),
         runtime_evidence_capabilities=tuple(capabilities or ()),
+        trace_content_schemas=tuple(trace_schemas),
+        supported_run_context_schemas=tuple(context_schemas),
     )
 
 
@@ -129,6 +156,8 @@ def _runtime_evidence_part(
     part_prefix: str,
     schema_version: str = RUNTIME_EVIDENCE_SCHEMA_V1,
     upload_diff: bool = False,
+    model_content_supported: bool = False,
+    trace_redaction_supported: bool = False,
 ) -> tuple[UploadPart, dict[str, Any], list[Any]] | None:
     """Build one negotiated Runtime Evidence part from stored v1 history.
 
@@ -204,6 +233,9 @@ def _runtime_evidence_part(
                     ),
                     capture_status=item.submission.capture_status.traces.status,
                     case_id=item.submission.case_id,
+                    model_content_supported=model_content_supported,
+                    trace_redaction_supported=trace_redaction_supported,
+                    max_bytes=max_file_bytes,
                     **projection_args,
                 )
             else:
@@ -233,47 +265,6 @@ def _runtime_evidence_part(
         },
         scan_sensitive_json(value, location="runtime_evidence"),
     )
-
-
-def _validate_runtime_capability_support(
-    config: JudgeUploadConfig, *, upload_diff: bool, trace_enabled: bool
-) -> None:
-    """Check explicit upload capabilities before multipart construction.
-
-    Called by Runtime Evidence negotiation after Trace association validation.
-
-    Args:
-        config: Validated Backend advertisement; an empty capability tuple means
-            the historical server omitted the capability field entirely.
-        upload_diff: Whether the caller explicitly requested file-diff bodies.
-        trace_enabled: Whether Run history contains captured Trace Evidence.
-
-    Returns:
-        None when the requested capabilities are supported or the historical
-        file-diff omission rule applies; schema support is checked by the caller.
-
-    Raises:
-        ProviderError: With ``runtime_evidence_unsupported`` when an explicit
-            advertisement lacks file_diff, or captured Trace lacks runtime_trace.
-            File-diff rejection retains precedence when both are unsupported.
-
-    Side Effects:
-        None; this check reads only validated configuration and performs no I/O.
-    """
-    if (
-        upload_diff
-        and config.runtime_evidence_capabilities
-        and "file_diff" not in config.runtime_evidence_capabilities
-    ):
-        raise ProviderError(
-            "The Backend does not support file-diff Evidence",
-            code="runtime_evidence_unsupported",
-        )
-    if trace_enabled and "runtime_trace" not in config.runtime_evidence_capabilities:
-        raise ProviderError(
-            "The Backend does not support captured Runtime Trace Evidence",
-            code="runtime_evidence_unsupported",
-        )
 
 
 def _runtime_evidence_parts(
@@ -306,9 +297,11 @@ def _runtime_evidence_parts(
         "trace_evidence" in item.submission.extensions for item in context.history
     )
     _validate_trace_associations(context)
-    _validate_runtime_capability_support(
-        config, upload_diff=context.upload_diff, trace_enabled=trace_enabled
-    )
+    if trace_enabled and "runtime_trace" not in config.runtime_evidence_capabilities:
+        raise ProviderError(
+            "The Backend does not support captured Runtime Trace Evidence",
+            code="runtime_evidence_unsupported",
+        )
     if context.upload_diff or trace_enabled:
         if RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA not in config.evidence_types:
             raise ProviderError(
@@ -335,6 +328,10 @@ def _runtime_evidence_parts(
             part_prefix=part_prefix,
             schema_version=schema_version,
             upload_diff=context.upload_diff,
+            model_content_supported="kuma.model_content.v1"
+            in config.trace_content_schemas,
+            trace_redaction_supported="redaction"
+            in config.runtime_evidence_capabilities,
         )
         if built is None:
             continue

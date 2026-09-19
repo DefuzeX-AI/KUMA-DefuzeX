@@ -15,12 +15,15 @@ from ..errors import ValidationError
 def _reject_external_schema_references(value: Any) -> None:
     """Reject non-local JSON Schema references without retrieving resources."""
     if isinstance(value, Mapping):
-        reference = value.get("$ref")
-        if isinstance(reference, str) and not reference.startswith("#"):
-            raise ValidationError(
-                "Input schema may only use internal $ref values",
-                code="schema_invalid",
-            )
+        for keyword in ("$ref", "$dynamicRef", "$recursiveRef"):
+            if keyword not in value:
+                continue
+            reference = value[keyword]
+            if not isinstance(reference, str) or not reference.startswith("#"):
+                raise ValidationError(
+                    "Input schema may only use internal references",
+                    code="schema_invalid",
+                )
         for child in value.values():
             _reject_external_schema_references(child)
     elif isinstance(value, (list, tuple)):
@@ -35,23 +38,34 @@ def validate_schema(schema: Mapping[str, Any]) -> None:
         schema: JSON-compatible schema mapping selected by the caller.
 
     Raises:
-        ValidationError: If the schema uses an external ``$ref`` or is invalid
-            for its declared JSON Schema dialect.
+        ValidationError: If the schema uses an external ``$ref``, ``$dynamicRef``
+            or ``$recursiveRef``, or its dialect/contents are invalid. Dialect
+            selection and schema-library failures become safe ``schema_invalid``;
+            tool-document callers map that to ``tool_capabilities_invalid``.
 
     Postconditions:
-        Success changes no input or process state.
+        Success changes no input or process state. Rejection retains no library
+        exception chain or rejected schema values.
 
     Side Effects:
         None; validators cannot retrieve files or network resources.
     """
     _reject_external_schema_references(schema)
-    validator = validator_for(schema)
+    if "$schema" in schema and not isinstance(schema["$schema"], str):
+        raise ValidationError(
+            "Input schema dialect must be a string", code="schema_invalid"
+        )
+    valid = False
     try:
+        validator = validator_for(schema)
         validator.check_schema(schema)
-    except JsonSchemaSchemaError as exc:
+        valid = True
+    except (JsonSchemaSchemaError, TypeError, ValueError, AttributeError):
+        pass
+    if not valid:
         raise ValidationError(
             "Input schema is not a valid JSON Schema", code="schema_invalid"
-        ) from exc
+        )
 
 
 def validate_structured_input(payload: Any, schema: Mapping[str, Any]) -> None:

@@ -460,6 +460,8 @@ def validate_runtime_evidence(
     }
     if schema_version == RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA:
         fields.add("capabilities")
+        if isinstance(value, Mapping) and "redactions" in value:
+            fields.add("redactions")
     if not isinstance(value, Mapping) or set(value) != fields:
         raise ValueError("runtime evidence envelope is invalid")
     _validate_association(
@@ -471,11 +473,20 @@ def validate_runtime_evidence(
         schema_version=schema_version,
     )
     capabilities = value.get("capabilities")
-    if schema_version == RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA and capabilities not in (
-        list(RUNTIME_EVIDENCE_CAPABILITY_ORDER[:2]),
-        list(RUNTIME_EVIDENCE_CAPABILITY_ORDER[:3]),
-        [*RUNTIME_EVIDENCE_CAPABILITY_ORDER[:2], "runtime_trace"],
-        list(RUNTIME_EVIDENCE_CAPABILITY_ORDER),
+    base_capabilities = (
+        capabilities[:-1]
+        if isinstance(capabilities, list) and capabilities[-1:] == ["redaction"]
+        else capabilities
+    )
+    if (
+        schema_version == RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA
+        and base_capabilities
+        not in (
+            list(RUNTIME_EVIDENCE_CAPABILITY_ORDER[:2]),
+            list(RUNTIME_EVIDENCE_CAPABILITY_ORDER[:3]),
+            [*RUNTIME_EVIDENCE_CAPABILITY_ORDER[:2], "runtime_trace"],
+            list(RUNTIME_EVIDENCE_CAPABILITY_ORDER),
+        )
     ):
         raise ValueError("runtime evidence capabilities are invalid")
     _validate_components(value["components"], schema_version=schema_version)
@@ -488,6 +499,7 @@ def validate_runtime_evidence(
             run_id=run_id,
             input_id=input_id,
         )
+        _validate_trace_redaction(value, enabled="redaction" in capabilities)
         diff_enabled = "file_diff" in capabilities
         validate_file_diff_components(
             value["components"],
@@ -495,6 +507,33 @@ def validate_runtime_evidence(
         )
     if len(runtime_evidence_json(value).encode("utf-8")) > RUNTIME_EVIDENCE_MAX_BYTES:
         raise ValueError("runtime evidence exceeds the byte limit")
+
+
+def _validate_trace_redaction(value: Mapping[str, Any], *, enabled: bool) -> None:
+    """Admit only the reused component-scoped Trace redaction extension.
+
+    Ordinary historical envelopes omit redactions entirely. Every annotation
+    must identify the actual trace artifact with a redacted tool body; unknown
+    fields or unsupported redaction kinds fail closed. This narrow extension
+    does not enable redaction for other Run content or change its privacy policy.
+    """
+    expected = []
+    for component in value["components"]:
+        trace = component.get("trace_evidence")
+        if trace is not None and "trace_tool_content_redacted" in trace["reasons"]:
+            expected.append(
+                {
+                    "component_id": component["component_id"],
+                    "kind": "artifact_snapshot",
+                    "status": "redacted",
+                    "reason": "sensitive_content",
+                }
+            )
+    if enabled:
+        if value.get("redactions") != expected or not expected:
+            raise ValueError("runtime trace redaction is invalid")
+    elif expected or "redactions" in value:
+        raise ValueError("runtime trace redaction is not negotiated")
 
 
 __all__ = [

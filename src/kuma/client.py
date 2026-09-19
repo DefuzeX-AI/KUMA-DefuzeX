@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from . import observation_contract as _observation
 from .config import resolve_api_key
 from .errors import (
     AuthenticationError,
@@ -33,7 +34,7 @@ Transport = WireTransport
 
 
 class KumaClient:
-    """Read account and public service configuration without creating a Run.
+    """Read service configuration and explicitly manage cloud observations.
 
     Args:
         api_key: Optional opaque ``dfx_`` credential. ``None`` resolves
@@ -42,7 +43,7 @@ class KumaClient:
             error.
         base_url: Public Backend API base URL. Remote URLs require HTTPS;
             loopback HTTP is accepted for local integration testing.
-        timeout: Positive finite timeout in seconds for each GET request.
+        timeout: Positive finite timeout in seconds for each HTTP request.
         transport: Optional boundary callable used by deterministic integration
             tests. Ordinary users should leave it as ``None``.
 
@@ -64,6 +65,9 @@ class KumaClient:
     Security/Privacy:
         ``repr`` exposes only URL and whether a key exists, never its value. This
         client does not contact MCP, model providers, or databases directly.
+        Observation upload/delete occurs only through explicit method calls;
+        local observation never uploads automatically. Cloud history is owned
+        by the authenticated user, shared across that user's authorized keys.
     """
 
     def __init__(
@@ -186,6 +190,128 @@ class KumaClient:
         """
 
         return self._read("/sdk/entitlements/")
+
+    def _observation_request(
+        self, method: str, path: str, payload: Mapping[str, Any] | None = None
+    ) -> Mapping[str, Any]:
+        """Perform one explicit storage HTTP call using existing auth/timeout rules.
+
+        No retries, polling, billing workflow or local persistence are introduced.
+        Standard KumaError classes retain stable server codes such as capacity,
+        disabled service and conflict, rather than account-read legacy remapping.
+        """
+        if self._backend is None:
+            raise AuthenticationError("Set KUMA_API_KEY or pass api_key to KumaClient.")
+        return self._backend.json(
+            method,
+            path,
+            payload,
+            idempotency_key=payload["observation_id"] if method == "POST" else None,
+            _expected_status=200,
+        )
+
+    def upload_observation(self, observation: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Explicitly store a completed local export, without evaluating the Agent.
+
+        Args:
+            observation: Closed ``kuma.observation.v1`` from session.export();
+                finite, already sanitized, at most five MiB canonical JSON.
+        Returns:
+            Detached closed receipt binding the exact observation ID/hash/bytes.
+        Raises:
+            ValidationError: Invalid/sensitive/oversize input, before any HTTP.
+            ProviderError: Malformed or mismatched server receipt.
+            KumaError: Auth, sdk:observe scope, conflict, capacity or HTTP failure.
+        Preconditions:
+            Cloud observation is enabled; the key explicitly has sdk:observe.
+        Postconditions:
+            Same owner/ID/content retries reuse storage. Changed content conflicts;
+            failure never modifies local capture, Agent outcome or evaluation.
+        Side Effects:
+            One authenticated POST. No Case/Judge/model, credit, local save or
+            automatic retry. Users may explicitly retry the unchanged export.
+        Security/Privacy:
+            Upload is opt-in. No tenant/user selectors or credentials in the body;
+            other authorized keys of the same user can read retained content.
+        """
+        body = _observation.checked(_observation.export, observation)
+        response = self._observation_request("POST", "/sdk/observations/", body)
+        return _observation.checked(
+            lambda v: _observation.receipt(v, body=body), response, remote=True
+        )
+
+    def list_observations(
+        self, *, limit: int = 20, cursor: str | None = None
+    ) -> Mapping[str, Any]:
+        """Read one bounded metadata-only history page for the authenticated user.
+
+        Args:
+            limit: Strict integer 1-100; defaults to 20, no automatic pagination.
+            cursor: Prior page's opaque obs_ ID, or None for the newest page.
+        Returns:
+            Detached kuma.observation_list.v1 items and nullable next_cursor;
+            no span/tool/model bodies. Each item includes receipt and statuses.
+        Raises:
+            ValidationError: Invalid limit/cursor before HTTP.
+            ProviderError: Malformed/private-shaped page.
+            KumaError: Missing sdk:read, unavailable service or transport failure.
+        Side Effects:
+            One authenticated GET. No local writes or evaluation; history belongs
+            to the user/tenant, not exclusively to this key.
+        """
+        count = _observation.checked(_observation.page_limit, limit)
+        path = f"/sdk/observations/?limit={count}"
+        if cursor is not None:
+            path += "&cursor=" + _observation.checked(_observation.identifier, cursor)
+        response = self._observation_request("GET", path)
+        return _observation.checked(
+            lambda v: _observation.page(v, count), response, remote=True
+        )
+
+    def get_observation(self, observation_id: str) -> Mapping[str, Any]:
+        """Retrieve an owned capture body only on an explicit authenticated read.
+
+        Args:
+            observation_id: Exact obs_ plus 32 lowercase hex characters from a receipt.
+        Returns:
+            Detached closed detail containing receipt and sanitized full export.
+        Raises:
+            ValidationError: Invalid ID before HTTP.
+            ProviderError: Invalid shape, privacy, hash or requested-ID binding.
+            KumaError: Missing sdk:read, unknown/foreign ID or HTTP failure.
+        Side Effects:
+            One GET; no file saved. The returned body may include private Agent
+            context after recognized-secret redaction; share/export deliberately.
+        """
+        identifier = _observation.checked(_observation.identifier, observation_id)
+        response = self._observation_request("GET", f"/sdk/observations/{identifier}/")
+        return _observation.checked(
+            lambda v: _observation.detail(v, identifier), response, remote=True
+        )
+
+    def delete_observation(self, observation_id: str) -> Mapping[str, Any]:
+        """Explicitly delete cloud storage for one observation; local copies stay.
+
+        Args:
+            observation_id: Exact obs_ plus 32 lowercase hex characters.
+        Returns:
+            Closed deletion acknowledgment, including already absent IDs. This
+            does not disclose whether another user owns the requested ID.
+        Raises:
+            ValidationError: Invalid ID before HTTP.
+            ProviderError: Invalid acknowledgment.
+            KumaError: Missing explicit sdk:observe scope or HTTP failure.
+        Side Effects:
+            One DELETE, atomically reclaiming owned storage. No billing/evaluation.
+            Re-upload after deletion creates a new stored record, not a replay.
+        """
+        identifier = _observation.checked(_observation.identifier, observation_id)
+        response = self._observation_request(
+            "DELETE", f"/sdk/observations/{identifier}/"
+        )
+        return _observation.checked(
+            lambda v: _observation.deleted(v, identifier), response, remote=True
+        )
 
     def strategies(self) -> Mapping[str, Any]:
         """Fetch the public active Case strategy catalog for explicit discovery.

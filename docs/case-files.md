@@ -1,6 +1,6 @@
 # Save and reuse a complete Case
 
-[简体中文](case-files.zh-CN.md) | English
+[Chinese overview](../README.zh-CN.md) | English
 
 Generate once, explicitly save the complete public Case, and execute it in a new
 Run or process without another CaseGen request:

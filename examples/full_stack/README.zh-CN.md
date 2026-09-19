@@ -1,48 +1,50 @@
-# KUMA 全栈用户流程示例
+# KUMA full-stack user-flow example
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+> Historical path retained; this guide is now maintained in English.
 
-本指南只说明仓库提供的 mini-SWE-agent 示例。SDK 的通用安装、API Key 配置、Agent Profile 格式、Run 协议、Evidence、OpenTelemetry、Docker 边界和故障排查，请查阅规范的[简体中文指南](../../docs/sdk-guide.zh-CN.md)或[英文指南](../../docs/sdk-guide.md)。
+[Chinese overview](../../README.zh-CN.md)
 
-## 示例内容
+This guide covers only the supplied mini-SWE-agent example. General SDK installation, API key setup, Agent Profile format, Run protocol, Evidence, OpenTelemetry, Docker boundaries, and troubleshooting live in the canonical [English guide](../../docs/sdk-guide.md).
 
-该示例在同一个 Docker 容器中组合 KUMA SDK 与 mini-SWE-agent。它会请求官方 Case 与 Judge，在挂载的工作区内执行每个 Case 步骤，记录有界 Trace 和日志 Evidence，并在本地写入公开 Judge 结果。
+## What this example runs
 
-示例提供两个入口：
+The example combines the KUMA SDK and mini-SWE-agent in one Docker container. It requests an official Case and Judge, executes each Case step against the mounted workspace, records bounded Trace and log Evidence, and writes the public Judge result locally.
 
-- 使用 [`Dockerfile.user-flow`](Dockerfile.user-flow) 和 [`docker_user_flow.py`](docker_user_flow.py) 直接运行容器。
-- 使用 [`kuma_real_user_flow.ipynb`](kuma_real_user_flow.ipynb)完成 Windows/WSL 引导流程。
+Two entry points are provided:
 
-两条路径都会调用真实外部服务，可能产生模型或服务费用。
+- [`Dockerfile.user-flow`](Dockerfile.user-flow) with [`docker_user_flow.py`](docker_user_flow.py) for a direct container run.
+- [`kuma_real_user_flow.ipynb`](kuma_real_user_flow.ipynb) for the guided Windows/WSL flow.
 
-## 准备工作区
+Both paths invoke real external services and may incur model or service cost.
 
-请使用一次性 Git 工作区，或确保其中所有既有改动均已提交。直接运行 Docker 示例时，挂载目录必须包含：
+## Prepare the workspace
 
-- 符合支持格式的 `agent-profile.md`；
-- `calculator.py`，这是示例唯一允许修改的源码文件；
-- 可通过 `python -m unittest discover -v` 运行的测试。
+Use a disposable or fully committed Git workspace. The direct Docker example expects the mounted root to contain:
 
-运行前设置以下环境变量：
+- `agent-profile.md` in the accepted format;
+- `calculator.py`, the only source file this example may modify;
+- tests runnable with `python -m unittest discover -v`.
+
+Export these values before running the example:
 
 - `KUMA_BASE_URL`
 - `KUMA_API_KEY`
 - `DEEPSEEK_API_KEY`
 
-不要将真实凭证写入工作区或仓库。
-只配置公开的 KUMA Backend URL；本示例不需要私有 Core 地址。
+Do not place populated credentials in the workspace or repository.
+Configure only the public KUMA Backend URL; this example never needs a private Core address.
 
-## 构建镜像
+## Build the image
 
-在 SDK 仓库根目录执行：
+From the SDK repository root:
 
 ```bash
 docker build -f examples/full_stack/Dockerfile.user-flow -t kuma-user-flow .
 ```
 
-## 运行容器
+## Run the container
 
-Windows PowerShell：
+Windows PowerShell:
 
 ```powershell
 $workspace = (Resolve-Path "C:\path\to\workspace").Path
@@ -54,7 +56,7 @@ docker run --rm `
   kuma-user-flow
 ```
 
-Linux 或 macOS：
+Linux or macOS:
 
 ```bash
 workspace="$(pwd)"
@@ -66,20 +68,20 @@ docker run --rm \
   kuma-user-flow
 ```
 
-脚本会拒绝在 Docker 外运行，也会拒绝缺失的环境变量。如果 Agent 修改了范围外源码、Submission 未成功或最终 Judge 报告缺失，运行同样会失败。
+The script rejects non-Docker execution and missing environment variables. It also blocks out-of-scope source changes and fails when the Agent does not submit successfully or the final Judge report is absent.
 
-## 运行 Notebook
+## Run the Notebook
 
-Notebook 需要 Windows、WSL、Jupyter、上述两个 API Key 和已配置的公开 Base URL。启动 Jupyter 前先设置环境变量，再打开 [`kuma_real_user_flow.ipynb`](kuma_real_user_flow.ipynb)，按照单元格提示选择 Agent 工作区。
+The Notebook requires Windows, WSL, Jupyter, the two API keys above, and the configured public base URL. Set environment variables before starting Jupyter, open [`kuma_real_user_flow.ipynb`](kuma_real_user_flow.ipynb), then follow its cells to select the Agent workspace.
 
-Notebook 可能修改所选仓库。请仅选择一次性工作区，或确保仓库原有工作均已提交。
+The Notebook can modify the selected repository. Choose only a disposable workspace or one with all prior work committed.
 
-## 输出
+## Outputs
 
-直接运行流程会在挂载工作区的 `.kuma/mini-swe-agent/` 下写入：
+The direct flow writes example artifacts under `.kuma/mini-swe-agent/` in the mounted workspace:
 
-- 精简的 Agent trajectory 与验证 Evidence；
-- 各步骤的 unittest 日志；
-- 最终公开 `judge-report.json`。
+- compact Agent trajectory and verification Evidence;
+- per-step unittest logs;
+- the final public `judge-report.json`.
 
-脚本还会输出官方 Case Inputs、最终报告、采集的 span 名称、最终 `calculator.py` 和 artifact 路径。这些输出只属于本示例；通用结果处理方式以规范 SDK 指南为准。
+It prints the official Case Inputs, final report, captured span names, final `calculator.py`, and artifact path. These outputs are example-specific; general result handling is documented in the canonical SDK guides.

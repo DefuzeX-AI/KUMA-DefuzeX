@@ -3,28 +3,13 @@
 For active operation interval revisions, bounded backoff and strict timeout
 behavior, see [Operation polling and deadlines](operation-polling.md).
 
-To reuse the same complete Case in a new process, call `run.save_case("case.json")`
-then `create_run(repo_path=".", case_path="case.json")`. See [Case files](case-files.md)
-for origin, path/size limits, official verification and Judge billing boundaries.
-
-Evidence capacity: the default Trace budget is 8 MiB across one Run; span,
-attribute and event limits and visible loss counters remain active. Canonical
-Agent-output JSON allows 4 MiB, one Runtime Evidence envelope allows 5 MiB, and
-the complete multipart body (including metadata/framing) allows 8 MiB. Lower
-Backend limits still apply. Output is never truncated. JSON quotes and escapes
-count: an ASCII string may contain at most 4,194,302 characters before its two
-JSON quotes; Unicode escapes can use more bytes. Run the offline capacity check
-with `python tools/verify_evidence_capacity.py` from a source checkout.
-
-[English](sdk-guide.md) | [简体中文](sdk-guide.zh-CN.md)
+[English](sdk-guide.md) | [Chinese overview](../README.zh-CN.md)
 
 This is the canonical user guide for KUMA configuration and integration. The package, CLI, and environment variables use `kuma` / `KUMA_*`; versioned `defuzex.*` wire schemas remain unchanged for server compatibility.
 
 ## Installation
 
-KUMA supports Python 3.10 through 3.14. Install from PyPI; Git is not required.
-The package name is `kuma-defuzex`; imports and the CLI use `kuma`.
-Create an isolated environment:
+KUMA supports Python 3.10 through 3.14. Create an isolated environment:
 
 ```bash
 python -m venv .venv
@@ -35,7 +20,7 @@ Windows PowerShell:
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install "kuma-defuzex==0.2.8"
+python -m pip install --upgrade kuma-defuzex
 ```
 
 Linux or macOS:
@@ -43,18 +28,26 @@ Linux or macOS:
 ```bash
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "kuma-defuzex==0.2.8"
+python -m pip install --upgrade kuma-defuzex
 ```
 
 Optional OpenTelemetry support:
 
 ```bash
-python -m pip install "kuma-defuzex[otel]==0.2.8"
+python -m pip install --upgrade "kuma-defuzex[otel]"
 ```
 
-Contributors should use the editable development setup in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+Repository contributors should install this checkout with `python -m pip install -e ".[test,dev]"`.
+Candidate-only 0.3.0 observation/correlation examples require that source checkout;
+the published 0.2.8 package does not acquire unreleased features through an upgrade.
 
 ## Local quickstart
+
+To save and execute the same complete Case in another process, use
+`run.save_case("case.json")` followed by
+`create_run(repo_path=".", case_path="case.json")`.
+See [Case files](case-files.md) for the no-overwrite/path limits, explicit origin,
+official-server validation, and the distinction between loading and Judge billing.
 
 The CLI quickstart runs a deterministic exact-match check in an SDK-owned temporary directory. It reads no user repository and requires no account, API key, Docker, or network:
 
@@ -103,13 +96,11 @@ Credential precedence is: `create_run(api_key=...)`, `KUMA_API_KEY`, then the us
 |---|---|
 | `KUMA_API_KEY` | Credential for official Providers |
 | `KUMA_CONFIG_HOME` | Override the user credential directory |
-| `KUMA_BASE_URL` | Set the final public or loopback API base URL; non-loopback URLs must use HTTPS. Authenticated requests reject all redirects, including same-origin redirects, with non-retryable `ServiceError(code="http_redirect_rejected")`. Correct the URL rather than retrying a redirecting alias. |
+| `KUMA_BASE_URL` | Set the final public or loopback API base URL; non-loopback URLs must use HTTPS. Authenticated requests never follow redirects, including same-origin redirects. A redirect raises non-retryable `ServiceError(code="http_redirect_rejected")`; correct the URL rather than retrying the redirecting alias. |
 
 ### Agent Profile file
 
 The official Case Provider requires an explicit UTF-8 Agent Profile file with YAML front matter and three sections:
-
-The Strategy Group remains authoritative for the testing capability, domain, and method. The Agent Profile only supplies context about the Agent, its production scenario, expected behavior, and prohibited boundaries; its prose never selects, replaces, or overrides the group. If the profile omits `strategy_group`, KUMA uses the catalog's exact default group.
 
 ```markdown
 ---
@@ -132,6 +123,14 @@ Do not read credentials or access paths outside the repository.
 
 `agent_description`, `input_type`, and all three headings are required. Official Cases currently accept text Inputs. Structured Inputs require a custom Case Provider plus a locally validated JSON Schema declared through `input_schema`.
 
+The Strategy Group remains the primary testing contract: it determines the
+testing capability, domain, and method. The Agent Profile only describes the
+Agent under test, production scenario, expected behavior, and prohibited
+boundaries so the chosen group has relevant context. Profile prose never selects
+or overrides a group. An explicit `strategy_group` coordinate is authoritative;
+without one, `strategy="auto"` uses the catalog's exact default. Automatic matching is
+disabled.
+
 ### Strategy Groups and Agent capabilities
 
 Authenticated users can inspect the current validated public Strategy Group catalog before editing an Agent Profile:
@@ -143,7 +142,7 @@ kuma strategies list --output strategy-groups.json
 
 Add the selected group `id` and exact `version` through the closed `strategy_group` front-matter object. Omitting it uses the catalog's exact default; an invalid explicit selection or missing Evidence capability fails closed. Keep `scan_strategy_group=False`: `True` raises `ConfigurationError(config_invalid)` before file or network I/O. Automatic matching is disabled, not privacy scanning or capability validation. See [Strategy Groups](strategy-groups.md) for the Agent Profile schema, CLI options, typed Python API, default behavior, and privacy boundary.
 
-An optional `tool_capabilities` relative path can link a reviewed local capability document. Create or validate it with `kuma tools scan` / `kuma tools validate`, or use the equivalent Python helpers. The file is not uploaded; it is a user-controlled claim that contributes its closed Evidence capability set to selection preflight, not automatic matching. See [Agent tool capabilities](agent-tool-capabilities.md) for its schema, bounds, CLI, Python API, and path rules.
+An optional `tool_capabilities` relative path links a reviewed capability document. Create or validate it with `kuma tools scan` / `kuma tools validate`, or equivalent Python helpers. Linking opts into official CaseGen uploading the complete normalized document, including schema descriptions/defaults/examples but never its local path. Omission sends no declaration. It is user-declared context, not verified Evidence or automatic group matching. Sensitive content fails before network I/O even with `allow_sensitive=True`; unsupported servers fail without dropping the field. See [Agent tool capabilities](agent-tool-capabilities.md) for schema, bounds, CLI, Python API, and path rules.
 
 ### Agent integration
 
@@ -230,35 +229,15 @@ Framework-neutral runtime metadata follows the [Runtime Evidence contract](runti
 
 Before official upload, KUMA scans output, errors, paths, diffs, explicit logs, and custom Cases for sensitive material. The API key is used for authorization and is not added to Evidence. `allow_sensitive=True` is an explicit ordinary-Evidence override, not a substitute for isolation or secret hygiene.
 
-Known OpenAI, OpenAI project, and Anthropic `sk-` credential prefixes are
-blocked as `sk_api_key` before official upload. Findings contain only the rule
-and location, never the matched value; KUMA does not use entropy guessing.
-
-Custom Cases contain public Inputs and constraints only. Do not attach a
-Rubric: `rubric`, `private_rubric`, and `rubric_context` are rejected before
-upload. The official Judge evaluates the supplied public Case directly.
-
 ## OpenTelemetry
-
-Captured Trace is now sent as a whole hash-bound body only when the server
-advertises `runtime_trace`; unsupported servers reject before Judge POST.
-This is separate from missing-Provider warnings. Tool arguments/results require
-actual `execute_tool` instrumentation; a plain span does not invent them.
-See [Runtime Trace and file diffs](runtime-trace.md) for a local example, upgrade
-instructions, body limits and the separate `upload_diff=True` option.
 
 OpenTelemetry (OTel) is the standard observability API used by Agent frameworks and instrumentation to emit spans. KUMA maps spans that were **actually emitted in the same process** into bounded Evidence. It does not invent Agent activity and is not an OTel Collector, backend, or trace UI.
 
 Install OTel support only when trace capture is needed; the core package does not require it:
 
 ```bash
-python -m pip install "kuma-defuzex[otel]==0.2.8"
+python -m pip install "kuma-defuzex[otel]"
 ```
-
-The declared `opentelemetry-sdk>=1.30,<2` range is supported across the Logs
-exporter rename: KUMA uses the matching old API pair on 1.30–1.38 and the new
-pair from 1.39 onward. If an installed release exposes neither complete pair,
-the import error reports the installed version and the supported range.
 
 `create_run()` now follows this precedence:
 
@@ -314,7 +293,15 @@ run = create_run(
 )
 ```
 
-Span counts, attributes, events, text, and total Run bytes are bounded. A restrictive allowlist excludes prompts, completions, source, log bodies, keys, and credentials. Explicit `submit(output)` remains the portable fallback; omitted output works only when supported Agent/Workflow spans expose a valid final output. Automatic capture currently covers spans; ordinary logs remain governed by the existing explicit Submission log contract. KUMA does not provide an OTLP receiver, cross-process correlation, trace UI, or storage service.
+Span counts, attributes, events, text and total Run bytes are bounded. Ordinary
+attributes use a restrictive allowlist; recognized model/tool bodies have separate
+bounded redacted projections, not unrestricted prompt/log collection. Credentials
+and private evaluation content are not admitted. Explicit submit(output) remains
+the portable fallback; omission requires supported Agent/Workflow final output.
+Native OTel logs retain safe metadata/hashes; explicit file logs retain their
+separate Submission contract. KUMA provides no OTLP receiver, cross-process Trace
+capture, Trace UI or storage server. See [OpenInference](openinference.md) and
+[explicit cloud observations](cloud-observations.md).
 
 ## Docker and runtime security
 
@@ -326,7 +313,7 @@ Build the supplied user-flow example:
 docker build -f examples/full_stack/Dockerfile.user-flow -t kuma-user-flow .
 ```
 
-See the [full-stack user-flow guide](../examples/full_stack/README.md) for its exact workspace and runtime requirements.
+See the [full-stack user-flow guide](../examples/full_stack/USER_GUIDE.md) for its exact workspace and runtime requirements.
 
 ## Errors, retries, and timeouts
 
@@ -345,19 +332,13 @@ Common subclasses include `ConfigurationError`, `AuthenticationError`, `Permissi
 
 `timeout` bounds one public HTTP attempt. `operation_wait_timeout` bounds the complete official single-Case or Judge operation. POST retries reuse a stable idempotency key; only server-declared transient failures are retried within `max_retries`, and `ServiceBusyError` is not retried automatically.
 
-`exc.request_id` is the current response's optional `X-Request-ID`, accepted only as exactly 32 lowercase hexadecimal characters. Missing, invalid, or duplicate headers remain `None`; JSON-body, private service, and local `kreq_…` IDs are never substituted. Async failures use the failed poll response's ID, not the original start request. Decode/size/status and operation start/poll/result validation errors also retain that response's safe ID; no-response network failures and local persistence errors do not inherit a previous ID. A header may be server-echoed, not necessarily server-generated.
+`exc.request_id` is the actual response's `X-Request-ID`, retained only when it is exactly 32 lowercase hexadecimal characters. It may be `None`: the header is optional, invalid or duplicate headers are ignored, and no ID is invented. It is not proof that the server generated the ID, since the server can echo an incoming ID. For an asynchronous failed operation it identifies the failing poll response, not the original start request. JSON-body IDs, private Core IDs, and the local `kreq_…` client recovery ID are never substituted; use `kuma requests list/show` for that separate local identity. Error class, code, and retry decisions are unchanged.
 
-Judge interruptions (`KeyboardInterrupt`, `SystemExit`, cancellation) propagate unchanged while restoring `completed`. If the application catches the interruption and retains the Run, `run.judge()` can be retried: a known official operation only resumes GET polling. No report is fabricated and stopping local waiting does not cancel the remote task. Forced process termination cannot run this cleanup.
+Correlation also survives rejected JSON/UTF-8, response-size limits (including HTTP error bodies), unexpected HTTP status, and invalid operation start/poll/result schemas. It refers only to the response whose validation failed. Network failures before receiving a response, local persistence failures, and missing-header responses do not inherit an earlier response's ID.
 
-See [public error diagnostics](public-error-diagnostics.md) for fixed messages, safe field constraints and historical compatibility. Specific reasons require the service to supply them; older generic errors remain generic.
+An operation timeout retains bounded recovery metadata without storing credentials, request content, Evidence, or results. Judge retry requires the original Run and History; the high-level API cannot rebuild a lost Run from only `run_id` after process exit.
 
-Official starts retain bounded request metadata under `.kuma/requests/` without
-storing credentials, request content, Evidence, or Rubrics. After a process
-exit, use `kuma requests list`, `kuma requests show <client-request-id>`, and
-`kuma requests resume <client-request-id>` (or the matching Python APIs). Known
-operations are polled with GET only; an accepted response lost before the local
-operation ID was saved is recovered through authenticated lookup. A recovered
-Judge report is written to `.kuma/reports/<run_id>.json`.
+If `KeyboardInterrupt`, `SystemExit`, or cancellation interrupts Judge, the exception still propagates; KUMA does not swallow it or fabricate a report. If your application catches it and retains the Run, its state is `completed` and `run.judge()` can be called again. An already-started official operation resumes by polling its existing ID, not creating another task. Interrupting local waiting does not cancel the remote operation. This recovery does not apply to forcibly terminating the process.
 
 ## Troubleshooting
 
@@ -367,9 +348,9 @@ Judge report is written to `.kuma/reports/<run_id>.json`.
 | Agent Profile rejected | Check UTF-8, front matter, required headings, and structured-input schema |
 | `DockerRequiredError` | Use one controlled container; enable `allow_local=True` only for trusted development |
 | `submit()` returns `None` | Check remaining Inputs, `judge`, `run.state`, and `run.history` |
-| `InputProtocolError` | Alternate one `get_input()` with one `submit()` and avoid concurrent advancement |
+| `InputProtocolError` (`invalid_run_state`) | Alternate one `get_input()` with one `submit()` and avoid concurrent advancement |
 | Sensitive-data rejection | Remove secrets from output, paths, logs, diffs, and custom Cases |
-| Operation timeout or lost response | Inspect `.kuma/requests/`, then resume the same client request ID |
+| Operation timeout | Keep the original Run, inspect `retryable`, and retry without changing protocols |
 | Missing Trace output | Submit explicit JSON output or install and attach `[otel]` correctly |
 
 ## Reference
@@ -382,6 +363,5 @@ Judge report is written to `.kuma/reports/<run_id>.json`.
 - [Runtime Evidence contract](runtime-evidence.md)
 - [Minimal local example](../examples/minimal_local.py)
 - [Single Agent template](../examples/single_agent_template/README.md)
-- [Full-stack user-flow example](../examples/full_stack/README.md)
-- [Security policy](../SECURITY.md)
-- [Contributing](../CONTRIBUTING.md)
+- [Full-stack user-flow example](../examples/full_stack/USER_GUIDE.md)
+- [Architecture and security boundaries](architecture.md)

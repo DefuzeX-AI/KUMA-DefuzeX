@@ -44,6 +44,7 @@ from .exceptions import (
     KumaRateLimitError,
     KumaTimeoutError,
 )
+from .observation import ObservationSession, observe
 from .repository.strategy_groups import (
     STRATEGY_GROUP_CATALOG_SCHEMA_VERSION,
     STRATEGY_GROUP_SELECTION_SCHEMA_VERSION,
@@ -100,6 +101,7 @@ __all__ = [
     "KumaRateLimitError",
     "KumaTimeoutError",
     "LimitExceededError",
+    "ObservationSession",
     "PermissionDeniedError",
     "ProviderError",
     "RepoStateMismatchError",
@@ -123,6 +125,7 @@ __all__ = [
     "create_run",
     "list_requests",
     "load_agent_capabilities",
+    "observe",
     "resume_request",
     "save_agent_capabilities",
     "scan_agent_tool_manifest",

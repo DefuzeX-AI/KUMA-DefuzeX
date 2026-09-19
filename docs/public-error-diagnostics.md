@@ -1,10 +1,7 @@
-# Public error diagnostics
+# Public error diagnostics — unreleased
 
-SDK 0.2.3 supports the safe public categories below while preserving request
-identity and retry safeguards. Availability follows the official GitHub Release,
-not PyPI. Specific reasons require a compatible service response: the deployed
-service may still return older generic errors. The SDK does not invent missing
-causes or retroactively classify historical `service_busy` records.
+This candidate changes error display, not request identity, billing or retry
+decisions. It is not a claim that a package or public release is available.
 
 | Category | Codes | Meaning and action |
 | --- | --- | --- |
@@ -23,16 +20,13 @@ upstream_unavailable/upload_not_configured now use ServiceError, but preserve th
 previous no-automatic-retry behavior. Known completed failures preserve their
 original code and retryable value; the SDK does not rewrite stored history.
 
-The no-automatic-retry rule also covers every category split from the former
-generic busy response: capacity_exceeded, request_failed, operation_failed, model_invalid_result
-(including model_invalid_response), model_output_policy_conflict,
-model_output_privacy_rejected, request_in_progress, strategy_group_invalid,
-invalid_request, idempotency_conflict and resource_not_found. Together with
-service_busy and the two historical aliases above, these return control after
-one HTTP attempt or one failed poll, even when retryable is true. That flag stays
-unchanged; it is not permission for the SDK to repeat a billable start. An explicit
-caller resume keeps the original key/operation and only GETs a known operation.
-Existing network_error retries and their backoff/budget remain unchanged.
+SDK-authored CLI/help, warnings, update reminders and example prompts are also
+English. User-provided Chinese content is not translated. Chinese Agent Profile
+heading aliases remain supported; an exact historical read-only-key message is
+recognized as input but displayed in English. These retained semantic aliases
+need an explicit policy resolution; they are not a repository-language exception.
+
+
 
 ## Complete public error display
 

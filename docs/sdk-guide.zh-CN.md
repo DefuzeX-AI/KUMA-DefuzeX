@@ -1,87 +1,91 @@
-# KUMA Python SDK 指南
+# KUMA Python SDK guide
 
-跨进程复用同一完整 Case：调用 `run.save_case("case.json")`，再使用
-`create_run(repo_path=".", case_path="case.json")`。来源、路径/大小限制、官方核验
-及 Judge 计费边界见 [Case 文件](case-files.zh-CN.md)。
+> This historical documentation path now contains the English guide. The
+> [canonical guide](sdk-guide.md) is maintained alongside it; the
+> [Chinese overview](../README.zh-CN.md) remains available at the repository root.
 
-Evidence 容量：默认 Trace 总预算为每 Run 8 MiB；span、attribute、event 上限及
-透明丢弃计数继续生效。Agent 输出 canonical JSON 上限 4 MiB，单份 Runtime
-Evidence 上限 5 MiB，含元数据和分隔符的完整 multipart 上限 8 MiB。
-Backend 更小的限制仍有效，输出不会截断。JSON 引号及转义也计入：ASCII 字符串
-加两个引号前最多 4,194,302 字符，Unicode 转义可能占更多字节。
-在源码目录运行 `python tools/verify_evidence_capacity.py` 可离线验证容量。
+For active operation interval revisions, bounded backoff and strict timeout
+behavior, see [Operation polling and deadlines](operation-polling.md).
 
-[English](sdk-guide.md) | [简体中文](sdk-guide.zh-CN.md)
+[English](sdk-guide.md) | [Chinese overview](../README.zh-CN.md)
 
-本文是 KUMA 配置与接入的规范用户指南。Python 包、CLI 和环境变量使用 `kuma` / `KUMA_*`；版本化 `defuzex.*` wire schema 为兼容服务端保持不变。
+This is the canonical user guide for KUMA configuration and integration. The package, CLI, and environment variables use `kuma` / `KUMA_*`; versioned `defuzex.*` wire schemas remain unchanged for server compatibility.
 
-## 安装
+## Installation
 
-KUMA 支持 Python 3.10 至 3.14。从 PyPI 安装，无需 Git。安装包名为 `kuma-defuzex`，导入和命令行使用 `kuma`。请先创建隔离环境：
+KUMA supports Python 3.10 through 3.14. Create an isolated environment:
 
 ```bash
 python -m venv .venv
 ```
 
-Windows PowerShell：
+Windows PowerShell:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install "kuma-defuzex==0.2.8"
+python -m pip install --upgrade kuma-defuzex
 ```
 
-Linux 或 macOS：
+Linux or macOS:
 
 ```bash
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "kuma-defuzex==0.2.8"
+python -m pip install --upgrade kuma-defuzex
 ```
 
-按需安装 OpenTelemetry 能力：
+Optional OpenTelemetry support:
 
 ```bash
-python -m pip install "kuma-defuzex[otel]==0.2.8"
+python -m pip install --upgrade "kuma-defuzex[otel]"
 ```
 
-贡献者请按 [`CONTRIBUTING.md`](../CONTRIBUTING.md) 使用可编辑开发环境。
+Repository contributors should install this checkout with `python -m pip install -e ".[test,dev]"`.
+Candidate-only 0.3.0 observation/correlation examples require that source checkout;
+the published 0.2.8 package does not acquire unreleased features through an upgrade.
 
-## 本地快速开始
+## Local quickstart
 
-CLI quickstart 会在 SDK 自有临时目录中执行确定性的精确匹配检查，不读取用户仓库，也不需要账号、API Key、Docker 或网络：
+To save and execute the same complete Case in another process, use
+`run.save_case("case.json")` followed by
+`create_run(repo_path=".", case_path="case.json")`.
+See [Case files](case-files.md) for the no-overwrite/path limits, explicit origin,
+official-server validation, and the distinction between loading and Judge billing.
+
+The CLI quickstart runs a deterministic exact-match check in an SDK-owned temporary directory. It reads no user repository and requires no account, API key, Docker, or network:
 
 ```bash
 kuma quickstart
 ```
 
-`kuma quickstart --fail-demo` 可验证确定性失败路径。另有一个使用自定义 Case Provider、关闭 Judge 的完整本地 `Run`：
+Use `kuma quickstart --fail-demo` to exercise the deterministic failure path. A complete local `Run` with a custom Case Provider and no Judge is also available:
 
 ```bash
 python examples/minimal_local.py
 ```
 
-## 配置
+## Configuration
 
-### API Key
+### API key
 
-官方 Case 或 Judge Provider 需要以 `dfx_` 开头的 KUMA API Key。请通过进程环境或用户凭证存储提供，不要写入源码、Notebook 输出、日志或 Git。
+Official Case or Judge Providers require a KUMA API key beginning with `dfx_`. Keep it in the process environment or user credential store; never place it in source, Notebook output, logs, or Git.
 
-Windows PowerShell：
+Windows PowerShell:
 
 ```powershell
 $env:KUMA_API_KEY = "dfx_your_key_here"
 kuma whoami
 ```
 
-Linux 或 macOS：
+Linux or macOS:
 
 ```bash
 export KUMA_API_KEY="dfx_your_key_here"
 kuma whoami
 ```
 
-SDK 也可在不访问网络的情况下验证并原子保存 Key：
+The SDK can validate and atomically store the key without a network request:
 
 ```python
 from kuma import configure
@@ -90,19 +94,17 @@ credential_path = configure(api_key="dfx_your_key_here")
 print(credential_path)
 ```
 
-凭证优先级为：`create_run(api_key=...)`、`KUMA_API_KEY`、用户凭证文件。
+Credential precedence is: `create_run(api_key=...)`, `KUMA_API_KEY`, then the user credential file.
 
-| 环境变量 | 用途 |
+| Environment variable | Purpose |
 |---|---|
-| `KUMA_API_KEY` | 官方 Provider 使用的凭证 |
-| `KUMA_CONFIG_HOME` | 覆盖用户凭证目录 |
-| `KUMA_BASE_URL` | 设置最终的公开或 loopback API 地址；非 loopback 地址必须使用 HTTPS。认证请求拒绝所有重定向（包括同源跳转），抛出不可自动重试的 `ServiceError(code="http_redirect_rejected")`。请修正地址，而不是重试会跳转的别名。 |
+| `KUMA_API_KEY` | Credential for official Providers |
+| `KUMA_CONFIG_HOME` | Override the user credential directory |
+| `KUMA_BASE_URL` | Set the final public or loopback API base URL; non-loopback URLs must use HTTPS. Authenticated requests never follow redirects, including same-origin redirects. A redirect raises non-retryable `ServiceError(code="http_redirect_rejected")`; correct the URL rather than retrying the redirecting alias. |
 
-### Agent Profile 文件
+### Agent Profile file
 
-官方 Case Provider 要求显式提供 UTF-8 Agent Profile 文件，包含 YAML front matter 和三个章节：
-
-策略组始终决定主要测试能力、领域和方法。Agent Profile 只提供被测 Agent、生产场景、预期行为与禁止边界等上下文；其中的自然语言不会选择、替换或覆盖策略组。若 Profile 省略 `strategy_group`，KUMA 使用目录中精确的默认组。
+The official Case Provider requires an explicit UTF-8 Agent Profile file with YAML front matter and three sections:
 
 ```markdown
 ---
@@ -123,24 +125,32 @@ Diagnose the requested defect, apply a bounded fix, and run relevant checks.
 Do not read credentials or access paths outside the repository.
 ```
 
-`agent_description`、`input_type` 和三个标题均为必填。官方 Case 当前接受文本 Input；结构化 Input 需要自定义 Case Provider，并通过 `input_schema` 声明本地验证的 JSON Schema。
+`agent_description`, `input_type`, and all three headings are required. Official Cases currently accept text Inputs. Structured Inputs require a custom Case Provider plus a locally validated JSON Schema declared through `input_schema`.
 
-### 策略组与 Agent 能力
+The Strategy Group remains the primary testing contract: it determines the
+testing capability, domain, and method. The Agent Profile only describes the
+Agent under test, production scenario, expected behavior, and prohibited
+boundaries so the chosen group has relevant context. Profile prose never selects
+or overrides a group. An explicit `strategy_group` coordinate is authoritative;
+without one, `strategy="auto"` uses the catalog's exact default. Automatic matching is
+disabled.
 
-已鉴权用户可在编辑 Agent Profile 前查询并校验当前公共策略组目录：
+### Strategy Groups and Agent capabilities
+
+Authenticated users can inspect the current validated public Strategy Group catalog before editing an Agent Profile:
 
 ```bash
 kuma strategies list
 kuma strategies list --output strategy-groups.json
 ```
 
-通过 closed `strategy_group` front matter 写入选定组的 `id` 和精确 `version`。省略时使用目录中的精确默认组；显式选择无效或缺少所需 Evidence 能力时会直接拒绝。请保持 `scan_strategy_group=False`：传 `True` 在文件读取或网络前抛 `ConfigurationError(config_invalid)`。禁用的是自动匹配，不是隐私扫描或能力校验。Agent Profile schema、CLI 参数、类型化 Python API、默认行为和隐私边界详见[策略组](strategy-groups.zh-CN.md)。
+Add the selected group `id` and exact `version` through the closed `strategy_group` front-matter object. Omitting it uses the catalog's exact default; an invalid explicit selection or missing Evidence capability fails closed. Keep `scan_strategy_group=False`: `True` raises `ConfigurationError(config_invalid)` before file or network I/O. Automatic matching is disabled, not privacy scanning or capability validation. See [Strategy Groups](strategy-groups.md) for the Agent Profile schema, CLI options, typed Python API, default behavior, and privacy boundary.
 
-可选的 `tool_capabilities` 相对路径可以关联经审查的本地能力文档。可用 `kuma tools scan` / `kuma tools validate` 创建或校验，也可使用等价 Python helper。该文件不会上传；它是用户可控声明，只有 closed Evidence 能力集合用于选定组的能力预检，不用于自动匹配。Schema、边界、CLI、Python API 和路径规则详见 [Agent 工具能力](agent-tool-capabilities.zh-CN.md)。
+An optional `tool_capabilities` relative path links a reviewed capability document. Create or validate it with `kuma tools scan` / `kuma tools validate`, or equivalent Python helpers. Linking opts into official CaseGen uploading the complete normalized document, including schema descriptions/defaults/examples but never its local path. Omission sends no declaration. It is user-declared context, not verified Evidence or automatic group matching. Sensitive content fails before network I/O even with `allow_sensitive=True`; unsupported servers fail without dropping the field. See [Agent tool capabilities](agent-tool-capabilities.md) for schema, bounds, CLI, Python API, and path rules.
 
-### 接入 Agent
+### Agent integration
 
-用户负责执行 Agent，KUMA 负责同步 `Run` 协议。将下面的确定性函数体替换为现有 Agent 调用：
+The user owns Agent execution; KUMA owns the synchronous `Run` protocol. Replace the deterministic function body with the existing Agent call:
 
 ```python
 from typing import Any
@@ -155,7 +165,7 @@ def execute_agent(test_input: Any) -> dict[str, Any]:
 run = create_run(
     repo_path=".",
     agent_profile_path="agent-profile.md",
-    allow_local=True,  # 仅用于可信的本地开发。
+    allow_local=True,  # Trusted local development only.
 )
 
 report = None
@@ -166,95 +176,83 @@ print(run.state)
 print(report)
 ```
 
-`get_input()` 返回兼容 JSON 的 payload；`get_input(full=True)` 返回不可变的 `KumaInput`。成功的 Submission 必须包含有限且兼容 JSON 的输出。同一个 Run 不得并发推进。
+`get_input()` returns the JSON-compatible payload; `get_input(full=True)` returns an immutable `KumaInput`. Completed submissions require finite JSON-compatible output. Do not advance one Run concurrently.
 
-## Provider 与 Run 生命周期
+## Providers and Run lifecycle
 
-### Provider 组合
+### Provider combinations
 
-| Case Provider | Judge Provider | 行为 |
+| Case Provider | Judge Provider | Behavior |
 |---|---|---|
-| 省略 | 省略 | 官方 Case 与 Judge；需要 API Key |
-| 省略 | 自定义 | 官方 Case 与本地 Judge；需要 API Key |
-| 自定义 | 省略 | 本地 Case 与官方 Judge；需要 API Key |
-| 自定义 | 自定义 | 完全本地 |
-| 任意 | `judge=False` | 最后一次提交后结束，不运行 Judge |
+| omitted | omitted | Official Case and Judge; API key required |
+| omitted | custom | Official Case with local Judge; API key required |
+| custom | omitted | Local Case with official Judge; API key required |
+| custom | custom | Fully local |
+| any | `judge=False` | Complete after the final submission without a Judge |
 
-自定义 Case Provider 必须设置 `max_steps`；它是 Run 可接受的步骤数上限，不是要求生成的精确数量。官方模式可省略并采用公开服务上限。Provider 输出进入 Run 前会被归一化并验证；KUMA 会拒绝超限 Case，不会截断。
+Custom Case Providers require `max_steps`, the maximum number of steps the Run
+will accept rather than an exact requested count. Official mode may omit it to
+use the public service limit. Provider outputs are normalized and validated;
+KUMA rejects an over-limit Case instead of truncating it.
 
-### Run 状态机
+### Run state machine
 
-正常流程为 `ready` → `input_delivered` → `submitting`；如有后续 Input 则回到 `ready`，否则进入 `completed`。启用 Judge 后继续执行 `judging` → `report_ready`。
+The normal sequence is `ready` → `input_delivered` → `submitting`, returning to `ready` for another Input or moving to `completed`. An enabled Judge uses `judging` → `report_ready`.
 
-| 状态 | 含义 |
+| State | Meaning |
 |---|---|
-| `ready` | 可以交付下一个 Input |
-| `input_delivered` | 当前 Input 等待且只允许一次提交 |
-| `submitting` | 正在提交并提交 Evidence 事务 |
-| `completed` | Input 已处理完；可运行或重试 Judge |
-| `judging` | 同步 Judge 调用正在执行 |
-| `report_ready` | 已取得验证后的 `TestReport` |
-| `cancelled` | 调用者取消 Run，并释放运行时状态 |
-| `failed` | 运行时收尾失败 |
+| `ready` | The next Input may be delivered |
+| `input_delivered` | The current Input awaits exactly one submission |
+| `submitting` | The submission and Evidence transaction are committing |
+| `completed` | Input processing ended; a Judge may run or retry |
+| `judging` | The synchronous Judge call is in progress |
+| `report_ready` | A validated `TestReport` is available |
+| `cancelled` | The caller cancelled the Run and released runtime state |
+| `failed` | Runtime finalization failed |
 
-在 `submit()` 前重复调用 `get_input()` 会返回同一 Input。非法顺序会抛出 `InputProtocolError`。不再继续时应调用 `run.cancel()`。
+Repeated `get_input()` calls before `submit()` return the same Input. Invalid ordering raises `InputProtocolError`. Call `run.cancel()` when abandoning a Run.
 
-### `create_run()` 参数
+### `create_run()` parameters
 
-[Python API 参考](api-reference.zh-CN.md#create_run)是每个参数的类型、默认值、允许值、副作用、返回值和失败行为的权威说明。`on_failure` 只接受 `continue` 或 `stop`。Python API 保持同步，不支持 `wait=False`。
+The [Python API reference](api-reference.md#create_run) is authoritative for
+every argument's type, default, accepted values, side effects, return value, and
+failure behavior. `on_failure` accepts only `continue` or `stop`. The Python API
+is synchronous and does not support `wait=False`.
 
-## Evidence、文件、日志与隐私
+## Evidence, files, logs, and privacy
 
-每次 `get_input()` 到 `submit()` 是一个 Evidence 事务。只有不可变 Submission 成功加入 History 后才会提交 Evidence；Submission 构造失败不会推进日志 offset 或 Trace 预算。
+Each `get_input()` to `submit()` interval is one Evidence transaction. Evidence commits only after the immutable Submission is appended to History; a failed submission build does not advance log offsets or Trace budgets.
 
-- Repo metadata 有明确上限，只包含路径、类型、大小和 fingerprint，不包含仓库文件正文。
-- 默认文件追踪只记录 hash、大小、mode 和变化类型；仅 `upload_diff=True` 时文本内容才进入 Evidence。
-- `submit(..., logs=[...])` 只读取显式指定文件的增量，并要求启用 Evidence 采集。
-- `save_local=True` 将结构化记录写入 `.kuma/runs/<run_id>/submissions/`；本地记录不能替代官方提交。
-- `CaptureStatus`、`missing`、`dropped_count` 和 `runtime_warnings` 用于呈现采集不完整或降级。
+- Repository metadata is bounded and contains paths, types, sizes, and a fingerprint—not repository file contents.
+- File tracking records hashes, sizes, modes, and change types by default. Text content enters Evidence only when `upload_diff=True`.
+- `submit(..., logs=[...])` reads increments only from explicitly selected files and requires Evidence capture to be enabled.
+- `save_local=True` writes structured records under `.kuma/runs/<run_id>/submissions/`; local persistence does not replace official submission.
+- `CaptureStatus`, `missing`, `dropped_count`, and `runtime_warnings` expose partial or degraded capture.
 
-框架无关的运行时元数据遵循 [Runtime Evidence 合同](runtime-evidence.md)。v1 仍仅含哈希；只有官方服务明确协商支持 Agent output 后，才会接收经过敏感检查的 completed Agent 最终输出。Agent output canonical JSON 上限为 4 MiB，单份 Runtime Evidence 为 5 MiB，整个官方 multipart 请求为 8 MiB；均不截断。该文档是 schema 与隐私规则的权威说明。
+Framework-neutral runtime metadata follows the [Runtime Evidence contract](runtime-evidence.md). v1 remains hash-only; only an explicitly negotiated output-capable official service receives a scanned completed Agent output. Canonical Agent output is capped at 4 MiB, one Runtime Evidence item at 5 MiB, and the complete official multipart body at 8 MiB. Nothing is truncated. That page is the authoritative schema and privacy reference.
 
-上传到官方服务前，KUMA 会扫描 output、error、路径、diff、显式日志和自定义 Case 中的敏感内容。API Key 仅用于鉴权，不会加入 Evidence。`allow_sensitive=True` 只是普通 Evidence 的显式覆盖，不能替代隔离与 secret 管理。
-
-已知 OpenAI、OpenAI project 与 Anthropic 的 `sk-` 凭证前缀会在官方上传前
-按 `sk_api_key` 拒绝。finding 只包含规则和位置，不包含命中的值；KUMA 不做
-熵猜测。
-
-自定义 Case 只包含公开 Input 与约束。不要附带 Rubric：`rubric`、
-`private_rubric` 和 `rubric_context` 都会在上传前被拒绝；官方 Judge 直接评估
-用户提供的公开 Case。
+Before official upload, KUMA scans output, errors, paths, diffs, explicit logs, and custom Cases for sensitive material. The API key is used for authorization and is not added to Evidence. `allow_sensitive=True` is an explicit ordinary-Evidence override, not a substitute for isolation or secret hygiene.
 
 ## OpenTelemetry
 
-已采集的 Trace 仅在服务端广告 `runtime_trace` 时作为完整哈希绑定正文上传；
-不支持时在 Judge POST 前拒绝，这不同于未配置 Provider 的非阻断 warning。
-工具参数/结果需要真实 `execute_tool` 埋点，普通 span 不会凭空产生正文。
-见 [Runtime Trace 与文件 diff](runtime-trace.zh-CN.md)：本地示例、升级方式、
-正文上限及独立的 `upload_diff=True` 选项。
+OpenTelemetry (OTel) is the standard observability API used by Agent frameworks and instrumentation to emit spans. KUMA maps spans that were **actually emitted in the same process** into bounded Evidence. It does not invent Agent activity and is not an OTel Collector, backend, or trace UI.
 
-OpenTelemetry（OTel）是 Agent 框架和 instrumentation 用来产生 span 的标准可观测性接口。KUMA 只把**同一进程中真实产生**的 span 映射为有界 Evidence；它不会伪造 Agent 行为，也不是 OTel Collector、后端或 Trace UI。
-
-仅在需要 Trace Evidence 时安装可选能力，核心包不强制依赖 OTel：
+Install OTel support only when trace capture is needed; the core package does not require it:
 
 ```bash
-python -m pip install "kuma-defuzex[otel]==0.2.8"
+python -m pip install "kuma-defuzex[otel]"
 ```
 
-声明的 `opentelemetry-sdk>=1.30,<2` 范围完整支持 Logs exporter 改名：
-KUMA 在 1.30–1.38 使用配套的旧 API 名称，从 1.39 起使用配套的新名称，
-不会混用两代符号。若安装版本不提供任一完整组合，导入错误会说明当前版本和支持范围。
+`create_run()` now follows this precedence:
 
-`create_run()` 现在按以下优先级工作：
-
-| 当前环境 | Run 行为 | Trace 行为 | 提示 |
+| Environment | Run behavior | Trace behavior | Warning |
 | --- | --- | --- | --- |
-| 显式传入 `trace_evidence` capture | 正常继续 | 使用显式 capture | 无 |
-| 已配置兼容的全局 SDK `TracerProvider` | 正常继续 | 自动复用 | 无 |
-| 未安装 OTel 或没有兼容的全局 Provider | 正常继续 | 无 Trace Evidence | `trace_auto_capture_unavailable` |
-| 自动附着失败 | 正常继续 | 降级为无 Trace | `trace_auto_attach_failed` |
+| Explicit `trace_evidence` capture | Continues | Uses the supplied capture | None |
+| Compatible global SDK `TracerProvider` already configured | Continues | Reuses it automatically | None |
+| OTel missing or no compatible global provider | Continues | No Trace Evidence | `trace_auto_capture_unavailable` |
+| Automatic attachment fails | Continues | Degrades to no Trace Evidence | `trace_auto_attach_failed` |
 
-这些 warning 只表示 Evidence 完整性，记录在 `run.runtime_warnings`，不会阻断 `get_input()`、`submit()` 或 Judge。只安装 extra 不会凭空产生 span；Agent 框架或 instrumentation 还必须配置全局 SDK Provider 并实际发出 span。常见情况下无需任何 KUMA 专属设置：
+The warnings are Evidence-completeness signals in `run.runtime_warnings`; they never block `get_input()`, `submit()`, or Judge. Installing the extra alone does not create spans. A framework or instrumentation must configure a global SDK provider and emit spans. In that common case, no KUMA-specific setup is needed:
 
 ```python
 from opentelemetry import trace
@@ -274,11 +272,11 @@ while (test_input := run.get_input()) is not None:
     report = run.submit(output)
 ```
 
-如果应用没有兼容 Provider，继续使用 `run.submit(output)` 即可；需要时可将 `trace_auto_capture_unavailable` 转换成面向用户的非阻断提示。
+If the application has no compatible provider, continue with `run.submit(output)` and optionally show a user-facing notice when `trace_auto_capture_unavailable` is present.
 
-### 仍然支持显式配置
+### Explicit configuration remains supported
 
-非全局 Provider 或自定义资源上限继续使用原有显式 API。显式 capture 始终优先于自动发现，KUMA 也永远不会替换或重置全局 Provider：
+Use the existing explicit API for a non-global provider or custom limits. Explicit capture always wins over automatic discovery, and KUMA never replaces or resets a global provider:
 
 ```python
 from opentelemetry.sdk.trace import TracerProvider
@@ -299,23 +297,31 @@ run = create_run(
 )
 ```
 
-span 数量、属性、事件、文本和整个 Run 的字节数均有上限。拒绝式 allowlist 会排除 prompt、completion、源码、日志正文、Key 与凭证。显式 `submit(output)` 始终是可移植的回退；只有受支持的 Agent/Workflow span 提供合法最终输出时才能省略 output。自动捕获当前覆盖 span；普通日志仍遵循既有的显式 Submission 日志合同。KUMA 不提供 OTLP receiver、跨进程关联、Trace UI 或存储服务。
+Span counts, attributes, events, text and total Run bytes are bounded. Ordinary
+attributes use a restrictive allowlist; recognized model/tool bodies have separate
+bounded redacted projections, not unrestricted prompt/log collection. Credentials
+and private evaluation content are not admitted. Explicit submit(output) remains
+the portable fallback; omission requires supported Agent/Workflow final output.
+Native OTel logs retain safe metadata/hashes; explicit file logs retain their
+separate Submission contract. KUMA provides no OTLP receiver, cross-process Trace
+capture, Trace UI or storage server. See [OpenInference](openinference.md) and
+[explicit cloud observations](cloud-observations.md).
 
-## Docker 与运行时安全
+## Docker and runtime security
 
-官方正式运行默认要求 SDK 与 Agent 位于同一个受控容器。`allow_local=True` 是开发开关，不是沙箱。用户仍需限制 Agent 的文件、命令、网络、资源和 secret 权限。
+Official production runs require the SDK and Agent in the same controlled container by default. `allow_local=True` is a development switch, not a sandbox. The user remains responsible for the Agent's file, command, network, resource, and secret permissions.
 
-构建仓库提供的用户流程示例：
+Build the supplied user-flow example:
 
 ```bash
 docker build -f examples/full_stack/Dockerfile.user-flow -t kuma-user-flow .
 ```
 
-示例所需的工作区和运行参数见[全栈用户流程指南](../examples/full_stack/README.zh-CN.md)。
+See the [full-stack user-flow guide](../examples/full_stack/USER_GUIDE.md) for its exact workspace and runtime requirements.
 
-## 错误、重试与超时
+## Errors, retries, and timeouts
 
-通过 `KumaError` 捕获稳定 SDK 错误：
+Catch stable SDK errors through `KumaError`:
 
 ```python
 from kuma.errors import KumaError
@@ -326,46 +332,40 @@ except KumaError as exc:
     print(exc.code, exc.retryable, exc.request_id)
 ```
 
-常见子类包括 `ConfigurationError`、`AuthenticationError`、`PermissionDeniedError`、`ValidationError`、`SensitiveDataError`、`LimitExceededError`、`InputProtocolError`、`ProviderError`、`KumaTimeoutError`、`ServiceBusyError` 和 `ServiceError`。
+Common subclasses include `ConfigurationError`, `AuthenticationError`, `PermissionDeniedError`, `ValidationError`, `SensitiveDataError`, `LimitExceededError`, `InputProtocolError`, `ProviderError`, `KumaTimeoutError`, `ServiceBusyError`, and `ServiceError`.
 
-`timeout` 限制单次公开 HTTP 尝试；`operation_wait_timeout` 限制完整的官方单 Case 或 Judge operation。POST 重试会复用稳定幂等键；只有服务端声明的瞬态失败才会在 `max_retries` 范围内重试，`ServiceBusyError` 不会自动重试。
+`timeout` bounds one public HTTP attempt. `operation_wait_timeout` bounds the complete official single-Case or Judge operation. POST retries reuse a stable idempotency key; only server-declared transient failures are retried within `max_retries`, and `ServiceBusyError` is not retried automatically.
 
-`exc.request_id` 来自当前响应的可选 `X-Request-ID`，仅接受恰好 32 位小写十六进制值。缺失、非法或重复值均为 `None`，不会用 JSON 正文、私有服务或本地 `kreq_…` ID 替代。异步失败关联返回失败状态的轮询响应，而非首次启动请求。解码/大小/状态及 operation 启动/轮询/结果校验失败也保留对应合法 ID；无响应网络失败和本地持久化错误不继承旧 ID。响应头可能是服务端回显的值，不保证由服务端生成。
+`exc.request_id` is the actual response's `X-Request-ID`, retained only when it is exactly 32 lowercase hexadecimal characters. It may be `None`: the header is optional, invalid or duplicate headers are ignored, and no ID is invented. It is not proof that the server generated the ID, since the server can echo an incoming ID. For an asynchronous failed operation it identifies the failing poll response, not the original start request. JSON-body IDs, private Core IDs, and the local `kreq_…` client recovery ID are never substituted; use `kuma requests list/show` for that separate local identity. Error class, code, and retry decisions are unchanged.
 
-Judge 中断（`KeyboardInterrupt`、`SystemExit`、取消异常）仍原样抛出，同时恢复 `completed`。应用捕获中断并保留 Run 后，可再次调用 `run.judge()`；已知官方 operation 只继续 GET 轮询。SDK 不伪造报告，停止本地等待不等于取消远端任务。强制终止进程无法执行这项清理。
+Correlation also survives rejected JSON/UTF-8, response-size limits (including HTTP error bodies), unexpected HTTP status, and invalid operation start/poll/result schemas. It refers only to the response whose validation failed. Network failures before receiving a response, local persistence failures, and missing-header responses do not inherit an earlier response's ID.
 
-固定文案、安全字段约束和历史兼容见[公开错误诊断](public-error-diagnostics.zh-CN.md)。具体原因需要服务端实际提供；旧版通用错误仍保持通用，不补造原因。
+An operation timeout retains bounded recovery metadata without storing credentials, request content, Evidence, or results. Judge retry requires the original Run and History; the high-level API cannot rebuild a lost Run from only `run_id` after process exit.
 
-官方请求会在 `.kuma/requests/` 保留有界元数据，不保存凭证、请求正文、
-Evidence 或 Rubric。进程退出后，可使用 `kuma requests list`、
-`kuma requests show <client-request-id>` 与
-`kuma requests resume <client-request-id>`（或对应 Python API）。已知 operation
-只执行 GET 轮询；若接受响应在本地保存 operation ID 前丢失，则通过鉴权查询
-恢复。恢复成功的 Judge 报告写入 `.kuma/reports/<run_id>.json`。
+If `KeyboardInterrupt`, `SystemExit`, or cancellation interrupts Judge, the exception still propagates; KUMA does not swallow it or fabricate a report. If your application catches it and retains the Run, its state is `completed` and `run.judge()` can be called again. An already-started official operation resumes by polling its existing ID, not creating another task. Interrupting local waiting does not cancel the remote operation. This recovery does not apply to forcibly terminating the process.
 
-## 故障排查
+## Troubleshooting
 
-| 现象 | 处理 |
+| Symptom | Action |
 |---|---|
-| 缺少 API Key | 配置有效 Key，或使用完全本地 Provider / `judge=False` |
-| Agent Profile 被拒绝 | 检查 UTF-8、front matter、必需标题和结构化 Input schema |
-| `DockerRequiredError` | 使用同一个受控容器；仅可信开发环境设置 `allow_local=True` |
-| `submit()` 返回 `None` | 检查剩余 Input、`judge`、`run.state` 与 `run.history` |
-| `InputProtocolError` | 严格交替执行一次 `get_input()` 与一次 `submit()`，不要并发推进 |
-| 敏感数据被拒绝 | 从 output、路径、日志、diff 与自定义 Case 中移除 secret |
-| operation 超时或响应丢失 | 查看 `.kuma/requests/`，再恢复同一个客户端请求 ID |
-| 缺少 Trace 输出 | 显式提交 JSON 输出，或正确安装并 attach `[otel]` |
+| Missing API key | Configure a valid key or use fully local Providers / `judge=False` |
+| Agent Profile rejected | Check UTF-8, front matter, required headings, and structured-input schema |
+| `DockerRequiredError` | Use one controlled container; enable `allow_local=True` only for trusted development |
+| `submit()` returns `None` | Check remaining Inputs, `judge`, `run.state`, and `run.history` |
+| `InputProtocolError` (`invalid_run_state`) | Alternate one `get_input()` with one `submit()` and avoid concurrent advancement |
+| Sensitive-data rejection | Remove secrets from output, paths, logs, diffs, and custom Cases |
+| Operation timeout | Keep the original Run, inspect `retryable`, and retry without changing protocols |
+| Missing Trace output | Submit explicit JSON output or install and attach `[otel]` correctly |
 
-## 参考
+## Reference
 
-- [架构](architecture.md)
-- [Python API 参考](api-reference.zh-CN.md)
-- [策略组](strategy-groups.zh-CN.md)
-- [Agent 工具能力](agent-tool-capabilities.zh-CN.md)
-- [公开 API Contract](api-contract.md)
-- [Runtime Evidence 合同](runtime-evidence.md)
-- [最小本地示例](../examples/minimal_local.py)
-- [Single Agent 模板](../examples/single_agent_template/README.md)
-- [全栈用户流程示例](../examples/full_stack/README.zh-CN.md)
-- [安全策略](../SECURITY.md)
-- [贡献说明](../CONTRIBUTING.md)
+- [Architecture](architecture.md)
+- [Python API reference](api-reference.md)
+- [Strategy Groups](strategy-groups.md)
+- [Agent tool capabilities](agent-tool-capabilities.md)
+- [Public API contract](api-contract.md)
+- [Runtime Evidence contract](runtime-evidence.md)
+- [Minimal local example](../examples/minimal_local.py)
+- [Single Agent template](../examples/single_agent_template/README.md)
+- [Full-stack user-flow example](../examples/full_stack/USER_GUIDE.md)
+- [Architecture and security boundaries](architecture.md)

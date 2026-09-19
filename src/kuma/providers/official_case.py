@@ -19,6 +19,7 @@ from ..repository.case_artifacts import validate_public_original
 from ..repository.metadata import prepare_repo_meta_upload
 from ..repository.privacy import enforce_sensitive_policy, scan_sensitive_json
 from ..repository.strategy_groups import validate_strategy_group_wire_selection
+from ..repository.tool_capabilities import prepare_agent_capabilities_upload
 from ..transport.backend import BackendClient, new_idempotency_key
 from ..transport.operations import PendingOperationStore, await_operation
 from ..transport.request_records import (
@@ -520,8 +521,9 @@ def _safe_case_payload(
     payload can start a paid operation; Backend validation remains authoritative.
 
     Args:
-        context: Validated Agent Profile, repository metadata, strategy, and local
-            Case normalization ceiling for this Run.
+        context: Agent Profile, repository metadata, strategy, normalization
+            ceiling, and optional complete tool declaration for this Run. Tools
+            are revalidated here; absence omits the field without negotiation.
         allow_sensitive: Whether ordinary allowlisted metadata may pass the
             scanner. Secrets and private fields remain forbidden.
         evidence_capabilities: Canonically ordered runtime Evidence kinds that
@@ -535,13 +537,16 @@ def _safe_case_payload(
 
     Raises:
         ConfigurationError: If official generation cannot represent the Input.
-        ValidationError: If required behavior sections are malformed.
+        ValidationError: If required behavior sections are malformed, or with
+            ``tool_capabilities_invalid`` if the declared document is invalid.
         LimitExceededError: If public text or metadata exceeds a size bound.
         SensitiveDataError: If the upload scanner rejects the public fields.
 
     Postconditions:
         The payload contains no raw Agent Profile body, repository contents,
         private rubric, service key, or model configuration.
+        Declared tool schemas remain intact and participate in the caller's
+        request hash; privacy failures never retry with the field removed.
 
     Side Effects:
         None. This helper does not perform entitlement or Case network requests.
@@ -559,6 +564,10 @@ def _safe_case_payload(
     if context.strategy_group_selection is not None:
         safe_fields["strategy_group_selection"] = (
             validate_strategy_group_wire_selection(context.strategy_group_selection)
+        )
+    if context.tool_capabilities is not None:
+        safe_fields["tool_capabilities"] = prepare_agent_capabilities_upload(
+            context.tool_capabilities
         )
     findings = scan_sensitive_json(safe_fields, location="case_generation_request")
     enforce_sensitive_policy(findings, allow_sensitive=allow_sensitive)

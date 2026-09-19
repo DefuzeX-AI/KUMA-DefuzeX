@@ -9,9 +9,13 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from ..errors import ValidationError
+from ..errors import SensitiveDataError, ValidationError
 from .json_schema import validate_schema
-from .privacy import enforce_sensitive_policy, scan_sensitive_json
+from .privacy import (
+    contains_private_data,
+    enforce_sensitive_policy,
+    scan_sensitive_json,
+)
 
 AGENT_CAPABILITIES_SCHEMA_VERSION = "kuma.agent_tool_capabilities.v1"
 MAX_CAPABILITY_FILE_BYTES = 262_144
@@ -135,8 +139,10 @@ class AgentCapabilities:
         tools: Deterministically ordered validated tool declarations.
 
     Security/Privacy:
-        This document contains only schema and low-sensitivity categories. It is
-        never uploaded by the current Official Case wire.
+        Official Case generation uploads an explicitly linked document after
+        revalidation, including schema descriptions, defaults, and examples.
+        Never include credentials or private evaluation fields. Local loading,
+        scanning, and saving alone perform no upload or tool execution.
     """
 
     schema_version: str
@@ -246,7 +252,12 @@ def _resource_scopes(value: Any) -> tuple[ResourceScope, ...]:
         raw = _closed_mapping(item, _RESOURCE_FIELDS, "resource scope")
         resource = raw["resource"]
         access = raw["access"]
-        if resource not in _RESOURCE_KINDS or access not in _RESOURCE_ACCESS:
+        if (
+            type(resource) is not str
+            or type(access) is not str
+            or resource not in _RESOURCE_KINDS
+            or access not in _RESOURCE_ACCESS
+        ):
             raise ValidationError(
                 "resource scope contains an unsupported category",
                 code="tool_capabilities_invalid",
@@ -279,7 +290,16 @@ def _tool(value: Any) -> ToolCapability:
         raise ValidationError(
             "input_schema must be a JSON object", code="tool_capabilities_invalid"
         )
-    validate_schema(schema)
+    schema_valid = False
+    try:
+        validate_schema(schema)
+        schema_valid = True
+    except ValidationError:
+        pass
+    if not schema_valid:
+        raise ValidationError(
+            "Tool input_schema is invalid", code="tool_capabilities_invalid"
+        )
     side_effects = _closed_string_list(
         raw["side_effects"], label="side_effects", allowed=_SIDE_EFFECTS
     )
@@ -342,7 +362,7 @@ def validate_agent_capabilities(value: Any) -> AgentCapabilities:
             "Unsupported tool capability schema_version",
             code="tool_capabilities_invalid",
         )
-    if raw["provenance"] not in _PROVENANCE:
+    if type(raw["provenance"]) is not str or raw["provenance"] not in _PROVENANCE:
         raise ValidationError(
             "Unsupported tool capability provenance",
             code="tool_capabilities_invalid",
@@ -380,6 +400,64 @@ def validate_agent_capabilities(value: Any) -> AgentCapabilities:
         allow_sensitive=False,
     )
     return document
+
+
+def prepare_agent_capabilities_upload(value: Any) -> dict[str, Any]:
+    """Revalidate the complete user declaration immediately before Case upload.
+
+    Args:
+        value: AgentCapabilities or its complete canonical mapping, explicitly
+            selected by the user. None is not a document; callers omit the wire
+            field when no document was declared.
+
+    Returns:
+        Detached normalized document with every supported field and input_schema
+        annotation/default/example intact. This remains user-declared context,
+        not proof of available tools or a system instruction.
+
+    Raises:
+        ValidationError: Safe tool_capabilities_invalid on shape, JSON graph,
+            schema/reference, type or 262144-byte canonical-file limit failure.
+        SensitiveDataError: Sensitive values or existing private-metadata fields
+            were found anywhere, including schema descriptions/defaults/examples.
+            No allow_sensitive override applies and no field is silently removed.
+
+    Postconditions:
+        Revalidation catches manually constructed dataclasses and nested changes
+        after loading. SDK preflight and OfficialCaseProvider share this boundary;
+        success does not select a Group or alter Judge/Evidence contracts.
+
+    Side Effects:
+        None. No files, tools, references or network resources are accessed.
+        Error chains retain no rejected object, schema value or library exception.
+    """
+    error: ValidationError | None = None
+    try:
+        raw = value.to_dict() if type(value) is AgentCapabilities else value
+        document = validate_agent_capabilities(raw)
+        payload = document.to_dict()
+        if contains_private_data(payload):
+            raise SensitiveDataError(
+                "Private metadata is not allowed in tool capabilities"
+            )
+    except SensitiveDataError:
+        error = SensitiveDataError(
+            "Tool capabilities contain sensitive data; remove it before upload"
+        )
+    except (
+        ValidationError,
+        TypeError,
+        ValueError,
+        RecursionError,
+        AttributeError,
+        KeyError,
+    ):
+        error = ValidationError(
+            "Tool capability document is invalid", code="tool_capabilities_invalid"
+        )
+    if error is not None:
+        raise error
+    return payload
 
 
 def scan_agent_tools(tools: Sequence[Mapping[str, Any]]) -> AgentCapabilities:
@@ -427,8 +505,13 @@ def scan_agent_tools(tools: Sequence[Mapping[str, Any]]) -> AgentCapabilities:
 
 
 def _canonical_bytes(document: AgentCapabilities) -> bytes:
-    """Serialize one validated document deterministically as UTF-8 JSON."""
-    return (
+    """Measure the local/upload contract using pretty UTF-8 JSON and a final LF.
+
+    Validation owns shape/finite/depth limits before this helper; invalid Unicode
+    raises safe ``tool_capabilities_invalid`` without retaining rejected text.
+    No document is truncated or changed and no external resource is accessed.
+    """
+    text = (
         json.dumps(
             document.to_dict(),
             ensure_ascii=False,
@@ -437,7 +520,18 @@ def _canonical_bytes(document: AgentCapabilities) -> bytes:
             allow_nan=False,
         )
         + "\n"
-    ).encode("utf-8")
+    )
+    encoded: bytes | None = None
+    try:
+        encoded = text.encode("utf-8")
+    except UnicodeError:
+        encoded = None
+    if encoded is None:
+        raise ValidationError(
+            "Tool capability document must be valid UTF-8",
+            code="tool_capabilities_invalid",
+        )
+    return encoded
 
 
 __all__ = [

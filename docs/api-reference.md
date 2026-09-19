@@ -1,13 +1,31 @@
 # KUMA Python API reference
 
+For explicit `KumaClient.upload_observation`, `list_observations`,
+`get_observation` and `delete_observation`, including arguments, return fields,
+scopes and privacy, see [Cloud observations](cloud-observations.md).
+These unreleased 0.3.0 APIs are not available in public 0.2.8.
+
 For active operation interval revisions, bounded backoff and strict timeout
 behavior, see [Operation polling and deadlines](operation-polling.md).
 
-[简体中文](api-reference.zh-CN.md) | English
+[Chinese overview](../README.zh-CN.md) | English
 
 This page documents the stable user-facing Python entry points. Types, defaults,
 ranges, side effects, and failure behavior match the current implementation.
 KUMA uses keyword-only arguments for its main APIs so call sites remain readable.
+
+## Local observation: `observe` and `ObservationSession`
+
+Use `kuma.observe(tracer_provider=None, external_run_id=None,
+external_invocation_id=None, limits=None)` as a synchronous or asynchronous context
+around an already instrumented Agent. It creates no Case/Judge, reads no credentials
+and performs no upload. After exit, call `export()` for detached redacted JSON,
+`render_text()` for a timeline, or `save(path, root=...)` for explicit atomic local
+publication without overwriting existing files. Capture failures do not block the
+Agent; an Agent exception is propagated unchanged.
+
+See [Local observation](observation.md) for every parameter, the complete export
+schema, lifecycle/async behavior, limits, privacy, exceptions and a runnable example.
 
 ## `check_for_updates`
 
@@ -59,8 +77,8 @@ credential file.
 validated key. Atomic replacement prevents a partially written final file; a
 failed write removes its temporary file.
 
-**Raises:** `ConfigurationError` for an invalid key or unresolved credential
-location, and `OSError` for a real filesystem failure.
+**Raises:** `ConfigurationError` for invalid keys, unresolved credential locations
+or mapped filesystem failures. Public errors do not expose raw OS paths/causes.
 
 **Side effects and security:** creates the credential directory if needed but
 makes no network request. The file contains the real key; never print, upload,
@@ -82,17 +100,17 @@ run = create_run(
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
 | `repo_path` | `str \| os.PathLike[str]` | `"."` | Chooses the repository being tested. KUMA reads bounded metadata and, when enabled, observes file changes below this directory. Use `"."` when your Python process already runs at the repository root. |
-| `agent_profile_path` | `str \| os.PathLike[str] \| None` | `None` | Points to the UTF-8 file that describes the Agent, its production scenario, expected behavior, and prohibited boundaries. Supply it for official Case generation. The selected Strategy Group still controls the testing capability/domain/method; profile prose cannot select or override that group. Front matter may contain a closed `strategy_group` coordinate and a relative `tool_capabilities` file; both are validated before Provider I/O. Omit the path only when your custom Case Provider does not need an Agent Profile. |
+| `agent_profile_path` | `str \| os.PathLike[str] \| None` | `None` | Points to the UTF-8 Agent Profile describing the Agent, production scenario, expected behavior, and prohibited boundaries. It gives context to the selected Strategy Group but never selects or overrides it. Supply it for official Case generation. Front matter may contain the only explicit group selector—a closed `strategy_group` coordinate—and a relative `tool_capabilities` file; both are validated before Provider I/O. Omit when loading `case_path` or when a custom Case Provider declares `agent_profile_required=False`. |
 | `case_path` | `str \| os.PathLike[str] \| None` | `None` | Loads a complete saved `kuma.case_artifact.v1` instead of generating a Case. Relative paths use `repo_path`, not cwd. Cannot combine with `case_provider`, `agent_profile_path`, or non-`auto` strategy. Loading validates at most 5 MiB before credentials/runtime setup and makes no CaseGen/catalog call; `max_steps=None` uses the saved count, a smaller explicit limit fails without truncation. Official Judge still needs credentials and validates the server original. |
 | `case_provider` | `CaseProvider \| callable \| None` | `None` | Chooses who creates the test Inputs. Leave `None` to request an official Case from KUMA; pass a callable when your application supplies its own local Case. |
 | `judge_provider` | `JudgeProvider \| callable \| None` | `None` | Chooses who evaluates all submitted results and builds the final report. Leave `None` for the official Judge, or pass a callable for your own local evaluation. Ignored when `judge=False`. |
-| `strategy` | `str` | `"auto"` | `auto` uses the exact catalog default unless a Profile group is explicit. `safety-baseline` uniformly samples one of seven validated Basic Safety groups for one Case; an explicit Profile group wins. Custom providers receive the value unchanged. Other strategy ID validation is unchanged. See [selection and recovery boundaries](strategy-groups.md#sample-one-basic-safety-group). |
+| `strategy` | `str` | `"auto"` | `auto` uses the catalog's exact default unless a Profile group is explicit. `safety-baseline` uniformly samples one of seven validated Basic Safety groups for one Case; an explicit Profile group wins. Custom providers receive the value unchanged. Other strategy ID validation is unchanged. See [selection and recovery boundaries](strategy-groups.md#sample-one-basic-safety-group). |
 | `max_steps` | `int \| None` | `None` | Limits how many test steps this Run may contain. For example, `3` allows one, two, or three steps—it does not force exactly three. `None` uses the official service limit; custom Case Providers require an explicit positive value. An explicit official value above the advertised limit fails before Case generation, and KUMA never truncates a returned Case. |
 | `judge` | `bool` | `True` | Controls whether KUMA evaluates the Run after the last Input. Keep `True` to receive a `TestReport`; use `False` when you only want to execute and record the Case, in which case `run.report` remains `None`. |
 | `on_failure` | `str` | `"continue"` | Decides what happens after you submit a step as `failed`, `timeout`, or `aborted`. `"continue"` delivers the next Input; `"stop"` ends the Run immediately. |
-| `allow_local` | `bool` | `False` | Allows the Run to start outside Docker for trusted local development. It only bypasses the Docker safety prerequisite: it does not sandbox the Agent, expand file access, or weaken validation and privacy checks. |
+| `allow_local` | `bool` | `False` | Allows the Run to start outside Docker for trusted local development. It only bypasses the Docker execution constraint: it does not sandbox the Agent, expand file access, or weaken validation and privacy checks. |
 | `track_files` | `bool` | `True` | Tells KUMA to compare repository file metadata before and after each Input so the Judge can see which files were created, modified, deleted, or renamed. Set `False` when file changes are irrelevant or unavailable. |
-| `upload_diff` | `bool` | `False` | Sends safe unified patches through negotiated `file_diff`; requires `track_files=True`. Default False keeps hashes. Unsupported servers fail before Judge POST; oversized/binary/sensitive patches are omitted whole with a reason, never truncated. See [limits](runtime-evidence.md). |
+| `upload_diff` | `bool` | `False` | Adds bounded changed text to file Evidence instead of sending only paths, hashes, sizes, and change types. Enable only when the Judge needs the actual diff and the repository text is safe to disclose; requires `track_files=True`. |
 | `save_local` | `bool` | `False` | Writes a local JSON copy of each committed Submission under `.kuma/runs/<run_id>/`. Use it for debugging or audit records. It does not replace submission to an official Judge. |
 | `allow_sensitive` | `bool` | `False` | Lets ordinary Evidence continue when KUMA's scanner flags content as potentially sensitive. Leave `False` unless you reviewed that content and intend to disclose it; this never allows secrets into OTel Trace Evidence. |
 | `timeout` | `float` | `300.0` seconds | Limits one HTTP connection attempt to the public KUMA service. Lower it to fail individual network calls sooner. It does not limit the total time spent waiting for Case generation or Judge completion. |
@@ -101,8 +119,15 @@ run = create_run(
 | `api_key` | `str \| None` | `None` | Supplies the official-service credential for this Run only. Use it to override the environment or saved credential. With `None`, KUMA checks `KUMA_API_KEY` and then the user credential file. Fully local Provider combinations need no key. |
 | `trace_evidence` | `TraceEvidenceCapture \| None` | `None` | Supplies a specific in-process OTel capture and its limits for this Run. Pass the object returned by `configure_trace_evidence()` when you need explicit control. With `None`, KUMA safely reuses a compatible global Provider when available; otherwise the Run continues without Trace Evidence and records a warning. |
 | `scan_strategy_group` | `bool` | `False` | Disabled automatic matching flag: keep `False`. `True` raises `ConfigurationError(config_invalid)` before file or network I/O, including with an explicit group or custom provider. Privacy scanning and Evidence capability validation remain enabled. |
+| `external_run_id` | `str \| None` | `None` | Optional non-secret caller execution label: 1–128 ASCII characters, starting with a letter or digit, then letters, digits, dot, underscore, colon or hyphen. Enables negotiated Official Judge correlation; unsupported services reject before Judge POST instead of dropping it. Omission preserves existing wire unless a Submission supplies an invocation label. |
 
 <!-- api-parameters:create_run:end -->
+
+`external_run_id=None` optionally labels the caller's Agent execution. Use a
+non-secret ASCII label of 1-128 characters (`A-Z`, `a-z`, digits, `.`, `_`, `:`,
+`-`, starting with a letter or digit). It enables negotiated Run correlation;
+unsupported official services reject before Judge POST rather than dropping it.
+See [Run correlation and stage timings](run-correlation.md).
 
 **Returns:** a synchronous `Run` in `ready` state.
 
@@ -124,15 +149,6 @@ service failures raise a concrete `KumaError` subclass with stable `code`,
 metadata, may create `.kuma/`, and may call only the public Backend for official
 Providers. It never contacts MCP, a model, or a database directly. Custom
 Providers run in the caller's process with that process's permissions.
-
-### Custom Case boundary
-
-A custom Case supplies only public Inputs and constraints. Its `rubric`
-compatibility slot must be `None`; mappings containing `rubric`,
-`private_rubric`, or `rubric_context` fail with
-`custom_rubric_not_supported` before upload. When the official Judge evaluates
-a custom Case, KUMA sends that closed public Case directly and does not create
-or transmit caller-authored criteria, a Rubric ID, or a private revision ID.
 
 ## Agent Profile parsing
 
@@ -222,6 +238,7 @@ but it never calls Judge or appends history.
 | `error` | `str \| None` | `None` | Provides a short, user-safe explanation when `status` is not `"completed"`. It becomes part of the Submission Evidence, so summarize the failure without secrets, file contents, or raw tracebacks. |
 | `logs` | `list[str \| Path] \| None` | `None` | Names local log files whose newly appended bytes should accompany this Submission. KUMA reads only a bounded increment and applies path and sensitive-data checks. Leave `None` when logs are not needed. |
 | `wait` | `bool` | `True` | Keeps final Judge execution synchronous: the last `submit()` returns only after the report or an error is available. The current public API requires `True`; background polling is not exposed. |
+| `external_invocation_id` | `str \| None` | `None` | Labels this Agent invocation using the same safe ASCII rules as `external_run_id`. Enables negotiated correlation even when the Run label is omitted; never an authorization credential. |
 
 <!-- api-parameters:submit:end -->
 
@@ -248,16 +265,17 @@ credentials, raw tracebacks, prompts, or unapproved file contents.
 
 ### `judge`
 
-The Backend advertises `max_files` as twice the supported maximum Case step
-count (currently 10 × 2 = 20), not twice this Run's actual steps. The Case file
-and every Evidence file each consume a slot. Batch Judge applies that count
-independently to each item, not the batch sum; the SDK never hardcodes 20.
-File-count rejection happens before Judge POST. Existing byte and privacy
-checks remain: the Backend enforces combined Case+Evidence bytes for every
-item, including custom Cases; the SDK preserves its existing per-path byte
-checks and conservative aggregate batch cap. This update does not add a new
-combined-byte preflight for custom single Judge uploads. Deploy the matching
-Backend first; clients continue to respect an older Backend's smaller limit.
+Upload file counts come from the Backend's `max_files` configuration: the
+supported maximum Case step count × 2 (currently 10 × 2 = 20), not this Run's
+actual step count. One Case artifact and every Evidence file consume a slot.
+For batch Judge, this limit applies independently to each item, not their sum.
+The SDK does not hardcode 20. Existing byte and privacy checks remain: Backend
+enforces combined Case+Evidence bytes for every item, including custom Cases.
+The SDK preserves its existing per-path checks and conservative aggregate batch
+cap; this update does not add combined-byte preflight for custom single Judge.
+File-count rejection occurs before the Judge POST and does not start a Judge.
+Deploy the matching Backend configuration before updating clients; an older
+Backend may advertise a smaller limit, which the SDK continues to respect.
 
 <!-- api-parameters:judge:start -->
 
@@ -384,36 +402,12 @@ Use the [Agent tool capabilities guide](agent-tool-capabilities.md) for the clos
 
 `AgentCapabilities`, `ToolCapability`, and `ResourceScope` are immutable public values with detached `to_dict()` output. `AGENT_CAPABILITIES_SCHEMA_VERSION` identifies the accepted document version. Loading or saving may raise `ValidationError` or `SensitiveDataError`; none of these APIs uploads the document.
 
-## JSON serialization
-
-`kuma.to_json(value)` converts an exact public immutable KUMA contract or an
-already JSON-compatible value into a detached plain JSON graph. It returns
-containers and scalars, not encoded text; use
-`json.dumps(kuma.to_json(value), allow_nan=False)` when text is required. The
-conversion supports the public Case, Input, Submission, History, Evidence,
-report, Strategy Group, capability, request-record, and batch-result types.
-Cycles, more than 256 container levels, non-finite numbers, bytes, sets,
-arbitrary dataclasses, subclasses, and unsupported objects fail with
-`ValidationError(code="output_invalid")`. The function performs no I/O and is
-not a redactor.
-
-## Request recovery
-
-Official Case and Judge starts create a non-secret local record under
-`.kuma/requests/` before the first POST. Use `list_requests(repo_path)`,
-`show_request(client_request_id, repo_path=...)`, and
-`resume_request(client_request_id, repo_path=...)` to inspect or resume it from
-a later process. Equivalent commands are `kuma requests list`, `show`, and
-`resume`.
-
-The record keeps bounded identity and status metadata, never the API key,
-request body, Evidence, Rubric, prompt, or provider response. A known operation
-is resumed with GET-only polling. If the original accepted response was lost,
-KUMA first performs authenticated lookup using the stable
-`kreq_<32 lowercase hex>` client request ID. A prepared record that the Backend
-does not know fails as `request_not_started`; KUMA does not invent a bodyless
-POST. Successful Judge recovery writes the public report under
-`.kuma/reports/<run_id>.json` and retains the terminal request record.
+An Agent Profile link to a reviewed capability file opts official Case generation
+into uploading its complete normalized `tool_capabilities`, including schema
+descriptions/defaults/examples. Local helper calls alone do not upload. Omission
+sends no declaration; invalid/sensitive content fails before network I/O with
+`tool_capabilities_invalid` / `sensitive_data_blocked`, with no sensitive override.
+See [Agent tool capabilities](agent-tool-capabilities.md) for bounds and compatibility.
 
 ## OpenTelemetry
 
@@ -442,17 +436,18 @@ installed.
 **Raises and side effects:** invalid Providers or limits raise
 `ConfigurationError`. Registration mutates the selected Provider; call once for
 an explicitly managed Provider. Only bounded allowlisted data is retained;
-prompts, completions, source, raw logs, credentials, and private Rubrics remain
-excluded.
+recognized model/tool bodies use separate redacted projections. This does not
+allow arbitrary source/log bodies, credentials or private Rubrics. See
+[OpenInference capture](openinference.md) for the exact body contract.
 
 <!-- api-parameters:TraceEvidenceLimits:start -->
 
 | Argument | Type | Required/default | What happens when the limit is reached |
 | --- | --- | --- | --- |
-| `max_spans` | positive `int` | `200` | Retains at most this many ended spans per step using deterministic sampling; dropped spans are counted. This per-step cap is independent of the Run-wide byte budget. |
+| `max_spans` | positive `int` | `200` | After this many ended spans have been retained for a Run, additional spans are dropped and the Evidence reports the drop instead of growing memory without bound. |
 | `max_attributes` | positive `int` | `32` | Keeps at most this many safe, allowlisted attributes on each span; additional attributes are dropped and counted. Sensitive attributes remain rejected regardless of this number. |
 | `max_events_per_span` | positive `int` | `20` | Keeps at most this many safe OTel events on each span; later events are dropped and reported. |
-| `max_text_length` | positive `int` | `256` characters | Bounds retained metadata text. Tool argument/result bodies use a separate 4 MiB canonical JSON limit and are never truncated; see [Runtime Trace](runtime-trace.md). |
+| `max_text_length` | positive `int` | `256` characters | Bounds retained metadata strings. Tool arguments/results use a separate 4 MiB canonical JSON limit and are omitted whole, never truncated. See [Runtime Trace](runtime-trace.md). |
 | `max_total_bytes` | positive `int` | `8388608` bytes (8 MiB) | Caps the compact JSON size of all committed Trace envelopes in one Run. KUMA deterministically drops excess Trace data and reports the loss; the value must still fit the smallest valid envelope. |
 | `max_log_records` | positive `int` | `200` | Keeps at most this many normalized OTel log records per step; excess records are dropped and reported. |
 | `max_log_bytes` | positive `int` | `128000` bytes | Caps structured OTel log artifacts committed across one Run; raw log bodies are not retained. |
@@ -545,4 +540,4 @@ object `details: {}` as absence; null/lists/unknown nonempty details remain inva
 Other HTTP details remain discarded; unknown async detail shapes remain rejected.
 Remote free-form messages, private paths and raw model responses are never shown.
 Details do not change retryability, pending identity, billing or automatic retry
-policy. See the [public error diagnostics guide](public-error-diagnostics.md).
+policy. See the [unreleased error change notes](public-error-diagnostics.md).

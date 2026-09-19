@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from ..correlation import validate_run_receipt
 from ..errors import ProviderError
 from ._official_wire import (
     contains_private_fields,
@@ -61,8 +62,41 @@ def _validated_confidence(value: Any) -> str | int | float | None:
 
 def normalize_official_judgment(
     response: Mapping[str, Any],
+    *,
+    expected_run_context: Mapping[str, Any] | None = None,
+    allow_run_receipt: bool = False,
+    run_id: str | None = None,
+    case_id: str | None = None,
+    operation_id: str | None = None,
 ) -> Mapping[str, Any]:
-    """Return the stable public report shape for one Backend Judgment."""
+    """Normalize a public Judgment, validating optional correlation separately.
+
+    Official Provider passes the original negotiated context and public operation
+    identity; durable recovery passes known Run/Case/operation IDs with explicit
+    receipt permission. Missing expected or unexpected receipts fail before local
+    success. Receipt metadata enters a closed extension, not Judge issue content.
+    Ordinary callers omit all keywords and retain previous wire behavior.
+    """
+
+    receipt = None
+    if "run_receipt" in response:
+        if not allow_run_receipt and expected_run_context is None:
+            raise ProviderError("Unexpected Run receipt", code="invalid_response")
+        receipt = validate_run_receipt(
+            response["run_receipt"],
+            judgment_id=response.get("judgment_id"),
+            expected=expected_run_context,
+            run_id=run_id,
+            case_id=case_id,
+            operation_id=operation_id,
+        )
+        response = {
+            key: value for key, value in response.items() if key != "run_receipt"
+        }
+    elif expected_run_context is not None:
+        raise ProviderError(
+            "The Backend omitted the negotiated Run receipt", code="invalid_response"
+        )
 
     if contains_private_fields(response):
         raise ProviderError(
@@ -100,6 +134,8 @@ def normalize_official_judgment(
         result["confidence"] = confidence
     if isinstance(response.get("stop_reason"), str):
         result["stop_reason"] = response["stop_reason"]
+    if receipt is not None:
+        result["extensions"]["run_receipt"] = receipt
     return result
 
 

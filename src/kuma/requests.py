@@ -189,7 +189,13 @@ def _accept_recovered_result(
     """Validate a recovered terminal result before committing local success."""
     stored = store.stored_record()
     if stored.public.request_type == "judgment":
-        normalized = normalize_official_judgment(result)
+        normalized = normalize_official_judgment(
+            result,
+            allow_run_receipt=True,
+            run_id=stored.public.run_id,
+            case_id=stored.public.case_id,
+            operation_id=stored.public.operation_id,
+        )
         run_id = stored.public.run_id
         if run_id is None:
             raise ProviderError(

@@ -10,6 +10,7 @@ from typing import Any
 
 from ..repository.privacy import scan_sensitive_json
 from ..repository.tool_capabilities import _plain_json
+from .trace_model_content import MODEL_OPERATIONS, validate_model_content
 from .trace_tool_content import TOOL_CONTENT_KEYS, TOOL_METADATA_KEYS
 
 TRACE_ARTIFACT_ID = "opentelemetry-trace-evidence"
@@ -17,7 +18,14 @@ TRACE_MEDIA_TYPE = "application/vnd.defuzex.trace-evidence+json"
 TRACE_EXTRA_FIELDS = frozenset({"trace_evidence", "capture_status", "capture_summary"})
 TRACE_MAX_SPANS = 10_000
 TRACE_MAX_LINKS = 128
-_BODY_STATUS = {"present", "not_recorded", "sensitive_content", "size_limit", "invalid"}
+_BODY_STATUS = {
+    "present",
+    "redacted",
+    "not_recorded",
+    "sensitive_content",
+    "size_limit",
+    "invalid",
+}
 _SPAN_FIELDS = {
     "trace_id",
     "span_id",
@@ -98,7 +106,14 @@ def _span(value: Any) -> None:
         isinstance(value.get("attributes"), Mapping)
         and value["attributes"].get("gen_ai.operation.name") == "execute_tool"
     )
-    _require(set(value) == _SPAN_FIELDS | ({"tool_content_status"} if tool else set()))
+    extra = {"model_content"} if "model_content" in value else set()
+    _require(
+        set(value)
+        == _SPAN_FIELDS | ({"tool_content_status"} if tool else set()) | extra
+    )
+    if extra:
+        _require(value["attributes"].get("gen_ai.operation.name") in MODEL_OPERATIONS)
+        validate_model_content(value["model_content"])
     _require(_identifier(value["trace_id"], 32) and _identifier(value["span_id"], 16))
     parent = value["parent_span_id"]
     _require(parent is None or (_identifier(parent, 16) and parent != value["span_id"]))
@@ -149,7 +164,10 @@ def _span(value: Any) -> None:
         _require(isinstance(states, Mapping) and set(states) == {"arguments", "result"})
         for key, field in TOOL_CONTENT_KEYS.items():
             _require(states[field] in _BODY_STATUS)
-            _require((states[field] == "present") == (key in value["attributes"]))
+            _require(
+                (states[field] in {"present", "redacted"})
+                == (key in value["attributes"])
+            )
 
 
 def _validate_trace_artifact(
@@ -308,6 +326,7 @@ def _validate_capture(
             current = parents[current]
         checked.update(path)
     for span in spans:
+        omitted_fields += _validate_model_losses(span, reasons)
         if (
             span["parent_span_id"] is not None
             and (span["trace_id"], span["parent_span_id"]) not in identities
@@ -326,8 +345,27 @@ def _validate_capture(
                     continue
                 suffix = "sensitive" if state == "sensitive_content" else state
                 _require(f"trace_tool_content_{suffix}" in reasons)
-                omitted_fields += int(state != "not_recorded")
+                omitted_fields += int(state not in {"not_recorded", "redacted"})
     _require(omitted_fields <= trace["dropped_count"])
+
+
+def _validate_model_losses(span: Mapping[str, Any], reasons: Sequence[str]) -> int:
+    """Require a truthful stable reason for each non-present model body state.
+
+    Shape validation has already run. Unknown and redacted fields are not
+    counted as whole-field drops; omitted invalid/oversized/private fields are.
+    The caller compares these lower bounds to the actual capture counters.
+    """
+    if "model_content" not in span:
+        return 0
+    omitted = 0
+    for direction in ("input", "output"):
+        state = span["model_content"][direction]["status"]
+        if state != "present":
+            suffix = "sensitive" if state == "sensitive_content" else state
+            _require(f"trace_model_content_{suffix}" in reasons)
+            omitted += int(state not in {"not_recorded", "redacted"})
+    return omitted
 
 
 def validate_trace_artifact(

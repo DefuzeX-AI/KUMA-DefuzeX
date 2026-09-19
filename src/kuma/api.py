@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import replace
@@ -15,6 +16,7 @@ from .config import (
     resolve_create_run_config,
     write_api_key,
 )
+from .correlation import external_identifier
 from .errors import ConfigurationError, KumaError, ProviderError, ValidationError
 from .evidence.runtime_contract import (
     casegen_framework_is_advertised,
@@ -44,8 +46,10 @@ from .repository.strategy_groups import (
     resolve_strategy_group,
     validate_strategy_group_catalog,
 )
+from .repository.tool_capabilities import prepare_agent_capabilities_upload
 from .run import Run
 from .runtime import RuntimeSession
+from .timeline import elapsed_ms
 from .transport.backend import DEFAULT_BASE_URL, BackendClient
 from .transport.catalog_cache import read_strategy_catalog
 
@@ -240,7 +244,7 @@ def _preflight_official_agent_profile_privacy(
     official_case: bool,
     allow_sensitive: bool,
 ) -> None:
-    """Reject sensitive official Agent Profile text before public discovery calls.
+    """Preflight official Profile text and declared tools before discovery calls.
 
     Args:
         agent_profile: Parsed local Agent Profile, or ``None`` for a custom Provider
@@ -252,7 +256,10 @@ def _preflight_official_agent_profile_privacy(
     Raises:
         SensitiveDataError: If an official Agent Profile contains a recognized
             credential or private-data shape and the existing policy disallows
-            it.
+            it, or its declared tools contain sensitive/private content (tools
+            cannot use the override).
+        ValidationError: With ``tool_capabilities_invalid`` when the linked
+            document cannot be safely projected into the Case request.
 
     Preconditions:
         AgentProfile parsing and pure Run option validation have completed, but
@@ -264,7 +271,8 @@ def _preflight_official_agent_profile_privacy(
         repository state, OTel, Runtime, and billing untouched.
 
     Side Effects:
-        None. The function scans only the already-read Agent Profile string.
+        None. Only already-read Profile and tool metadata are inspected; the
+        official Provider revalidates tools at the later serialization boundary.
 
     Security/Privacy:
         Findings retain only a stable rule ID and the safe ``agent_profile``
@@ -272,6 +280,8 @@ def _preflight_official_agent_profile_privacy(
     """
     if not official_case or agent_profile is None:
         return
+    if agent_profile.tool_capabilities is not None:
+        prepare_agent_capabilities_upload(agent_profile.tool_capabilities)
     enforce_sensitive_policy(
         scan_sensitive_text(agent_profile.content, location="agent_profile"),
         allow_sensitive=allow_sensitive,
@@ -421,13 +431,13 @@ def _resolve_official_strategy_group(
 
     New catalogs always produce one exact selection. A bounded legacy catalog
     keeps the old Case wire only when the user did not explicitly declare a
-    Strategy Group; explicit intent cannot be silently downgraded. Selection and
-    required-capability validation execute on every call, including cache hits.
+    Strategy Group; explicit intent cannot be silently downgraded. The local
+    safety-baseline mode samples one group only when no explicit profile group
+    exists. Automatic capability matching is disabled by configuration; privacy
+    and required-capability validation remain on every call, including cache hits.
     Default transports share credential-isolated catalogs for at most 60 seconds
     after validation; custom transports bypass caching. Failed refreshes never
     use stale entries. No paid request identity or Run lifecycle is changed.
-    The local safety-baseline mode samples one group only when no explicit
-    profile group exists. Automatic capability matching remains disabled.
     """
     if backend is None:
         return None
@@ -542,6 +552,7 @@ def create_run(
     api_key: str | None = None,
     trace_evidence: TraceEvidenceCapture | None = None,
     scan_strategy_group: bool = False,
+    external_run_id: str | None = None,
 ) -> Run:
     """Create one complete Case and return its synchronous strict-handshake Run.
 
@@ -549,18 +560,23 @@ def create_run(
         repo_path: Repository root visible to the Agent. Defaults to the current
             directory. Symlink roots, filesystem roots, and missing directories
             are rejected before runtime creation.
+        external_run_id: Optional safe ASCII external execution label (1-128
+            characters), not a credential. Enables negotiated Run correlation for
+            Official Judge. None preserves old wire omission unless submit supplies
+            an external invocation ID; local timing is available independently.
         agent_profile_path: Path to a UTF-8 Markdown Agent Profile used to describe
             the Agent, production scenario, expected behavior, and prohibited
             boundaries. Official Case generation requires it; a custom Provider
             may opt out. Its prose supplies context to the selected Strategy Group
             and never selects, replaces, or overrides that group. A closed
             ``strategy_group`` front-matter object is the only explicit selection;
-            if omitted, normal ``auto`` uses the catalog default;
+            if omitted, normal ``auto`` uses the exact catalog default;
             ``safety-baseline`` instead samples one Basic Safety
             group. Profile prose never affects either selection.
             Front matter may link a reviewed local capability JSON through the
             relative ``tool_capabilities`` field. The linked file is validated
-            before Provider I/O and remains local on the current official wire.
+            before Provider I/O. Official Case generation sends its complete
+            normalized content, but never its local path; omission sends none.
         case_provider: :class:`CaseProvider` or compatible callable. ``None``
             selects the official authenticated provider.
         case_path: Explicit saved Case artifact inside repo_path, or None to
@@ -571,7 +587,7 @@ def create_run(
             falls back to custom. max_steps=None accepts the full saved count.
         judge_provider: :class:`JudgeProvider` or compatible callable. ``None``
             selects the official provider when ``judge=True``.
-        strategy: Defaults to ``"auto"`` with existing catalog-default behavior.
+        strategy: Defaults to ``"auto"`` with the catalog's exact default group.
             ``"safety-baseline"`` samples one of seven Basic Safety groups for
             one official Case, after validating every group's unique available
             version and capabilities. Explicit Profile groups take precedence.
@@ -619,10 +635,10 @@ def create_run(
             :func:`kuma.otel.configure_trace_evidence`. ``None`` attempts to
             reuse a compatible configured global OTel provider; unavailable OTel
             becomes a non-blocking ``runtime_warnings`` entry.
-        scan_strategy_group: Disabled automatic matching flag; keep ``False``.
-            ``True`` raises ``ConfigurationError(config_invalid)`` before file
-            or network I/O, even with an explicit group or custom provider.
-            Privacy scanning and Evidence capability validation remain enabled.
+        scan_strategy_group: Keep ``False`` (default). Automatic group matching
+            is disabled; ``True`` raises ``ConfigurationError(config_invalid)``
+            before file or network I/O, including with an explicit group or custom
+            provider. This does not disable privacy or Evidence capability checks.
 
     Returns:
         A synchronous :class:`Run` in ``ready`` state. Use ``get_input`` and
@@ -678,6 +694,7 @@ def create_run(
     )
     if config.upload_diff and not config.track_files:
         raise ConfigurationError("upload_diff requires track_files=True")
+    external_run_id = external_identifier(external_run_id)
     adapted_case_input, agent_profile, config, loaded = _prepare_case_source(
         repo_path=repo_path,
         case_path=case_path,
@@ -755,7 +772,9 @@ def create_run(
             ),
         )
         try:
+            case_started = time.monotonic()
             raw_case = adapted_case_provider.generate_case(context)
+            case_elapsed = elapsed_ms(case_started)
         except KumaError:
             raise
         except Exception as exc:
@@ -814,6 +833,8 @@ def create_run(
                 else resolved_strategy_group.group.id
             ),
             evidence=evidence,
+            external_run_id=external_run_id,
+            case_generation_elapsed_ms=case_elapsed,
             tool_capabilities_path=(
                 None if agent_profile is None else agent_profile.tool_capabilities_path
             ),

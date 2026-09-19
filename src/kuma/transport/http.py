@@ -90,17 +90,34 @@ class WireResponse:
 
 
 def validate_request(method: str, path: str, idempotency_key: str | None) -> str:
-    """Reject an oversized serialized request before network I/O."""
+    """Restrict public routes/methods before transport and require POST identity.
+
+    Observation listing alone permits a bounded canonical limit/cursor query;
+    DELETE is restricted to one exact opaque observation path. Other methods,
+    arbitrary queries, traversal and fragments retain the existing rejection.
+    """
     normalized_method = method.upper()
+    observation_page = (
+        normalized_method == "GET"
+        and re.fullmatch(
+            r"/sdk/observations/\?limit=(?:[1-9]|[1-9][0-9]|100)(?:&cursor=obs_[0-9a-f]{32})?",
+            path,
+        )
+        is not None
+    )
     if (
         not path.startswith("/sdk/")
         or path.startswith("//")
-        or "?" in path
+        or ("?" in path and not observation_page)
         or "#" in path
         or ".." in path.split("/")
     ):
         raise ConfigurationError("Backend paths must stay under the public /sdk/ API")
-    if normalized_method not in {"GET", "POST"}:
+    observation_delete = (
+        normalized_method == "DELETE"
+        and re.fullmatch(r"/sdk/observations/obs_[0-9a-f]{32}/", path) is not None
+    )
+    if normalized_method not in {"GET", "POST"} and not observation_delete:
         raise ConfigurationError("BackendClient supports GET and POST only")
     if normalized_method == "POST" and idempotency_key is None:
         raise ConfigurationError("POST requests require an idempotency_key")

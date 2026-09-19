@@ -1166,7 +1166,9 @@ def encode_multipart(
 class BackendClient:
     """Authenticated transport restricted to the public Website Backend API.
 
-    It accepts only ``/sdk/`` GET/POST paths. Retry attempts reuse the exact
+    It accepts only ``/sdk/`` GET/POST paths plus exact observation DELETE paths.
+    Only observation listing permits its closed bounded pagination query.
+    Retry attempts reuse the exact
     serialized request body and idempotency key, and remote details are mapped
     to stable public errors without propagating internal context.
     """
@@ -1357,6 +1359,9 @@ class BackendClient:
             idempotency_key=idempotency_key,
             client_request_id=client_request_id,
         )
+        if method == "GET" and path == "/sdk/judge/config/":
+            # Reuse the deployed negotiation; only advertised redaction is sent.
+            headers["X-Kuma-Evidence-Redaction"] = "1"
         attempts = 0
         while True:
             current_timeout = request_timeout(self.timeout, deadline)

@@ -6,7 +6,7 @@ import json
 from contextlib import suppress
 from typing import Any
 
-from ..repository.privacy import scan_sensitive_json
+from ..repository.privacy import redact_sensitive_json, scan_sensitive_json
 from ..repository.tool_capabilities import _plain_json
 from .runtime_contract import RUNTIME_AGENT_OUTPUT_MAX_BYTES
 
@@ -29,15 +29,19 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def normalize_tool_content(value: Any) -> tuple[Any, str]:
+def normalize_tool_content(value: Any, *, redact: bool = False) -> tuple[Any, str]:
     """Detach one observed tool argument/result or return a safe omission status.
 
     Args:
         value: Actual semantic attribute from an ended ``execute_tool`` span;
             finite JSON, a JSON-encoded string, or an ordinary text result.
+        redact: Apply the shared Evidence sanitizer before the final scan.
+            False preserves historical whole-field omission; True can return
+            a detached partial value with ``redacted`` status. Callers must
+            negotiate that status before upload. Neither policy permits secrets.
 
     Returns:
-        Detached JSON and ``present``, or ``None`` with ``size_limit``,
+        Detached JSON and ``present``/``redacted``, or ``None`` with ``size_limit``,
         ``sensitive_content`` or ``invalid``. A present JSON null is distinct
         from an absent attribute. JSON strings are decoded at most once.
 
@@ -73,8 +77,24 @@ def normalize_tool_content(value: Any) -> tuple[Any, str]:
         ).encode("utf-8")
         if len(encoded) > RUNTIME_AGENT_OUTPUT_MAX_BYTES:
             return None, "size_limit"
+        changed = False
+        if redact:
+            plain, changed = redact_sensitive_json(plain)
+            if (
+                len(
+                    json.dumps(
+                        plain,
+                        ensure_ascii=True,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    ).encode("utf-8")
+                )
+                > RUNTIME_AGENT_OUTPUT_MAX_BYTES
+            ):
+                return None, "size_limit"
         if scan_sensitive_json(plain, location="trace_tool_content"):
             return None, "sensitive_content"
-        return plain, "present"
+        return plain, "redacted" if changed else "present"
     except Exception:
         return None, "invalid"

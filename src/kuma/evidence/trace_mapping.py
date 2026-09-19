@@ -8,6 +8,8 @@ from collections.abc import Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from ..repository.privacy import scan_sensitive_text
+from .trace_model_content import MODEL_OPERATIONS, map_model_content, model_source_keys
+from .trace_semantics import observed_operation, semantic_key
 from .trace_tool_content import (
     TOOL_CONTENT_KEYS,
     TOOL_METADATA_KEYS,
@@ -186,6 +188,7 @@ def _safe_attributes(
     *,
     resource: bool = False,
     tool_content_status: dict[str, str] | None = None,
+    managed_keys: set[str] | None = None,
 ) -> tuple[dict[str, Any], int, bool, set[str]]:
     """Filter all observed attributes before bounding retained allowlisted values.
 
@@ -202,11 +205,18 @@ def _safe_attributes(
     dropped = 0
     truncated = False
     reasons: set[str] = set()
-    items = _attribute_items(attributes)
-    if tool_content_status is not None:
+    operation = None if resource else observed_operation(attributes)
+    items = _semantic_items(attributes, operation, managed_keys)
+    if operation in {
+        "execute_tool",
+        "chat",
+        "text_completion",
+        "invoke_agent",
+        "invoke_workflow",
+    }:
         # Reserve the actually observed semantic identity before optional
         # attributes; never infer it from a span name or retained tool body.
-        result["gen_ai.operation.name"] = "execute_tool"
+        result["gen_ai.operation.name"] = operation
     for item in items:
         if item is _ATTRIBUTE_ITERATION_ERROR:
             dropped += 1
@@ -214,7 +224,7 @@ def _safe_attributes(
             reasons.add("trace_attribute_invalid")
             break
         raw_key, raw_value = item
-        if tool_content_status is not None and raw_key == "gen_ai.operation.name":
+        if raw_key == "gen_ai.operation.name" and raw_key in result:
             continue
         key, value, item_truncated, item_dropped, item_reasons = _safe_attribute(
             raw_key,
@@ -233,6 +243,31 @@ def _safe_attributes(
             if not item_reasons:
                 reasons.add("trace_value_truncated")
     return result, dropped, truncated, reasons
+
+
+def _semantic_items(
+    attributes: Mapping[Any, Any], operation: str | None, managed: set[str] | None
+) -> Iterator[tuple[Any, Any] | object]:
+    """Yield semantic aliases once, leaving duplicates for normal loss accounting.
+
+    The main mapper applies all limits and privacy rules after projection.
+    Model body keys are owned by their bounded normalizer. Native keys win;
+    contradictory/duplicate aliases are not hidden, but rejected by the existing
+    allowlist with a stable reason. Iterator errors retain their safe sentinel.
+    """
+    for item in _attribute_items(attributes):
+        if item is _ATTRIBUTE_ITERATION_ERROR:
+            yield item
+            return
+        key, value = item
+        if type(key) is str and managed is not None and key in managed:
+            continue
+        canonical = semantic_key(key, operation)
+        if canonical is not None and canonical not in attributes:
+            key = canonical
+            if canonical == "gen_ai.operation.name":
+                value = operation
+        yield key, value
 
 
 def _attribute_items(
@@ -322,9 +357,13 @@ def _safe_tool_attribute(
     if tool_content_status is None:
         return None, None, False, 1, {"trace_attribute_not_allowlisted"}
     value, status = (
-        normalize_tool_content(raw_value) if retain else (None, "size_limit")
+        normalize_tool_content(raw_value, redact=True)
+        if retain
+        else (None, "size_limit")
     )
     tool_content_status[field] = status
+    if status == "redacted":
+        return key, value, False, 0, {"trace_tool_content_redacted"}
     if status != "present":
         reason = "sensitive" if status == "sensitive_content" else status
         reasons = {f"trace_tool_content_{reason}"}
@@ -606,14 +645,23 @@ def map_span(
         span, "attributes", "trace_attribute_invalid"
     )
     tool_status = None
-    if (
-        isinstance(span_attributes, Mapping)
-        and span_attributes.get("gen_ai.operation.name") == "execute_tool"
-    ):
+    operation = observed_operation(span_attributes)
+    if operation == "execute_tool":
         tool_status = {"arguments": "not_recorded", "result": "not_recorded"}
-    attributes, dropped, truncated, reasons = _safe_attributes(
-        span_attributes, limits, tool_content_status=tool_status
+    model_keys = (
+        model_source_keys(span_attributes) if operation in MODEL_OPERATIONS else None
     )
+    attributes, dropped, truncated, reasons = _safe_attributes(
+        span_attributes,
+        limits,
+        tool_content_status=tool_status,
+        managed_keys=model_keys,
+    )
+    if model_keys:
+        content, model_drops, model_reasons = map_model_content(span_attributes)
+        mapped["model_content"] = content
+        dropped += model_drops
+        reasons.update(model_reasons)
     if tool_status is not None:
         mapped["tool_content_status"] = tool_status
         if "not_recorded" in tool_status.values():

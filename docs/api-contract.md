@@ -1,26 +1,51 @@
 # KUMA SDK API Contract
 
-For active operation interval revisions, bounded backoff and strict timeout
-behavior, see [Operation polling and deadlines](operation-polling.md).
+For active operation intervals, bounded backoff and strict timeouts, see
+[Operation polling and deadlines](operation-polling.md).
 
-## 保存的 Case 与官方 Judge 原件
+Base URL: `https://defuzex.ai/api/agentdefuze`
 
-`Run.save_case(path)` / `create_run(case_path=...)` 使用本地 closed
-`kuma.case_artifact.v1`；完整字段、5 MiB/深度限制和来源规则见
-[Case 文件](case-files.zh-CN.md)。新官方 Judge 上传 raw schema `2` 的完整十字段
-公共 Case，part 为 `case_file`、filename `kuma-official-case.json`、MIME
-`application/json`；不上传本地 artifact 外壳，不同时传顶层 `case_id`。
-metadata 仍为既有 `repo_fingerprint/case_sha256/case_signature`，必须与 raw 一致。
-batch 使用既有 `case_file_part` 指向各条目的 Case part。Case 文件字节计入原有
-动态单文件和总预算；custom Case 仍用 `defuzex.custom_case.v1`。
-公开 checksum 不是认证：Backend 在新 reservation 前核验租户原件和原 CaseGen
-control 的唯一 Rubric 引用。SDK 不导入 Rubric，不把被编辑的官方 Case 降级为
-custom，也不在旧 Backend 拒绝时退回 case_id-only。历史客户端引用路径不作为
-新保存/加载流程的隐式兼容路径。
+## Saved Cases and original official Judge inputs
 
-Base URL：`https://defuzex.ai/api/agentdefuze`
+`Run.save_case(path)` / `create_run(case_path=...)` use closed local
+`kuma.case_artifact.v1`. See [Case files](case-files.md) for complete fields,
+5 MiB/depth limits and provenance rules. Official Judge uploads the full
+ten-field public Case in raw schema `2`, using part `case_file`, filename
+`kuma-official-case.json`, MIME `application/json`. It sends neither the local
+artifact wrapper nor an additional top-level `case_id`. Existing metadata
+`repo_fingerprint/case_sha256/case_signature` must match the raw Case. Batch
+entries reference their Case part through `case_file_part`. Case bytes count
+against existing dynamic per-file and total limits. Custom Cases continue to
+use `defuzex.custom_case.v1`.
 
-所有 URL 使用 trailing slash。SDK 请求使用：
+A public checksum is not authentication. Before a new reservation, Backend
+verifies the tenant's original Case and the originating CaseGen control's unique
+Rubric reference. SDK neither imports Rubrics nor downgrades edited official
+Cases to custom ones, and never falls back to case-ID-only submission when an
+older Backend rejects the upload. Historical reference paths are not implicit
+fallbacks for the new save/load workflow.
+
+Official Case POST optionally includes top-level `tool_capabilities` using
+`kuma.agent_tool_capabilities.v1`: exactly `schema_version/provenance/tools`;
+each tool has exactly
+`name/version/input_schema/read_only/side_effects/resource_scopes/evidence_types`.
+Only an explicitly linked Agent Profile file causes the complete normalized
+document, including schema descriptions/defaults/examples, to be sent. Omission
+means undeclared; wire null is invalid. Local paths are never sent; Judge wire
+gains no field. The declaration is context for the selected Group, not Evidence
+or a new selection signal.
+
+The limit is 262144 UTF-8 bytes measured as JSON with `ensure_ascii=False,
+indent=2, sort_keys=True, allow_nan=False` plus a final newline. Root depth is 0,
+maximum depth 32, tool count 1–100. Schemas are not truncated or edited. The full
+document participates in request hash/idempotency; omission preserves original
+identity. Invalid format/size/reference yields `tool_capabilities_invalid`;
+sensitive/private content yields `sensitive_data_blocked` before networking,
+even with allow_sensitive=True. Unsupported Backend errors are returned rather
+than dropping the field and retrying; there is no extra capability-probe GET.
+See [Agent tool capabilities](agent-tool-capabilities.md).
+
+All URLs have trailing slashes. Requests use:
 
 ```http
 Authorization: Bearer dfx_<public-id>.<secret>
@@ -31,52 +56,204 @@ Accept: application/json
 
 `GET /sdk/entitlements/`
 
-返回用户 ID、API Key 元数据、scopes、订阅等级和本周额度。不会返回完整 API Key 或 hash。
+Official Case `max_steps` is an upper bound, not an exact count. Without a pending
+operation, SDK reads entitlements; an explicit value above the server limit
+fails with `case_step_limit_exceeded` before creating an operation, with safe
+`details.max_allowed_steps`. No silent clamping occurs. Backend defensively
+enforces the same bound before billing or Core calls. Existing pending operations
+skip repeat preflight and resume the same operation, preserving replay across
+configuration changes. Omission uses the server default; under the current v1
+contract, omission and explicit 10 share wire/request identity. Success contains
+1..requested-limit complete steps; Case truncation is forbidden.
+
+For direct `OfficialCaseProvider.generate_case(context)`, context.max_steps is
+authoritative for wire and result validation. An explicit constructor limit must
+match it, or SDK rejects before any GET/POST. Entitlements return user ID, API-key
+metadata, scopes, subscription and weekly quota, never full API keys or hashes.
+
+## Strategy Group catalog and selection
+
+Strategy Group leads tested capability, domain and method. Agent Profile provides
+Agent/scenario/expected-behavior/prohibited-boundary context; its prose does not
+infer, replace or override a Group. Explicit strategy_group coordinates take
+priority; otherwise use catalog default. Automatic capability matching is
+disabled in the current SDK; scan_strategy_group=True is rejected.
+
+`GET /sdk/strategies/` returns closed `kuma.strategy_group_catalog.v1`: a
+64-character lowercase hexadecimal catalog_release, exact default:{id,version},
+limits:{max_selected_groups:1}, and 1–128 groups ordered by(id,version). Each group
+contains only id/version/display_name/description/required_capabilities/available/
+limits. Group limits contain max_steps:1..10 and a canonical D0–D2 subset. The
+semantic General group referenced by default must be available and require no
+capabilities; its ID is not hardcoded as general.
+
+Every official Case request with the new catalog, including judge=False, sends:
+
+```json
+{
+  "strategy_group_selection": {
+    "schema_version": "kuma.strategy_group_selection.v1",
+    "strategy_group_id": "basic-safety-general",
+    "strategy_group_version": "1",
+    "selection_source": "user|scanner|general",
+    "catalog_release": "<64 lowercase hex>"
+  }
+}
+```
+
+This illustrates field shape, not a guaranteed deployed coordinate;
+selection_source is one enum value, not the literal pipe-separated string.
+Agent Profile front matter permits only {schema_version,id,version}. Explicit
+unknown/unavailable coordinates or missing required capabilities fail closed
+without fallback. No declaration uses catalog default. The historical scanner
+wire value remains recognizable, but current automatic selection is disabled.
+Older Backend compatibility retains old Case wire only without explicit Group
+declaration; otherwise SDK raises strategy_group_unsupported.
 
 ## Error semantics
 
-- `401`：Key 缺失、格式错误、无效、过期或已撤销。
-- `403`：用户、订阅或 scope 不允许该操作。
-- `429`：账户当前额度已耗尽。
+- 401: missing/malformed/invalid/expired/revoked key.
+- 403: user/subscription/scope does not permit the operation.
+- 429: exhausted account quota.
 
 ## Protected services
 
-- `cases:generate`：Case generation。
-- `judge:run`：LLM-as-Judge。
+- cases:generate: Case generation.
+- judge:run: LLM-as-Judge.
 
-这些服务继承 Django backend 的统一 API Key authentication、subscription、scope 和 quota permission，并要求幂等键。SDK 只接受真实服务结果，不提供模拟成功回退。
+These inherit Backend API-key authentication, subscription, scope and quota
+permissions and require idempotency keys. SDK accepts real service results only,
+without a simulated-success fallback.
+
+## Custom Case Provider result
+
+Supported results are Case, a Case mapping with required inputs, one string, one
+KumaInput, or a list/tuple of strings, structured JSON mappings or KumaInput.
+A top-level mapping is a Case envelope: missing inputs raises
+ProviderError(code="provider_failed"), not an arbitrary structured-Input fallback.
+Generators and arbitrary iterables are outside the contract.
+
+Before constructing the first Input, SDK recursively scans Case, Input payload,
+public constraints and extensions. Evaluation fields such as rubric,
+private_rubric, rubric_context, answer_key and expected_output fail closed;
+their values must not enter errors, History, Evidence or official Judge wire.
+Custom Cases carry no Rubric. Custom Judge receives public Case/History/Evidence.
+Official Judge's custom multipart uses closed defuzex.custom_case.v1 with Case ID,
+input type/schema and public Inputs only; it sends no rubric_id/case_revision_id
+and derives no criteria.
+
+## Input and Submission JSON graphs
+
+Structured KumaInput.payload and Run.submit(output) accept finite JSON graphs:
+null, text, booleans, integers, finite floats, mappings and lists/tuples. Root
+container depth is 1, maximum 256. Depth 257 fails before Input/Submission
+construction, Evidence preparation, persistence or public requests. Self/mutual
+mapping/list cycles fail; shared acyclic children remain valid.
+
+Run/Input raises ValidationError(code="output_invalid") without keys, values,
+repr, raw exceptions or host information. Equivalent custom Provider failures
+remain safe ProviderError(code="provider_failed"). NaN, positive/negative Infinity,
+sets, bytes-like values and unsupported custom Sequences are invalid. Custom
+Mappings must be safely and finitely traversable.
+
+### Frozen public contract export
+
+Public objects freeze mappings against post-submission mutation. Before writing
+JSON or using an encoder:
+
+```python
+import json
+
+import kuma
+
+plain = kuma.to_json(run.history[-1].submission)
+encoded = json.dumps(plain, ensure_ascii=False, allow_nan=False)
+round_tripped = json.loads(encoded)
+```
+
+kuma.to_json(value) accepts public contracts or their individual public JSON
+fields and returns a detached plain graph, not text. It preserves field names
+and values for KumaInput.payload/public_constraints/extensions,
+Submission.output/logs/extensions, Case.inputs/input_schema/extensions,
+HistoryItem, TestReport.issues/evidence_gaps/extensions and public File Evidence/
+Capture Status. Failed JudgeBatchResult projects only stable KumaError public
+fields code/message/request_id/retryable/details. StrategyGroupDeclaration,
+StrategyGroup, StrategyGroupCatalog, ResolvedStrategyGroup, ResourceScope,
+ToolCapability and AgentCapabilities reuse canonical to_dict()/wire projection;
+nested group limits are projected through the parent, not a second definition.
+
+The same graph rules apply: maximum 256 user-container levels, acyclic aliases
+allowed, cycles/nonfinite numbers/unsupported objects rejected with output_invalid.
+Arbitrary dataclasses are not reflected; errors contain no source values/repr.
+New containers share no mutable source state. Conversion has no file, Evidence,
+network, billing or Run-state side effects and changes no public wire.
+
+## Run.submit log paths
+
+logs accepts None or an ordered sequence, normally list/tuple, of strings or
+os.PathLike[str]. Bare strings, bytes, bytearray, generators, unordered sets and
+nontext paths raise ValidationError(code="logs_invalid") before Evidence reads
+or Judge transport; the current Input remains retryable.
+
+Relative paths resolve from the Run's canonical repo_path, not cwd. Absolute
+paths must remain inside it. POSIX ../absolute escapes, other Windows drives/UNC
+spellings and symlink/reparse/mount components degrade to safe
+`log_path_outside_root:<index>`, `log_path_symlink:<index>` or
+`log_path_mount_boundary:<index>` without reading outside targets. Missing,
+unreadable, invalid-suffix, binary, count and byte-limit failures also use safe
+index reasons. Successful paths are repo-relative POSIX strings, preventing
+host absolute paths in errors, History, local Evidence and official Judge wire.
+Existing content limits/scanning remain; this does not broaden allow_sensitive.
+
+The canonical high-confidence pretransport scanner covers Agent Profile,
+Submission output/error, explicit logs and custom Cases. Bare OpenAI classic/
+project and Anthropic sk- keys use stable rule sk_api_key; only rule/safe-location
+metadata is retained, never matched values in errors, History, Evidence or wire.
+It recognizes prefixes rather than guessing general entropy.
 
 ## Official Case/Judge v2 operations
-
-官方单 Case 和单 Judge 分别提交到：
 
 - `POST /sdk/v2/cases/generate/`
 - `POST /sdk/v2/judge/`
 
-二者在接受请求或幂等回放时必须返回 HTTP `202`：
+Accepted requests and idempotent replays return HTTP 202:
 
 ```json
 {"operation_id":"...","status":"queued","poll_after_ms":1000}
 ```
 
-`status` 可为 `queued`、`running`、`succeeded` 或 `failed`；`poll_after_ms` 是 `100..60000` 的权威毫秒间隔。SDK 使用同一 `Idempotency-Key` 重试完全相同的 POST，不回退到 v1。
+Status is queued/running/succeeded/failed; poll_after_ms is authoritative
+100..60000 milliseconds. Retries preserve Idempotency-Key and exact body, without
+v1 fallback. GET /sdk/v2/operations/{operation_id}/ retrieves state. Active
+wrappers carry operation_id/status; success adds existing Case/Judgment result;
+failure adds error:{code,retryable,message?}. Message is optional frozen public
+text, omitted by older servers. Unknown operations return HTTP 404
+operation_not_found; failed operations themselves use HTTP 200 wrappers.
 
-SDK 通过 `GET /sdk/v2/operations/{operation_id}/` 获取终态。活动响应只含 `operation_id` 和 `status`；成功响应加入 `result`（既有 Case 或 Judgment payload）；失败响应加入 `error: {code, retryable}`。未知 operation 返回稳定的 HTTP `404 operation_not_found`。失败 operation 本身是 HTTP `200` wrapper。
+Each new start also sends X-Kuma-Client-Request-Id: kreq_<32 lowercase hex>.
+Retries preserve that ID, idempotency key and body byte-for-byte. Recovery uses:
 
-单次 HTTP `timeout` 与总 `operation_wait_timeout` 相互独立。v2 首次 POST 可带
-`X-Kuma-Client-Request-Id: kreq_<32位小写十六进制>`。Backend 将它与创建者、
-精确 API Key、scope、endpoint、幂等键和请求 hash 绑定。SDK 可通过
-`GET /sdk/requests/{client_request_id}/` 找回已经接受但响应丢失的公开
-operation；已知 `operation_id` 只继续 GET。不同请求复用同一身份会稳定 409，
-跨用户或跨 Key 查询表现为 404。
+```text
+GET /sdk/requests/{client_request_id}/
+```
 
-本地 `.kuma/requests/` 只保存有界身份与状态元数据，不保存 API Key、请求、
-Evidence、Rubric 或 Provider 正文。Python `list_requests`、`show_request`、
-`resume_request` 及对应 `kuma requests` CLI 可跨进程恢复。Backend 查不到 prepared
-记录时，SDK 返回 `request_not_started`，不会发送无正文 POST。恢复成功的 Judge
-公开报告保存到 `.kuma/reports/<run_id>.json`。
+Closed kuma.request_recovery.v1 contains only schema_version/client_request_id/
+request_type/operation_id/status. Ownership binds creating tenant/user, exact
+API key and scope; unknown/cross-key/unauthorized records all return
+operation_not_found. Known operation IDs use existing operation GETs only.
 
-自定义 Case 上传禁止 `rubric`、`private_rubric` 和 `rubric_context`。官方 Judge
-接收 closed 公共 Case，不接收调用方 Rubric ID、私有 revision ID 或 criteria。
+HTTP timeout and operation_wait_timeout are independent. Before first POST,
+SDK atomically writes .kuma/requests/<client_request_id>.json under repo root:
+8 KiB record limit, 4096 directory-entry scan limit, fail-closed symlink/reparse/
+mount boundaries. Records contain operation type/ID, idempotency key, SHA-256
+request/Backend/API-key fingerprints, Run/Case association, times and public
+report locator; never keys, headers, request/Evidence/Rubric/provider bodies or
+raw remote errors. Terminal records remain.
 
-`POST /sdk/judge/batch/` 仍是既有同步批量接口。
+High-level retry GETs known operations only. Before receiving an ID, original
+high-level material can validate the hash and replay the same POST. Standalone
+resume_request has no saved body, so it looks up first; lookup 404 raises
+request_not_started, never an empty POST. Successful public Judge reports are
+saved at .kuma/reports/<run_id>.json with a 1 MiB limit. Recovery can finish an
+accepted operation after process exit but cannot reconstruct an Input-executing
+Run/History from run_id alone. POST /sdk/judge/batch/ remains synchronous.

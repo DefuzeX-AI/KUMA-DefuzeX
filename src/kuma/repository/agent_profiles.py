@@ -64,8 +64,9 @@ class AgentProfileSpec:
         input_schema_path: Absolute path of an explicitly referenced schema file,
             or ``None`` when schema is inline/absent.
         tool_capabilities: Validated local Agent tool capability document, or
-            ``None`` when the Agent Profile does not link one. It is not uploaded
-            by the current Official Case wire.
+            ``None`` when the Agent Profile does not link one. Official Case
+            generation revalidates and uploads the complete declared document;
+            parsing alone performs no network request.
         tool_capabilities_path: Absolute path of the linked capability file, or
             ``None`` when absent.
         strategy_group: Exact user-selected Strategy Group coordinate, or

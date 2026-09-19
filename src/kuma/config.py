@@ -106,7 +106,7 @@ class CreateRunConfig:
     them, so later lifecycle code can rely on the invariants below.
 
     Attributes:
-        strategy: Defaults to ``"auto"`` with catalog-default selection.
+        strategy: Defaults to ``"auto"`` with the catalog's exact default group.
             For ``"safety-baseline"``, the SDK locally samples one of seven
             validated Basic Safety groups for one official Case. Explicit Profile
             groups win; custom providers receive this string unchanged. Other

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -18,6 +19,7 @@ from .otel_log_mapping import (
 )
 from .runtime import runtime_submission_id
 from .trace_mapping import SpanMappingError, extract_agent_output, json_size, map_span
+from .trace_model_content import omit_largest_model_body
 
 _CAPTURE_REASONS = frozenset(
     {
@@ -49,9 +51,15 @@ _CAPTURE_REASONS = frozenset(
         "trace_tool_content_sensitive",
         "trace_tool_content_size_limit",
         "trace_tool_content_invalid",
+        "trace_tool_content_redacted",
         "trace_link_invalid",
         "trace_link_limit",
         "trace_link_duplicate",
+        "trace_model_content_not_recorded",
+        "trace_model_content_sensitive",
+        "trace_model_content_size_limit",
+        "trace_model_content_invalid",
+        "trace_model_content_redacted",
     }
 )
 _MAX_DROPPED_COUNT = 999_999_999
@@ -103,25 +111,22 @@ class TraceEvidenceLimits:
             committed across one Run.
 
     Raises:
-        ConfigurationError: If any limit is a boolean, is not a positive
-            integer, or ``max_total_bytes`` cannot hold the smallest valid Trace
-            Evidence envelope.
+        ConfigurationError: If any limit is not a positive integer, or if
+            ``max_total_bytes`` cannot contain the minimum valid envelope.
 
     Preconditions:
-        Choose limits according to the maximum local memory and Evidence size
-        the application is prepared to retain. Increasing a number does not
-        enable additional attribute or log-body fields.
+        Choose limits for one in-process capture; they do not configure an OTel
+        Collector or remote exporter.
 
     Postconditions:
-        A valid instance provides immutable budgets used by
-        :class:`TraceEvidenceCapture` for every step in one Run. Excluded,
-        sampled, or truncated telemetry is reported through stable capture
-        status and reason fields instead of exceeding these budgets.
+        A constructed instance can bound retained spans, records, text, and the
+        aggregate serialized Run budget without mutable shared state.
 
     Security/Privacy:
-        These values only reduce or enlarge resource budgets. They never widen
-        the Trace/OTel-log allowlists, permit raw prompt or log bodies, or bypass
-        KUMA's sensitive-data policy.
+        Larger limits increase capacity only. They do not expand the OTel
+        allowlist. Only supported observed tool/model body fields use the
+        separate redacted JSON boundary; arbitrary prompts, secrets and raw log
+        text remain excluded. Server support is negotiated before body upload.
     """
 
     max_spans: int = 200
@@ -573,6 +578,8 @@ class TraceEvidenceCapture:
             return
         replaced_size = 0 if replacement is None else bucket.spans[replacement][2]
         run_bytes = self._run_bytes.get((association.run_id, association.case_id), 0)
+        size = self._fit_model_buffer(bucket, mapped, size, replacement, run_bytes)
+        replaced_size = 0 if replacement is None else bucket.spans[replacement][2]
         projected = run_bytes + bucket.bytes_used - replaced_size + size
         if projected > self.limits.max_total_bytes:
             self._note_drop(bucket, 1, "trace_byte_limit", truncated=True)
@@ -586,6 +593,44 @@ class TraceEvidenceCapture:
             bucket.spans[replacement] = item
             self._note_sampled_span(bucket)
         bucket.bytes_used += size - replaced_size
+
+    def _fit_model_buffer(
+        self,
+        bucket: _Bucket,
+        candidate: Mapping[str, Any],
+        size: int,
+        replacement: int | None,
+        run_bytes: int,
+    ) -> int:
+        """Free optional model bodies before rejecting a useful incoming span.
+
+        Called under the capture lock, before publication to any immutable
+        Submission. Reuses the same deterministic field-omission policy across
+        retained and candidate spans; tool fields and topology are untouched.
+        Updates byte/loss accounting atomically and returns candidate size.
+        """
+        candidates = [
+            span
+            for index, (_, span, _) in enumerate(bucket.spans)
+            if index != replacement
+        ] + [candidate]
+        while True:
+            replaced = 0 if replacement is None else bucket.spans[replacement][2]
+            if (
+                run_bytes + bucket.bytes_used - replaced + size
+                <= self.limits.max_total_bytes
+            ):
+                return size
+            if not omit_largest_model_body(candidates):
+                return size
+            bucket.spans = [
+                (sequence, span, json_size(span)) for sequence, span, _ in bucket.spans
+            ]
+            bucket.bytes_used = sum(entry[2] for entry in bucket.spans)
+            size = json_size(candidate)
+            self._increment_dropped(bucket, 1)
+            bucket.dropped_attribute_events += 1
+            bucket.reasons.add("trace_model_content_size_limit")
 
     def _sample_replacement(
         self, bucket: _Bucket, candidate: Mapping[str, Any]
@@ -708,7 +753,7 @@ class TraceEvidenceCapture:
         association = self._matching_association(run_id, case_id, input_id)
         self._flush(association)
         snapshot = self._snapshot(association)
-        evidence, reasons, dropped, encoded_size = self._fit_evidence(
+        evidence, reasons, dropped, encoded_size, omitted_bodies = self._fit_evidence(
             association,
             snapshot.spans,
             snapshot.reasons,
@@ -730,7 +775,8 @@ class TraceEvidenceCapture:
             capture_summary=_capture_summary(
                 observed_spans=snapshot.observed_spans,
                 retained_spans=retained_spans,
-                dropped_attribute_events=snapshot.dropped_attribute_events,
+                dropped_attribute_events=snapshot.dropped_attribute_events
+                + omitted_bodies,
                 topology_complete="trace_topology_partial" not in reasons,
                 observed_logs=otel_logs.observed_count,
                 retained_logs=otel_logs.retained_count,
@@ -784,10 +830,18 @@ class TraceEvidenceCapture:
         reasons: tuple[str, ...],
         dropped: int,
         truncated: bool,
-    ) -> tuple[Mapping[str, Any] | None, tuple[str, ...], int, int]:
-        """Prune sampled spans until the complete envelope fits remaining Run bytes."""
+    ) -> tuple[Mapping[str, Any] | None, tuple[str, ...], int, int, int]:
+        """Fit optional model bodies before pruning spans to remaining Run bytes.
+
+        Work on a detached snapshot so retry/abort cannot mutate buffered values.
+        The complete Trace envelope ceiling also applies, including overhead.
+        Return the extra body-omission count separately for capture accounting.
+        Existing non-model evidence retains its original budgeting behavior.
+        """
+        from .runtime_contract import RUNTIME_EVIDENCE_MAX_BYTES
+
         ordered = sorted(
-            spans,
+            copy.deepcopy(spans),
             key=lambda item: (
                 item["start_time_unix_nano"],
                 item["trace_id"],
@@ -798,10 +852,21 @@ class TraceEvidenceCapture:
         run_key = (association.run_id, association.case_id)
         with self._lock:
             available = self.limits.max_total_bytes - self._run_bytes.get(run_key, 0)
+        if any("model_content" in span for span in ordered):
+            available = min(available, RUNTIME_EVIDENCE_MAX_BYTES)
+        omitted_bodies = 0
         evidence = self._build_evidence(
             association, ordered, dropped, truncated, bounded_reasons
         )
         while ordered and json_size(evidence) > available:
+            if omit_largest_model_body(ordered):
+                omitted_bodies += 1
+                dropped = min(dropped + 1, _MAX_DROPPED_COUNT)
+                bounded_reasons.add("trace_model_content_size_limit")
+                evidence = self._build_evidence(
+                    association, ordered, dropped, truncated, bounded_reasons
+                )
+                continue
             ordered.pop()
             if dropped >= _MAX_DROPPED_COUNT:
                 bounded_reasons.add("trace_drop_count_saturated")
@@ -814,12 +879,18 @@ class TraceEvidenceCapture:
             )
         encoded_size = json_size(evidence)
         if encoded_size <= available:
-            return evidence, tuple(sorted(bounded_reasons)), dropped, encoded_size
+            return (
+                evidence,
+                tuple(sorted(bounded_reasons)),
+                dropped,
+                encoded_size,
+                omitted_bodies,
+            )
         bounded_reasons.add("trace_budget_exhausted")
         if dropped >= _MAX_DROPPED_COUNT:
             bounded_reasons.add("trace_drop_count_saturated")
         dropped = min(dropped + 1, _MAX_DROPPED_COUNT)
-        return None, tuple(sorted(bounded_reasons)), dropped, 0
+        return None, tuple(sorted(bounded_reasons)), dropped, 0, omitted_bodies
 
     @staticmethod
     def _build_evidence(

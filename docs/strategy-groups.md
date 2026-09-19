@@ -1,4 +1,5 @@
-# KUMA Strategy Groups
+# Strategy Groups
+
 ## Inspect actual execution
 
 After `create_run(...)` succeeds, inspect `run.executed_strategy_group`:
@@ -48,12 +49,21 @@ idempotency identity, and never automatically retries a paid Case/Judge request.
 This optimization removes redundant discovery GETs, not Case/Judge execution:
 with the default Judge enabled, the final `run.submit(...)` also waits for Judge.
 
+[English](strategy-groups.md) | [Chinese overview](../README.zh-CN.md)
 
-[English](strategy-groups.md) | [简体中文](strategy-groups.zh-CN.md)
+Strategy Groups are the primary test-selection contract. A group fixes the
+versioned testing capability, domain, and method used for Case generation without
+exposing private Case plans, rubrics, prompts, or model settings. KUMA resolves
+exactly one public catalog coordinate before official Case generation and sends
+only that coordinate, its catalog release, and a low-sensitivity selection source.
 
-Strategy Groups are versioned public Case-generation behavior families. KUMA resolves one exact group from the current public catalog before an official Case is created; private plans, rubrics, prompts, and model settings are not exposed.
-
-The selected Strategy Group controls the main testing capability, domain, and method. An Agent Profile supplies only the Agent and scenario context used within that choice; profile prose never selects, replaces, or overrides the group. With `strategy="auto"` and no explicit group, KUMA resolves the catalog's exact default. The explicit `safety-baseline` mode below samples one group instead.
+An Agent Profile has a different job: it describes the Agent under test, its
+production scenario, expected behavior, and prohibited boundaries. That context
+helps the selected Strategy Group generate relevant Cases, but Profile prose never
+selects, replaces, or overrides the group. An explicit `strategy_group` object is
+authoritative regardless of the surrounding prose. When it is absent, KUMA uses
+the exact catalog default in `auto` mode, or samples one group when the caller
+explicitly selects `safety-baseline`. Automatic capability matching is disabled.
 
 ## Sample one Basic Safety group
 
@@ -89,11 +99,11 @@ does not silently narrow the pool. Older services without the Group catalog
 return `strategy_group_unsupported`. This requires a service publishing all seven
 groups; these names are not a claim that your server already supports the mode.
 
-An explicit Agent Profile `strategy_group` wins over this mode. Otherwise this
-mode samples one group. `scan_strategy_group=True` remains rejected before I/O.
-Default `strategy="auto"`
+An explicit Agent Profile `strategy_group` wins over this mode. Keep
+`scan_strategy_group=False`; `True` is disabled and raises a configuration error
+even with an explicit group or this mode. Default `strategy="auto"`
 and custom providers remain unchanged; custom providers receive the strategy
-string without official sampling. The SDK sends member `strategy_id="auto"` plus
+string without official sampling. The SDK sends compatibility `strategy_id="auto"` plus
 the actual closed `strategy_group_selection` with source `user`, never a fictional
 `safety-baseline` Group ID. Profile prose does not pick the sampled group.
 
@@ -113,46 +123,15 @@ it can sample the same group again. Existing matching-final-payload active-reque
 reuse still applies when the selected coordinate and payload are identical.
 Terminal records are retained. No new identity fields or locks are introduced.
 
-## Query the public catalog
+## Declare a group explicitly
 
-Configure the official key through `KUMA_API_KEY`, then run:
-
-```bash
-kuma strategies list
-```
-
-The command performs an authenticated catalog read, validates the complete response, and prints canonical JSON. Each `groups[]` entry is one exact selectable coordinate and contains:
-
-- `id` and `version`: the exact coordinate used in an Agent Profile;
-- `display_name` and `description`: its public name and purpose;
-- `available`: whether it accepts new selections;
-- `required_capabilities`: Runtime Evidence capabilities the Run must support;
-- `limits.max_steps` and `limits.supported_difficulties`: public execution bounds.
-
-Versions are not grouped into a nested list. If one group ID has multiple
-selectable versions, the response contains multiple `groups[]` entries with the
-same `id` and different `version` values. Always choose an entry whose
-`available` value is `true`, and take both `id` and `version` from that live
-response rather than from this page: the catalog is served by the Backend, and
-its identifiers can be renamed between catalog releases.
-
-The top-level `default.id` and `default.version` identify the exact default group. Save the same validated JSON atomically when you need a reviewable local copy:
-
-```bash
-kuma strategies list --output strategy-groups.json
-```
-
-`--timeout` sets the public catalog request timeout in seconds and defaults to `30.0`. `--base-url` is intended only for an authorized public service or loopback integration; ordinary users should keep the configured default. A missing or rejected credential, malformed catalog, invalid output parent directory, or failed write returns a non-zero exit code.
-
-## Select a group in an Agent Profile
-
-Choose one available `groups[]` entry and copy its machine-readable `id` and
-`version` exactly into the YAML front matter. For example, if the returned
-`basic-safety-coding` entry has version `"1"`:
+Run `kuma strategies list` first and copy an available entry's exact `id` and
+`version` into Agent Profile YAML front matter. For example, if the returned
+coding entry has version `"1"`:
 
 ```yaml
 ---
-agent_description: A repository maintenance agent
+agent_description: A repository maintenance agent.
 input_type: text
 strategy_group:
   schema_version: kuma.strategy_group_selection.v1
@@ -161,64 +140,120 @@ strategy_group:
 ---
 ```
 
-Here `id` means the exact `groups[].id` value. Do not use `display_name`, a
-numbered list position, or the member strategy that the group runs internally,
-and never leave placeholder text in a real Agent Profile. The object is closed:
-only `schema_version`, `id`, and `version` are accepted. `selection_source` and
-`catalog_release` describe validated runtime facts, so KUMA fills them after
-resolving the current catalog; they must not be placed in the Agent Profile.
+Only `schema_version`, `id`, and `version` are accepted. The user cannot set
+`selection_source` or `catalog_release`; KUMA obtains those from the validated
+service catalog. An unavailable/unknown coordinate fails with
+`strategy_group_invalid`. If the selected group needs Evidence the current Run
+cannot produce, creation fails before Case generation with
+`strategy_capability_mismatch`; `error.details["missing_capabilities"]` lists the
+missing values in canonical order. Explicit selections never fall back.
 
-An explicit coordinate has priority. An unknown or unavailable group fails closed with `strategy_group_invalid`; a group whose `required_capabilities` are not available fails with `strategy_capability_mismatch` and lists the missing capabilities. KUMA never silently substitutes another group for an explicit choice.
+The renamed Basic Safety IDs are `basic-safety-general`, `basic-safety-coding`,
+`basic-safety-cli`, `basic-safety-browser`, `basic-safety-research`,
+`basic-safety-workflow`, and `basic-safety-data`. Every ID includes the full
+`basic-safety-` prefix. Display names such as “Basic Safety Coding” are labels,
+not configuration values; there is no new `category` field or SDK alias map.
+This is a naming change, not a safety certification or a redesign of the tests.
+See the [complete Agent Profile example](../examples/basic-safety-agent-profile.md).
+Use only coordinates advertised by your server; this documentation does not
+activate a catalog. Multiple versions appear as separate entries with the same
+ID. Historical releases/replays remain service-owned.
 
-With `strategy="auto"` and no explicit group, KUMA uses the catalog's exact `default.id` and `default.version`. The selection source is semantically “general”; `general` is not a fixed group ID. The renamed catalog defaults to `basic-safety-general`, but both default fields remain catalog-driven.
+## Default and capability preflight
 
-The seven Basic Safety IDs listed above include the full `basic-safety-` prefix.
-Display names such as “Basic Safety Coding” are labels, not configuration values.
-There is no new `category` field or alias map. This naming change is not a safety
-certification or a redesign of the tests. Use only coordinates advertised by your
-server; documentation does not activate a catalog. Historical releases/replays
-remain service-owned. See the [complete Agent Profile example](../examples/basic-safety-agent-profile.md).
+With `strategy="auto"` and no declaration, KUMA always uses the catalog's exact `default.id` and
+`default.version` with source `general`. “General” is a meaning, not a hardcoded
+group ID. The renamed catalog points to `basic-safety-general`, but the SDK
+always reads both default fields from the catalog rather than hardcoding them.
 
-## Automatic matching is disabled
+Automatic Strategy Group matching is disabled. `scan_strategy_group=True`
+raises `ConfigurationError(code="config_invalid")` before file or network I/O.
+Leave it at `False`, use the catalog default, or declare a group explicitly.
+This does **not** disable privacy scanning, Agent capability validation, or
+the selected group's required-capability preflight. The latter uses the union of:
 
-Keep `scan_strategy_group=False` (the default). Passing `True` raises
-`ConfigurationError(code="config_invalid")` before file or network I/O, even
-with an explicit group or custom provider. With `strategy="auto"` and no
-explicit Profile group, KUMA always uses the catalog's exact default coordinate;
-it never selects a different group from tool metadata or Evidence capabilities.
+- `evidence_types` in the reviewed `AgentCapabilities.tools` declaration;
+- intrinsic Run Evidence from `track_files` and configured OTel capture.
 
-`kuma strategies suggest` is also disabled and exits nonzero with a safe
-explanation. Legacy `--catalog`, `--capabilities`, and `--output` arguments
-are not read or written. Use `kuma strategies list` to inspect the catalog and
-declare a group explicitly when you need a non-default choice.
+These capabilities validate the already selected group; they never choose a
+different group for `auto`. Declarations remain user-controlled claims, not
+verified facts about a running Agent. Tool names or profile prose do not route it.
 
-Privacy scanning and [Agent capability validation](agent-tool-capabilities.md)
-remain active. Declared `evidence_types` plus intrinsic Run capabilities are
-still checked against the selected group's `required_capabilities`; they do
-not choose the group. Low-level `resolve_strategy_group(scan=True)` rejects
-with the same configuration error. Historical `selection_source="scanner"`
-wire remains parseable for recovery, but no new matching is performed.
+The exact capability order and closed vocabulary are:
 
-## Python API
+1. `file_change`
+2. `tool_call`
+3. `command_result`
+4. `test_result`
+5. `state_transition`
+6. `artifact_snapshot`
+7. `agent_response_claim`
 
-Fetch a strict typed catalog without creating a Run:
+## Inspect the catalog from the CLI
+
+Fetch the authenticated public catalog:
+
+```bash
+kuma strategies list
+kuma strategies list --output strategy-catalog.json
+```
+
+`kuma strategies suggest` is disabled: it exits nonzero with the same safe
+configuration error before reading `--catalog` / `--capabilities` or writing
+`--output`. Supplied paths are neither opened nor echoed. Use `strategies list`
+and an explicit Agent Profile group instead. Python callers can still fetch the
+strict typed catalog with `KumaClient.strategy_group_catalog()`. Low-level
+`resolve_strategy_group(..., scan=True)` is disabled as well; `scan=False`
+preserves explicit/default selection. Historical `selection_source="scanner"`
+wire values remain parseable for recovery; no new request uses matching.
+
+## Compatibility and privacy
+
+### Catalog fields and Python access
+
+Configure KUMA_API_KEY before discovery. Each groups[] entry is one exact
+coordinate, with id/version, display_name/description, available,
+required_capabilities and limits.max_steps/supported_difficulties. Multiple
+versions use separate entries with the same ID, not a nested version list.
+Copy only an available entry's machine-readable ID/version: never a display
+name, list index, internal member identity or unresolved placeholder.
+
+`strategies list --output` atomically saves the validated JSON. `--timeout`
+is seconds (default 30.0); `--base-url` is for an authorized public service or
+loopback integration. Missing/rejected credentials, malformed catalogs and
+invalid/unwritable output destinations cause nonzero exit status.
 
 ```python
 from kuma import KumaClient
 
 catalog = KumaClient().strategy_group_catalog()
 print(catalog.default.id, catalog.default.version)
-
 for group in catalog.groups:
     print(group.id, group.version, group.available, group.limits.max_steps)
 ```
 
-`KumaClient.strategy_group_catalog()` uses the client's API key, public base URL, timeout, and optional transport. It performs one authenticated public read and returns `StrategyGroupCatalog`; malformed or legacy data raises `ValidationError` instead of being returned as trusted catalog data.
+This makes one authenticated catalog read using the client's key/base URL/timeout
+and optional transport. Malformed or legacy data raises ValidationError, not a
+trusted typed catalog. StrategyGroupDeclaration, StrategyGroup,
+StrategyGroupCatalog and ResolvedStrategyGroup are immutable public values;
+validate_strategy_group_declaration/catalog/wire_selection validate and detach
+their corresponding closed forms. See [API reference](api-reference.md#strategy-group-api).
 
-Public immutable types include `StrategyGroupDeclaration`, `StrategyGroup`, `StrategyGroupCatalog`, and `ResolvedStrategyGroup`. The public validators `validate_strategy_group_declaration()`, `validate_strategy_group_catalog()`, and `validate_strategy_group_wire_selection()` validate and detach their corresponding closed objects. See the [Python API reference](api-reference.md#strategy-group-api) for their exact contracts.
+### Service compatibility
 
-## Privacy and compatibility
+Official Case creation performs `GET /sdk/strategies/` even when Judge is
+disabled, because Case selection is independent of Judge and Evidence upload.
+New catalogs produce top-level Case field `strategy_group_selection`. A legacy
+Backend receives the old request only when its complete deployed top-level and
+per-strategy shape validates and no structured declaration exists. Extra,
+malformed, or private-looking legacy fields fail closed. An explicit declaration
+against a legacy Backend fails with `strategy_group_unsupported` rather than
+silently changing user intent.
 
-Catalog discovery and official group resolution require authentication. KUMA does not upload the capability file, tool names, argument schemas, resource scopes, paths, Agent configuration, or raw Agent Profile. Official Case creation sends only the resolved public coordinate, catalog release, and low-sensitivity selection source.
-
-If an older public service does not support versioned Strategy Groups, an explicit declaration fails rather than changing user intent. Omitted selection may use the strictly validated legacy behavior supported by the SDK.
+An explicitly linked capability document is sent separately as `tool_capabilities`,
+including tool schemas, as context for the selected group—not group matching.
+Without a link it is omitted. Local paths, unrelated Agent configuration, raw
+Profile, repository contents, and scanner internals are not sent. See
+[tool capability privacy](agent-tool-capabilities.md). Transport must be validated against
+their independently accepted exact candidates; SDK fixture tests do not claim a
+deployed service already supports this contract.

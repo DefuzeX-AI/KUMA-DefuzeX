@@ -57,8 +57,9 @@ class CaseGenerationContext:
             documented public contract transmits an allowlisted subset.
         tool_capabilities: Canonical local capability document linked by the
             Agent Profile, or ``None``. Custom providers may inspect this
-            user-authoritative declaration. Official providers do not serialize
-            it on the current wire.
+            user-authoritative declaration. Official Case providers revalidate
+            and send the complete document as generation context, never as
+            verified Evidence. ``None`` omits the wire field.
         strategy_group_selection: Resolved closed public Strategy Group wire
             object, or ``None`` for custom Provider behavior. This coordinate is
             authoritative for the testing capability, domain, and method. Agent
@@ -155,6 +156,10 @@ class JudgeContext:
         upload_diff: Whether the Run explicitly requested safe bounded unified
             diffs for Official Judge Evidence. ``False`` preserves hash-only
             transport and custom Judge compatibility.
+        run_context: Optional closed execution correlation metadata. None preserves
+            old wire omission. Contains only validated IDs/status/client elapsed
+            time, never Agent output or model content; Official Judge negotiates
+            support separately before upload.
 
     Security/Privacy:
         Custom judges receive only public Case data and SDK-collected Run
@@ -167,6 +172,7 @@ class JudgeContext:
     run_status: str
     evidence_summary: Mapping[str, Any] = field(default_factory=dict)
     upload_diff: bool = False
+    run_context: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         """Detach the completed history and summary before Judge invocation.
@@ -187,6 +193,13 @@ class JudgeContext:
         )
         if not isinstance(self.upload_diff, bool):
             raise ConfigurationError("upload_diff must be a boolean")
+        if self.run_context is not None:
+            from .._json_values import freeze_json
+            from ..correlation import validate_run_context
+
+            object.__setattr__(
+                self, "run_context", freeze_json(validate_run_context(self.run_context))
+            )
 
 
 @runtime_checkable

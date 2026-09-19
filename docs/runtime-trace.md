@@ -1,5 +1,8 @@
 # Runtime Trace sent to Judge
 
+See [OpenInference capture semantics](openinference.md) for supported semantic
+fields, observed model/tool bodies, privacy states and old-server behavior.
+
 KUMA can send the **actual in-process OTel observations** it captured, not just
 a Trace hash. Install the optional `otel` extra and use an existing compatible
 Provider (automatic attachment or explicit `configure_trace_evidence`). Once
@@ -78,40 +81,3 @@ The existing Trace artifact carries `trace_evidence`, `capture_status` and
 same canonical Trace bytes. The Judge receives this as **untrusted telemetry**;
 it must not treat it as verified tool execution. It is not copied into public
 reports. Historical hash-only records do not gain reconstructed content.
-
-## Upgrade and instrumentation prerequisites
-
-After the public main contains this change, upgrade in the same environment
-that runs your Agent, then restart that process:
-
-```sh
-python -m pip install --upgrade "kuma-defuzex[otel] @ git+https://github.com/DefuzeX-AI/KUMA-DefuzeX.git@main"
-python -c "import kuma; print(kuma.__file__)"
-```
-
-For reproducibility replace main with the published commit. The version string
-alone need not distinguish Git installs. Installing OTel does not instrument
-tools: an ordinary span may have no arguments/results. Existing instrumentation
-must record the actual semantic attributes in the active step.
-
-There is no automatic typed `command_result`/`test_result` producer. Recorded
-command/test observations can travel in tool Trace content, but KUMA does not
-run tests, parse stdout, or invent components or execution success. Missing
-observations never establish that an action did not execute.
-
-## Optional file diffs
-
-Use `create_run(..., track_files=True, upload_diff=True)` to send safe unified
-patches as the separate `file_diff` capability alongside Trace. Default False
-keeps file hashes only. Unsupported servers fail before Judge POST rather than
-silently discarding the requested patch. Each patch is at most 32,768 UTF-8
-bytes; combined patches at most 65,536 per envelope. No truncation or whole-file
-upload. Binary, oversized, sensitive, unchanged or incomplete captures retain
-hash metadata and an explicit omission reason. See [Runtime Evidence](runtime-evidence.md).
-
-```sh
-PYTHONPATH=src python tools/verify_runtime_trace.py
-```
-
-The verifier uses real local OTel and a fake external transport, with no service,
-credentials or model.

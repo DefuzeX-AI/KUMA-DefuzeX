@@ -1,8 +1,8 @@
 # KUMA full-stack user-flow example
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[Chinese overview](../../README.zh-CN.md)
 
-This guide covers only the supplied mini-SWE-agent example. General SDK installation, API key setup, Agent Profile format, Run protocol, Evidence, OpenTelemetry, Docker boundaries, and troubleshooting live in the canonical [English guide](../../docs/sdk-guide.md) and [简体中文指南](../../docs/sdk-guide.zh-CN.md).
+This guide covers only the supplied mini-SWE-agent example. General SDK installation, API key setup, Agent Profile format, Run protocol, Evidence, OpenTelemetry, Docker boundaries, and troubleshooting live in the canonical [English guide](../../docs/sdk-guide.md).
 
 ## What this example runs
 

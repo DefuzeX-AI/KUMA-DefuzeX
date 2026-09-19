@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
@@ -18,6 +19,7 @@ from .contracts import (
     Submission,
     TestReport,
 )
+from .correlation import RUN_CONTEXT_SCHEMA, external_identifier
 from .errors import (
     ConfigurationError,
     EvidenceCaptureError,
@@ -26,6 +28,7 @@ from .errors import (
     ProviderError,
     ValidationError,
 )
+from .evidence.runtime import runtime_submission_id
 from .evidence.tracking.evidence import EvidenceCollector, PreparedEvidence
 from .providers.base import JudgeContext, JudgeProvider
 from .providers.normalization import normalize_report
@@ -33,6 +36,8 @@ from .providers.official_judge import OfficialJudgeProvider
 from .repository.case_artifact_io import save_case_artifact
 from .repository.case_artifacts import artifact_from_case
 from .runtime import RuntimeSession
+from .serialization import to_json
+from .timeline import StageTimeline, elapsed_ms
 
 RunState = Literal[
     "ready",
@@ -235,6 +240,8 @@ class Run:
         evidence: EvidenceCollector | None = None,
         tool_capabilities_path: Path | None = None,
         tool_capabilities_provenance: str | None = None,
+        external_run_id: str | None = None,
+        case_generation_elapsed_ms: int | None = None,
     ) -> None:
         """Initialize one validated Run and take ownership of its runtime lease.
 
@@ -254,6 +261,11 @@ class Run:
                 Agent Profile, or ``None``. Run retains the association only.
             tool_capabilities_provenance: Low-sensitivity origin label for the
                 linked file, or ``None``.
+            external_run_id: Optional validated external execution label. Enables
+                correlation, never changes Case or semantic Judge cache identity.
+            case_generation_elapsed_ms: Client-measured provider call duration,
+                including request/poll wait, or None if unavailable. Not queue or
+                model compute time; supplied by create_run, not sent to Judge.
 
         Preconditions:
             ``case`` has at least one correlated input and ``runtime`` is open
@@ -285,6 +297,64 @@ class Run:
         self._stopped_early = False
         self._evidence = evidence
         self._mutex = threading.RLock()
+        self._external_run_id = external_identifier(external_run_id)
+        self._step_contexts: list[dict[str, Any]] = []
+        self._step_started: float | None = None
+        self._timeline = StageTimeline()
+        self._evaluation_status = "not_performed"
+        self._timeline.record(
+            "case_generation_request_wait",
+            case_generation_elapsed_ms,
+            status="unknown" if case_generation_elapsed_ms is None else "completed",
+        )
+
+    @property
+    def timeline(self) -> Mapping[str, Any]:
+        """Return detached execution/capture/evaluation states and client timings.
+
+        Intervals can overlap and must not be summed. Input-to-submit includes
+        user delays; upload request includes server acknowledgment; whole Judge
+        request/wait includes both. Remote queue/model compute are always unknown
+        unless a future explicit server contract supplies them. After recovery,
+        unavailable client measurements stay unknown, never invented zeros.
+        """
+        with self._mutex:
+            snapshot = self._timeline.snapshot()
+            if isinstance(self._judge_provider, OfficialJudgeProvider):
+                remote = self._judge_provider.timeline(self.run_id)
+                snapshot["stages"].extend(remote["stages"])
+                snapshot["dropped_stages"] += remote["dropped_stages"]
+            snapshot["stages"].extend(
+                {
+                    "stage": stage,
+                    "elapsed_ms": None,
+                    "status": "unknown",
+                    "source": "unavailable",
+                    "input_id": None,
+                }
+                for stage in ("server_queue", "model_compute")
+            )
+            return {
+                "schema_version": "kuma.run_timeline.v1",
+                "run_id": self.run_id,
+                "case_id": self.case_id,
+                "run_state": self._state,
+                "execution_steps": _plain_json(self._step_contexts),
+                "capture_steps": [
+                    {
+                        "input_id": item.submission.input_id,
+                        "capture_status": to_json(item.submission.capture_status),
+                        "dropped_count": item.submission.dropped_count,
+                        "missing": list(item.submission.missing),
+                    }
+                    for item in self._history
+                ],
+                "evaluation_status": self._evaluation_status,
+                "run_receipt": None
+                if self._report is None
+                else _plain_json(self._report.extensions.get("run_receipt")),
+                **snapshot,
+            }
 
     @property
     def case_origin(self) -> Literal["official", "custom"]:
@@ -425,6 +495,7 @@ class Run:
                     self._evidence.begin_step(current.input_id)
                 self._current = current
                 self._state = "input_delivered"
+                self._step_started = time.monotonic()
             elif self._state in {"completed", "report_ready"}:
                 return None
             else:
@@ -443,6 +514,7 @@ class Run:
         error: str | None = None,
         logs: Sequence[str | os.PathLike[str]] | None = None,
         wait: bool = True,
+        external_invocation_id: str | None = None,
     ) -> TestReport | None:
         """Validate and commit one result, then advance or judge synchronously.
 
@@ -463,6 +535,9 @@ class Run:
                 repository-scope, suffix, symlink, and sensitive-data checks.
             wait: Must remain ``True`` when the last Submission triggers Judge;
                 the public Run API exposes synchronous completion only.
+            external_invocation_id: Optional safe ASCII invocation label, 1-128
+                characters. Bound to this committed step and enables negotiated
+                correlation. None omits the label; never an authorization token.
 
         Returns:
             Final :class:`TestReport` only when this is the last input and Judge
@@ -498,21 +573,24 @@ class Run:
         """
 
         log_paths = _validate_log_paths(logs)
+        invocation_id = external_identifier(external_invocation_id)
         with self._mutex:
             current = self._submission_input(log_paths)
+            step_elapsed = elapsed_ms(self._step_started)
             plain_output = self._validated_output(
                 output,
                 current=current,
                 status=status,
                 error=error,
             )
-            prepared = self._prepare_evidence(
-                current=current,
-                output=plain_output,
-                status=status,
-                error=error,
-                logs=log_paths,
-            )
+            with self._timeline.measure("evidence_prepare", input_id=current.input_id):
+                prepared = self._prepare_evidence(
+                    current=current,
+                    output=plain_output,
+                    status=status,
+                    error=error,
+                    logs=log_paths,
+                )
             submission = self._submission(
                 current=current,
                 output=plain_output,
@@ -521,6 +599,27 @@ class Run:
                 prepared=prepared,
             )
             self._record_submission(current, submission, prepared)
+            self._timeline.record(
+                "agent_input_to_submit",
+                step_elapsed,
+                status=status,
+                input_id=current.input_id,
+            )
+            envelope = submission.extensions.get("runtime_evidence", {})
+            self._step_contexts.append(
+                {
+                    "input_id": current.input_id,
+                    "step_id": envelope.get("step_id", current.input_id),
+                    "submission_id": envelope.get(
+                        "submission_id",
+                        runtime_submission_id(self.run_id, current.input_id),
+                    ),
+                    "external_run_id": self._external_run_id,
+                    "external_invocation_id": invocation_id,
+                    "execution_status": status,
+                    "client_step_elapsed_ms": step_elapsed,
+                }
+            )
             return self._advance_after_submission(status=status, wait=wait)
 
     def _submission_input(self, logs: Sequence[str] | None) -> KumaInput:
@@ -796,22 +895,42 @@ class Run:
             upload_diff=(
                 self._evidence.upload_diff if self._evidence is not None else False
             ),
+            run_context=(
+                {
+                    "schema_version": RUN_CONTEXT_SCHEMA,
+                    "run_id": self.run_id,
+                    "case_id": self.case_id,
+                    "steps": self._step_contexts,
+                }
+                if any(
+                    s["external_run_id"] is not None
+                    or s["external_invocation_id"] is not None
+                    for s in self._step_contexts
+                )
+                else None
+            ),
         )
         self._state = "judging"
+        self._evaluation_status = "running"
         try:
-            raw_report = self._judge_provider.judge(context)
-            report = normalize_report(raw_report, run_id=self.run_id)
+            with self._timeline.measure("judge_provider_call"):
+                raw_report = self._judge_provider.judge(context)
+                report = normalize_report(raw_report, run_id=self.run_id)
         except KumaError:
             self._state = "completed"
+            self._evaluation_status = "failed"
             raise
         except Exception as exc:
             self._state = "completed"
+            self._evaluation_status = "failed"
             raise _unexpected_judge_failure(self._judge_provider) from exc
         except BaseException:
             self._state = "completed"
+            self._evaluation_status = "failed"
             raise
         self._report = report
         self._state = "report_ready"
+        self._evaluation_status = "completed"
         return report
 
     def _finish_runtime(self) -> None:
