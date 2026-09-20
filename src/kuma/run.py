@@ -28,7 +28,9 @@ from .errors import (
     ProviderError,
     ValidationError,
 )
+from .evidence.assessment_contract import build_assessment_evidence
 from .evidence.runtime import runtime_submission_id
+from .evidence.runtime_actors import invalid_runtime_actor, validate_runtime_actors
 from .evidence.tracking.evidence import EvidenceCollector, PreparedEvidence
 from .providers.base import JudgeContext, JudgeProvider
 from .providers.normalization import normalize_report
@@ -515,6 +517,8 @@ class Run:
         logs: Sequence[str | os.PathLike[str]] | None = None,
         wait: bool = True,
         external_invocation_id: str | None = None,
+        public_messages: Mapping[str, Any] | None = None,
+        runtime_actors: Sequence[Mapping[str, str]] | None = None,
     ) -> TestReport | None:
         """Validate and commit one result, then advance or judge synchronously.
 
@@ -538,6 +542,20 @@ class Run:
             external_invocation_id: Optional safe ASCII invocation label, 1-128
                 characters. Bound to this committed step and enables negotiated
                 correlation. None omits the label; never an authorization token.
+            public_messages: Optional bundle from collect_public_messages.
+                Contains all completed public messages and explicit coverage,
+                never reasoning. None preserves historical behavior. This
+                requires negotiated detailed assessment for Official Judge;
+                unsupported services fail instead of silently dropping it.
+            runtime_actors: Optional list/tuple of at most 1000 closed mappings
+                with lowercase OTel trace_id (32 hex), span_id (16 hex), and
+                actor (target_agent, sdk_setup, external_evaluator, reviewer,
+                cross_case_reference, unknown). Requires public_messages and
+                captured spans. Declare only known per-span actors; declarations
+                are not attestations and never apply to descendants or upgrade
+                coverage. Missing/ambiguous/duplicate selectors fail with
+                runtime_actor_invalid before submission commit. Upload binds
+                final hashes/pointers; unsupported projections fail before POST.
 
         Returns:
             Final :class:`TestReport` only when this is the last input and Judge
@@ -546,7 +564,9 @@ class Run:
 
         Raises:
             InputProtocolError: If no input is currently delivered.
-            ValidationError: If output, status, error, or serialization is invalid.
+            ValidationError: If output, status, error, serialization or runtime
+                actor selectors are invalid. Selector failures before commit
+                retain the delivered Input; final upload failures retain history.
             EvidenceCaptureError: If requested Evidence cannot be captured safely.
             KumaError: If the final official or custom Judge fails.
 
@@ -574,6 +594,9 @@ class Run:
 
         log_paths = _validate_log_paths(logs)
         invocation_id = external_identifier(external_invocation_id)
+        actors = validate_runtime_actors(runtime_actors)
+        if actors and (public_messages is None or self._evidence is None):
+            raise invalid_runtime_actor()
         with self._mutex:
             current = self._submission_input(log_paths)
             step_elapsed = elapsed_ms(self._step_started)
@@ -583,6 +606,17 @@ class Run:
                 status=status,
                 error=error,
             )
+            assessment = (
+                None
+                if public_messages is None
+                else build_assessment_evidence(
+                    public_messages,
+                    run_id=self.run_id,
+                    input_id=current.input_id,
+                    step_id=current.input_id,
+                    submission_id=runtime_submission_id(self.run_id, current.input_id),
+                )
+            )
             with self._timeline.measure("evidence_prepare", input_id=current.input_id):
                 prepared = self._prepare_evidence(
                     current=current,
@@ -590,6 +624,8 @@ class Run:
                     status=status,
                     error=error,
                     logs=log_paths,
+                    assessment_evidence=assessment,
+                    runtime_actors=actors,
                 )
             submission = self._submission(
                 current=current,
@@ -597,6 +633,7 @@ class Run:
                 status=status,
                 error=error,
                 prepared=prepared,
+                assessment_evidence=assessment,
             )
             self._record_submission(current, submission, prepared)
             self._timeline.record(
@@ -669,16 +706,33 @@ class Run:
         status: str,
         error: str | None,
         logs: Sequence[str] | None,
+        assessment_evidence: Mapping[str, Any] | None = None,
+        runtime_actors: Sequence[Mapping[str, str]] = (),
     ) -> PreparedEvidence | None:
-        """Prepare transactional Evidence without advancing collector offsets."""
+        """Stage Evidence and optional validated message bundle before commit.
+
+        Run has already sanitized and bounded assessment_evidence. Passing it
+        through the collector includes it in the same atomic local record;
+        omission leaves historical collector calls and custom tests unchanged.
+        Local runtime_actors are resolved by the collector before persistence;
+        failed resolution aborts capture without consuming the active input.
+        """
         if self._evidence is None:
             return None
+        extra = (
+            {}
+            if assessment_evidence is None
+            else {"assessment_evidence": assessment_evidence}
+        )
+        if runtime_actors:
+            extra["runtime_actors"] = runtime_actors
         return self._evidence.prepare(
             input_id=current.input_id,
             output=output,
             status=status,
             error=error,
             logs=logs,
+            **extra,
         )
 
     def _submission(
@@ -689,6 +743,7 @@ class Run:
         status: str,
         error: str | None,
         prepared: PreparedEvidence | None,
+        assessment_evidence: Mapping[str, Any] | None = None,
     ) -> Submission:
         """Build the immutable Submission and abort prepared Evidence on validation failure."""
         try:
@@ -706,7 +761,14 @@ class Run:
                 file_evidence=None if prepared is None else prepared.file_evidence,
                 missing=() if prepared is None else prepared.missing,
                 dropped_count=0 if prepared is None else prepared.dropped_count,
-                extensions={} if prepared is None else prepared.extensions,
+                extensions={
+                    **({} if prepared is None else prepared.extensions),
+                    **(
+                        {}
+                        if assessment_evidence is None
+                        else {"assessment_evidence": assessment_evidence}
+                    ),
+                },
             )
         except ValidationError:
             if prepared is not None:

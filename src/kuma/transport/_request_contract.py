@@ -120,6 +120,8 @@ class StoredRequest:
         case_validation: Low-sensitive recovered Case validation context.
         error_code: Stable terminal public error code without details.
         error_retryable: Retry flag paired with a terminal error code.
+        assessment_contract: Optional negotiated Judge result schema, retained
+            across process restart without storing Evidence or assessment bodies.
     """
 
     public: RequestRecord
@@ -130,6 +132,7 @@ class StoredRequest:
     case_validation: Mapping[str, Any] | None
     error_code: str | None = None
     error_retryable: bool | None = None
+    assessment_contract: str | None = None
 
 
 def validate_recovery_response(
@@ -168,6 +171,11 @@ def stored_payload(stored: StoredRequest) -> dict[str, Any]:
         "case_validation": stored.case_validation,
         "error_code": stored.error_code,
         "error_retryable": stored.error_retryable,
+        **(
+            {}
+            if stored.assessment_contract is None
+            else {"assessment_contract": stored.assessment_contract}
+        ),
     }
 
 
@@ -240,6 +248,8 @@ def validate_stored(raw: Any) -> StoredRequest:
         "error_code",
         "error_retryable",
     }
+    if isinstance(raw, Mapping) and "assessment_contract" in raw:
+        fields.add("assessment_contract")
     if not isinstance(raw, Mapping) or set(raw) != fields:
         raise ProviderError("Request record is invalid", code="request_state_invalid")
     try:
@@ -272,6 +282,13 @@ def validate_stored(raw: Any) -> StoredRequest:
         and ((status == "failed") == (error_code is not None))
         and ((status == "failed") == (error_retryable is not None))
         and (status == "prepared" or operation_id is not None)
+        and (
+            "assessment_contract" not in raw
+            or (
+                raw["assessment_contract"] == "kuma.judge_assessment.v1"
+                and request_type == "judgment"
+            )
+        )
     )
     if not valid:
         raise ProviderError("Request record is invalid", code="request_state_invalid")
@@ -295,6 +312,7 @@ def validate_stored(raw: Any) -> StoredRequest:
         case_validation=validate_case_context(raw["case_validation"]),
         error_code=error_code,
         error_retryable=error_retryable,
+        assessment_contract=raw.get("assessment_contract"),
     )
 
 

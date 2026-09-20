@@ -59,6 +59,7 @@ class RequestOperationStore:
         run_id: str | None = None,
         case_id: str | None = None,
         case_validation: Mapping[str, Any] | None = None,
+        assessment_contract: str | None = None,
     ) -> None:
         """Bind validated recovery identities without writing local state.
 
@@ -66,6 +67,8 @@ class RequestOperationStore:
         saving their values. ``case_validation`` holds only bounded public
         checks required after a process-loss resume. Unsafe paths fail before
         any network operation.
+        assessment_contract seals the optional Judge schema before POST; None
+        preserves legacy records exactly and never infers response negotiation.
         """
         self.root = canonical_repo_root(repo_path)
         if request_type not in REQUEST_TYPES:
@@ -79,6 +82,14 @@ class RequestOperationStore:
         self.run_id = optional_identifier(run_id, 128)
         self.case_id = optional_identifier(case_id, 128)
         self.case_validation = validate_case_context(case_validation)
+        if assessment_contract is not None and (
+            assessment_contract != "kuma.judge_assessment.v1"
+            or request_type != "judgment"
+        ):
+            raise ProviderError(
+                "Invalid assessment recovery contract", code="request_state_invalid"
+            )
+        self.assessment_contract = assessment_contract
         self.directory = self.root / ".kuma" / "requests"
         self._client_request_id: str | None = None
         self._accepted_case_id: str | None = None
@@ -132,6 +143,7 @@ class RequestOperationStore:
                     backend_sha256=self.backend_sha256,
                     api_key_sha256=self.api_key_sha256,
                     case_validation=self.case_validation,
+                    assessment_contract=self.assessment_contract,
                 )
                 self._write(stored)
             self._client_request_id = stored.public.client_request_id

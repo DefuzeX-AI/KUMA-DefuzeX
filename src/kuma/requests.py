@@ -195,6 +195,7 @@ def _accept_recovered_result(
             run_id=stored.public.run_id,
             case_id=stored.public.case_id,
             operation_id=stored.public.operation_id,
+            assessment_contract=stored.assessment_contract,
         )
         run_id = stored.public.run_id
         if run_id is None:

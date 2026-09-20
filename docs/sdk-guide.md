@@ -38,8 +38,8 @@ python -m pip install --upgrade "kuma-defuzex[otel]"
 ```
 
 Repository contributors should install this checkout with `python -m pip install -e ".[test,dev]"`.
-Candidate-only 0.3.0 observation/correlation examples require that source checkout;
-the published 0.2.8 package does not acquire unreleased features through an upgrade.
+Observation and correlation APIs are available in KUMA 0.3.0 or later.
+Upgrade the published package using the command above; no source checkout is required.
 
 ## Local quickstart
 

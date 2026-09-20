@@ -52,7 +52,7 @@ kuma quickstart
 ## 文档
 
 [SDK 指南](docs/sdk-guide.md) · [Python API 参考](docs/api-reference.md) ·
-[版本与发布](docs/releases.md)
+[版本与发布](docs/releases.md) · [详细 Judge 评估](docs/judge-assessment.md)
 
 ## 项目链接
 

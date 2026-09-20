@@ -36,6 +36,7 @@ from .errors import (
     ServiceError,
     ValidationError,
 )
+from .evidence.public_messages import collect_public_messages
 from .exceptions import (
     KumaAPIError,
     KumaAuthenticationError,
@@ -121,6 +122,7 @@ __all__ = [
     "ValidationError",
     "__version__",
     "check_for_updates",
+    "collect_public_messages",
     "configure",
     "create_run",
     "list_requests",

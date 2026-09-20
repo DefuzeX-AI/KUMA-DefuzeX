@@ -12,6 +12,7 @@ from typing import Any
 
 from ..contracts import JudgeBatchResult
 from ..errors import ConfigurationError, LimitExceededError, ProviderError
+from ..evidence.assessment_contract import ASSESSMENT_CONTRACT
 from ..repository.case_artifacts import MAX_CASE_ARTIFACT_BYTES, official_original
 from ..repository.privacy import enforce_sensitive_policy, scan_sensitive_json
 from ..timeline import StageTimeline
@@ -29,6 +30,7 @@ from ..transport.request_records import (
     find_active_request,
     store_for_existing,
 )
+from ._official_assessment import append_assessment_parts, negotiate_assessment
 from ._official_correlation import upload_run_context
 from ._official_evidence_upload import JudgeUploadConfig as _JudgeConfig
 from ._official_evidence_upload import evidence_upload as _evidence_upload
@@ -332,7 +334,12 @@ def _batch_result(upload: _JudgeUpload, raw: Any) -> JudgeBatchResult:
             raise ProviderError(
                 "The Backend omitted a batch Judgment", code="invalid_response"
             )
-        report = normalize_report(_normalize_judgment(judgment), run_id=upload.run_id)
+        report = normalize_report(
+            _normalize_judgment(
+                judgment, assessment_contract=upload.metadata.get("assessment_contract")
+            ),
+            run_id=upload.run_id,
+        )
         return JudgeBatchResult(upload.run_id, upload.run_id, report=report)
     error = raw.get("error")
     if not isinstance(error, Mapping):
@@ -368,8 +375,37 @@ class OfficialJudgeProvider:
         allow_sensitive: bool = False,
         operation_wait_timeout: float = 600.0,
         state_root: Path | None = None,
+        assessment_contract: str | None = "auto",
     ) -> None:
-        """Configure bounded public Judge uploads and per-Run resumable state."""
+        """Configure bounded uploads, resumable state and detailed assessment.
+
+        Args:
+            client: Authenticated public Backend transport; never a Core client.
+            allow_sensitive: Legacy policy option, default False; cannot bypass
+                public-message redaction or closed assessment result checks.
+            operation_wait_timeout: Overall polling budget in seconds, default
+                600.0. Exhaustion retains accepted operation identity for retry.
+            state_root: Existing canonical repository for durable recovery, or
+                None for process-local state. Construction performs no writes.
+            assessment_contract: "auto" (default) negotiates only an advertised
+                contract; old servers return a legacy report without assessment.
+                "kuma.judge_assessment.v1" requires support; None disables it.
+                Supplying public messages while disabled/unsupported is rejected.
+
+        Raises:
+            ConfigurationError: Unknown assessment selection before any I/O.
+
+        Postconditions:
+            Original negotiation is sealed before POST and reused on recovery;
+            results cannot silently downgrade after restart/config changes.
+
+        Side Effects:
+            Allocates bounded per-Run state lazily; no requests or files here.
+        """
+        if assessment_contract not in (None, "auto", ASSESSMENT_CONTRACT):
+            raise ConfigurationError("Invalid assessment contract")
+        self.assessment_contract = assessment_contract
+        self._assessment_contracts: dict[str, str | None] = {}
         self.client = client
         self.allow_sensitive = allow_sensitive
         self.operation_wait_timeout = operation_wait_timeout
@@ -429,6 +465,7 @@ class OfficialJudgeProvider:
         *,
         part_prefix: str = "",
         idempotency_key: str | None = None,
+        assessment_selection: str | None = "auto",
     ) -> _JudgeUpload:
         """Stage one Case and its Evidence under the advertised per-item limits.
 
@@ -437,15 +474,37 @@ class OfficialJudgeProvider:
         Existing Evidence, Case and aggregate byte/privacy checks remain in
         their respective paths. Returns staged parts without I/O;
         raises stable size or privacy errors before request persistence/upload.
+        assessment_selection="auto" resolves the configured preference. An
+        exact contract or None is an already sealed replay selection and must
+        not be renegotiated against a changed advertisement.
         """
         run_id = self._run_id(context)
         log_parts, manifest, findings = _evidence_upload(context, config, part_prefix)
+        assessment = (
+            assessment_selection
+            if assessment_selection == ASSESSMENT_CONTRACT
+            else negotiate_assessment(
+                self.assessment_contract if assessment_selection == "auto" else None,
+                config,
+                context,
+            )
+        )
+        if assessment is not None:
+            log_parts, manifest = append_assessment_parts(
+                context,
+                config,
+                log_parts,
+                manifest,
+                part_prefix=part_prefix,
+            )
         metadata: dict[str, Any] = {
             "status": self._submission_status(context),
             "force": False,
             "allow_sensitive": self.allow_sensitive,
             "manifest": manifest,
         }
+        if assessment is not None:
+            metadata["assessment_contract"] = assessment
         correlation = upload_run_context(context, config)
         if correlation is not None:
             metadata["run_context"] = correlation
@@ -480,6 +539,14 @@ class OfficialJudgeProvider:
         else:
             case_part, case_findings = _custom_case_part(context, config, part_prefix)
             findings.extend(case_findings)
+        if (
+            assessment is not None
+            and len(case_part.data) + sum(len(part.data) for part in log_parts)
+            > config.max_total_bytes
+        ):
+            raise LimitExceededError(
+                "Case and Evidence exceed the upload limit", code="log_size_exceeded"
+            )
         if len(log_parts) + 1 > config.max_files:
             raise LimitExceededError(
                 "Case and Evidence exceed the upload limit",
@@ -569,9 +636,18 @@ class OfficialJudgeProvider:
         else:
             store = self._legacy_operation_store(run_id)
         pending = store.load()
-        if pending is not None and pending.operation_id is not None:
+        if (
+            pending is not None
+            and pending.operation_id is not None
+            and (existing is None or existing.public.status != "succeeded")
+        ):
+            expected_assessment = (
+                store.stored_record().assessment_contract
+                if isinstance(store, RequestOperationStore)
+                else self._assessment_contracts.get(run_id)
+            )
             return self._resume_judgment(
-                store, pending.idempotency_key, context.run_context
+                store, pending.idempotency_key, context.run_context, expected_assessment
             )
         config = _judge_config(self.client.json("GET", "/sdk/judge/config/"))
         key = pending.idempotency_key if pending else self._idempotency_key(run_id)
@@ -579,6 +655,11 @@ class OfficialJudgeProvider:
             context,
             config,
             idempotency_key=key,
+            assessment_selection=(
+                existing.assessment_contract
+                if existing is not None
+                else self._assessment_contracts.get(run_id, "auto")
+            ),
         )
         return self._submit_judgment(store, upload, existing=existing)
 
@@ -596,11 +677,13 @@ class OfficialJudgeProvider:
         )
 
     def _active_request(self, run_id: str) -> Any:
-        """Locate a durable nonterminal Judge record after process loss.
+        """Locate an active or retained successful Judge's sealed expectation.
 
         Returns:
             Internal stored metadata when ``state_root`` names the repository,
-            otherwise ``None`` for direct process-local Provider use.
+            otherwise ``None`` for direct process-local Provider use. Successful
+            records still require exact rebuilt request-hash agreement; locating
+            one does not authorize new Evidence or a second POST.
 
         Side Effects:
             Reads only bounded request-ledger metadata and performs no network.
@@ -614,6 +697,7 @@ class OfficialJudgeProvider:
             run_id=run_id,
             base_url=self.client.base_url,
             api_key_sha256=_client_credential_identity(self.client),
+            include_succeeded=True,
         )
 
     def _resume_judgment(
@@ -621,6 +705,7 @@ class OfficialJudgeProvider:
         store: PendingOperationStore,
         idempotency_key: str,
         run_context: Mapping[str, Any] | None = None,
+        assessment_contract: str | None = None,
     ) -> Mapping[str, Any]:
         """Poll the stored Judge operation without issuing a replacement POST."""
         response = await_operation(
@@ -630,7 +715,7 @@ class OfficialJudgeProvider:
             start=lambda _key, _deadline: {},
             wait_timeout=self.operation_wait_timeout,
             accept_result=lambda value: self._accept_judgment(
-                store, value, run_context
+                store, value, run_context, assessment_contract
             ),
         )
         return response
@@ -644,6 +729,8 @@ class OfficialJudgeProvider:
     ) -> Mapping[str, Any]:
         """Submit one multipart Judge operation and retain its key for safe replay."""
         fields = {"metadata": json.dumps(upload.metadata, separators=(",", ":"))}
+        assessment = upload.metadata.get("assessment_contract")
+        self._assessment_contracts[upload.run_id] = assessment
         parts = list(upload.log_parts)
         if upload.case_id is not None:
             fields["case_id"] = upload.case_id
@@ -667,6 +754,7 @@ class OfficialJudgeProvider:
                     api_key_sha256=_client_credential_identity(self.client),
                     run_id=upload.run_id,
                     case_id=upload.local_case_id,
+                    assessment_contract=assessment,
                 )
 
         def start_operation(key: str, deadline: float) -> Mapping[str, Any]:
@@ -695,7 +783,7 @@ class OfficialJudgeProvider:
             start=start_operation,
             wait_timeout=self.operation_wait_timeout,
             accept_result=lambda value: self._accept_judgment(
-                store, value, upload.metadata.get("run_context")
+                store, value, upload.metadata.get("run_context"), assessment
             ),
         )
         return response
@@ -705,6 +793,7 @@ class OfficialJudgeProvider:
         store: PendingOperationStore,
         response: Mapping[str, Any],
         run_context: Mapping[str, Any] | None = None,
+        assessment_contract: str | None = None,
     ) -> Mapping[str, Any]:
         """Validate a public Judgment and save its normalized public report.
 
@@ -717,6 +806,7 @@ class OfficialJudgeProvider:
             response,
             expected_run_context=run_context,
             operation_id=None if pending is None else pending.operation_id,
+            assessment_contract=assessment_contract,
         )
         if isinstance(store, RequestOperationStore):
             record = store.public_record()

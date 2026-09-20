@@ -1,8 +1,8 @@
 # Run correlation and stage timings
 
-This API is an unreleased addition for the coordinated 0.3.0 release. Current
-public 0.2.8 does not provide it. The runnable example requires this candidate's
-source checkout: `python -m pip install -e .`, then
+This API is available in KUMA 0.3.0 or later. Official correlation also requires
+server support. To run the repository example, use a source checkout:
+`python -m pip install -e .`, then
 `python examples/run_correlation.py`. It uses local custom Providers only.
 
 ## Use caller execution IDs

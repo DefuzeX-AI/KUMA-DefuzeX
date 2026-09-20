@@ -13,10 +13,10 @@ It is distinct from `create_run`, which implements a Case-to-Judgment evaluation
 
 ## Runnable local example
 
-This API targets the upcoming **0.3.0** release; the currently published 0.2.8
-package does **not** provide `kuma.observe`. Until 0.3.0 is released, use a source
-checkout containing this feature. Run these commands **from that checkout's
-repository root**, where `pyproject.toml` and `examples/local_observation.py` exist:
+This API is available in KUMA **0.3.0 or later**. A published installation supports
+`kuma.observe`. To run the repository example below, use a source checkout and
+run these commands **from its repository root**, where `pyproject.toml` and
+`examples/local_observation.py` exist:
 
 ```bash
 python -m pip install -e ".[otel]"

@@ -6,6 +6,33 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
+## 0.3.1 release notes
+
+This is an optional, backward-compatible patch for 0.3.0 clients. It does not
+force an upgrade, automatically install software, or change existing report
+fields. Source notes are not proof of publication: the matching immutable tag,
+GitHub Release and PyPI package establish availability.
+
+- Optional negotiated detailed Judge assessment separates task completion,
+  artifact quality and behavioral integrity, with explicit claim evidence and
+  uncertainty. Missing evidence does not prove misconduct.
+- `collect_public_messages()` retains bounded completed public replies, including
+  earlier replies, with redaction, actor declarations and explicit capture gaps.
+- `Run.submit(public_messages=..., runtime_actors=...)` supports exact per-span
+  execution attribution without predicting upload hashes. Mixed setup/reviewer
+  spans never inherit the target Agent's identity; declarations are not attestations.
+- Typed message Evidence uses the existing bounded upload route; result contract
+  expectations remain bound across retry/recovery. Known operations use GET-only
+  recovery, and lost responses reuse the same request identity.
+- Corrected documentation that still described released 0.3.0 APIs as unreleased.
+
+Detailed assessment requires an explicitly supporting service. Ordinary requests
+remain compatible with services that omit it; explicitly supplied public messages
+fail clearly if unsupported rather than being silently discarded. No runtime
+coverage is promoted, no reasoning is collected, and no complete-capture or
+model-accuracy guarantee is made. Existing clients can continue their current API.
+See [detailed assessment and public messages](judge-assessment.md).
+
 ## 0.3.0 release notes
 
 These notes describe the `0.3.0` source release. The matching GitHub Release

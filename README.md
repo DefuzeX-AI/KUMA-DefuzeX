@@ -56,7 +56,7 @@ kuma quickstart
 ## Documentation
 
 [SDK guide](docs/sdk-guide.md) · [Python API reference](docs/api-reference.md) ·
-[Versions and releases](docs/releases.md)
+[Versions and releases](docs/releases.md) · [Detailed Judge assessment](docs/judge-assessment.md)
 
 ## Project
 

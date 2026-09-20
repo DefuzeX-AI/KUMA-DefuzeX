@@ -49,8 +49,14 @@ def find_active_request(
     run_id: str,
     base_url: str,
     api_key_sha256: str,
+    include_succeeded: bool = False,
 ) -> StoredRequest | None:
-    """Find one exact active Run request without reconstructing its body."""
+    """Find an owner-bound Run request without reconstructing its body.
+
+    Judge may include a retained success to recover its negotiated schema before
+    rebuilding and comparing the exact request hash. Other callers retain active-
+    only behavior. Reads bounded local metadata; no response/body is inferred.
+    """
     root = canonical_repo_root(repo_path)
     directory = root / ".kuma" / "requests"
     if not directory.exists():
@@ -64,7 +70,10 @@ def find_active_request(
         and stored.public.run_id == run_id
         and stored.backend_sha256 == expected_backend
         and stored.api_key_sha256 == api_key_sha256
-        and stored.public.status not in {"succeeded", "failed"}
+        and (
+            stored.public.status not in {"succeeded", "failed"}
+            or (include_succeeded and stored.public.status == "succeeded")
+        )
     ]
     if len(matches) > 1:
         raise ProviderError(
@@ -98,6 +107,7 @@ def store_for_existing(
         run_id=stored.public.run_id,
         case_id=stored.public.case_id,
         case_validation=stored.case_validation,
+        assessment_contract=stored.assessment_contract,
     )
     store._client_request_id = stored.public.client_request_id
     return store

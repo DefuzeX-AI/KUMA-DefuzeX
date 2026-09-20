@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..errors import LimitExceededError, ProviderError
+from ..evidence.assessment_contract import ASSESSMENT_CONTRACT
 from ..evidence.runtime import project_runtime_evidence_v2, runtime_submission_id
 from ..evidence.runtime_capabilities import project_runtime_evidence_capabilities
 from ..evidence.runtime_contract import (
@@ -54,6 +55,8 @@ class JudgeUploadConfig:
         supported_run_context_schemas: Optional explicitly advertised correlation
             schema. Missing/empty preserves legacy omission; explicit caller
             correlation requires support and never silently downgrades.
+        supported_assessment_contracts: Explicit detailed Judge result contracts.
+            Missing/empty permits legacy auto fallback; explicit requests fail.
     """
 
     max_files: int
@@ -65,6 +68,7 @@ class JudgeUploadConfig:
     runtime_evidence_capabilities: tuple[str, ...] = ()
     trace_content_schemas: tuple[str, ...] = ()
     supported_run_context_schemas: tuple[str, ...] = ()
+    supported_assessment_contracts: tuple[str, ...] = ()
 
 
 def judge_upload_config(response: Mapping[str, Any]) -> JudgeUploadConfig:
@@ -85,6 +89,9 @@ def judge_upload_config(response: Mapping[str, Any]) -> JudgeUploadConfig:
     )
     trace_schemas = response.get("trace_content_schemas", [])
     context_schemas = response.get("supported_run_context_schemas", [])
+    assessment_schemas = response.get("supported_assessment_contracts", [])
+    if assessment_schemas not in ([], [ASSESSMENT_CONTRACT]):
+        raise ProviderError("Invalid assessment configuration", code="invalid_response")
     if context_schemas not in ([], ["kuma.run_context.v1"]):
         raise ProviderError(
             "The Backend returned invalid Run context configuration",
@@ -145,6 +152,7 @@ def judge_upload_config(response: Mapping[str, Any]) -> JudgeUploadConfig:
         runtime_evidence_capabilities=tuple(capabilities or ()),
         trace_content_schemas=tuple(trace_schemas),
         supported_run_context_schemas=tuple(context_schemas),
+        supported_assessment_contracts=tuple(assessment_schemas),
     )
 
 

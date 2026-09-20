@@ -3,7 +3,7 @@
 For explicit `KumaClient.upload_observation`, `list_observations`,
 `get_observation` and `delete_observation`, including arguments, return fields,
 scopes and privacy, see [Cloud observations](cloud-observations.md).
-These unreleased 0.3.0 APIs are not available in public 0.2.8.
+These APIs are available in KUMA 0.3.0 or later; cloud features also require server support.
 
 For active operation interval revisions, bounded backoff and strict timeout
 behavior, see [Operation polling and deadlines](operation-polling.md).
@@ -239,6 +239,9 @@ but it never calls Judge or appends history.
 | `logs` | `list[str \| Path] \| None` | `None` | Names local log files whose newly appended bytes should accompany this Submission. KUMA reads only a bounded increment and applies path and sensitive-data checks. Leave `None` when logs are not needed. |
 | `wait` | `bool` | `True` | Keeps final Judge execution synchronous: the last `submit()` returns only after the report or an error is available. The current public API requires `True`; background polling is not exposed. |
 | `external_invocation_id` | `str \| None` | `None` | Labels this Agent invocation using the same safe ASCII rules as `external_run_id`. Enables negotiated correlation even when the Run label is omitted; never an authorization credential. |
+
+| `public_messages` | `Mapping[str, Any] \\| None` | `None` | Pass the bounded bundle returned by `kuma.collect_public_messages` for this Input. Preserves earlier completed public messages, excludes reasoning, redacts before local persistence, and requires negotiated assessment support for Official Judge. [Exact capture/result contract](judge-assessment.md). |
+| `runtime_actors` | `Sequence[Mapping[str, str]] \| None` | `None` | List/tuple of at most 1000 closed `{trace_id, span_id, actor}` declarations for this Input's captured OTel spans. Requires `public_messages`; unknown is the default for undeclared spans. IDs are nonzero lowercase 32/16-character hex. Exact matching, no descendant inference or completeness upgrade. Missing/ambiguous/duplicate selectors fail before commit; final hashes and pointers bind before POST. See [actor workflow and retry boundaries](judge-assessment.md#attribute-captured-execution-explicitly). |
 
 <!-- api-parameters:submit:end -->
 

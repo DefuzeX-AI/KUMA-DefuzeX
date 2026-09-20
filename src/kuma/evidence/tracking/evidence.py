@@ -17,7 +17,12 @@ from ...contracts import (
     FileEvidence,
     Submission,
 )
-from ...errors import ConfigurationError, EvidenceCaptureError, InputProtocolError
+from ...errors import (
+    ConfigurationError,
+    EvidenceCaptureError,
+    InputProtocolError,
+    ValidationError,
+)
 from ...repository.privacy import (
     SensitiveFinding,
     enforce_sensitive_policy,
@@ -26,6 +31,7 @@ from ...repository.privacy import (
     scan_sensitive_text,
 )
 from ..runtime import build_runtime_evidence, runtime_submission_id
+from ..runtime_actors import selected_span_index
 from ..trace import (
     PreparedOtelLogs,
     PreparedTraceEvidence,
@@ -326,6 +332,8 @@ class EvidenceCollector:
         status: str,
         error: str | None,
         logs: Sequence[str] | None,
+        assessment_evidence: Mapping[str, Any] | None = None,
+        runtime_actors: Sequence[Mapping[str, str]] = (),
     ) -> PreparedEvidence:
         """Stage all Evidence owned by one Input for transactional Submission.
 
@@ -341,6 +349,12 @@ class EvidenceCollector:
             output: Already validated JSON-compatible Agent output.
             status: Stable Submission outcome.
             error: Optional caller-safe error summary.
+            assessment_evidence: Optional already validated/redacted message
+                envelope from Run. It is staged with the same local record and
+                offsets, never written separately or uploaded here.
+            runtime_actors: Syntax-validated local span declarations from Run;
+                exact IDs must resolve uniquely in this staged capture. Failed
+                resolution aborts log/trace staging before any local record.
             logs: Validated ordered log paths selected by the caller, or
                 ``None``. Relative values are resolved by ``LogTracker`` from
                 this collector's canonical ``root``.
@@ -353,6 +367,8 @@ class EvidenceCollector:
             InputProtocolError: If ``input_id`` is not the active step.
             SensitiveDataError: If prepared uploadable content violates policy.
             EvidenceCaptureError: If required canonical Evidence cannot be built.
+            ValidationError: If a declared runtime span is missing or ambiguous;
+                log/trace preparation is aborted before creating a local record.
 
         Preconditions:
             ``begin_step(input_id)`` succeeded and no prior preparation was
@@ -400,6 +416,19 @@ class EvidenceCollector:
             summary=summary,
             sensitive_detected=bool(findings),
         )
+        if assessment_evidence is not None:
+            extensions["assessment_evidence"] = assessment_evidence
+        if runtime_actors:
+            try:
+                spans = extensions.get("trace_evidence", {}).get("spans", ())
+                for selector in runtime_actors:
+                    selected_span_index(selector, spans)
+            except ValidationError:
+                prepared_logs.abort()
+                if summary.prepared_traces is not None:
+                    summary.prepared_traces.abort()
+                raise
+            extensions["runtime_actors"] = [dict(item) for item in runtime_actors]
         pending_path, final_path = self._prepare_submission_record(
             input_id=input_id,
             status=status,

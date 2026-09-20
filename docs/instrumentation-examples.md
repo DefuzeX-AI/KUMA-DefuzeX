@@ -1,7 +1,7 @@
 # Runnable instrumented Agent examples
 
-These examples accompany unreleased KUMA 0.3.0. Public 0.2.8 does not include
-`observe()` or this capture mapping. Use this candidate's **source checkout**;
+These examples use APIs available in KUMA 0.3.0 or later.
+Use a matching **source checkout** to run the repository examples;
 the `examples/` directory is not installed by a wheel.
 
 ```sh

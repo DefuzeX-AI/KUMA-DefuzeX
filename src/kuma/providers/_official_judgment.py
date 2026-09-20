@@ -7,6 +7,7 @@ from typing import Any
 
 from ..correlation import validate_run_receipt
 from ..errors import ProviderError
+from ._assessment_result import extract_assessment
 from ._official_wire import (
     contains_private_fields,
     plain_json,
@@ -60,6 +61,26 @@ def _validated_confidence(value: Any) -> str | int | float | None:
     )
 
 
+def _report_extensions(
+    response: Mapping[str, Any], excluded: set[str], receipt: Any, assessment: Any
+) -> dict[str, Any]:
+    """Combine legacy extensions with separately validated optional contracts.
+
+    Called only after private-field and negotiated-schema checks. Absence stays
+    absence; no assessment or receipt is synthesized from legacy status flags.
+    """
+    result = {
+        str(key): plain_json(value)
+        for key, value in response.items()
+        if key not in excluded
+    }
+    if receipt is not None:
+        result["run_receipt"] = receipt
+    if assessment is not None:
+        result["assessment"] = assessment
+    return result
+
+
 def normalize_official_judgment(
     response: Mapping[str, Any],
     *,
@@ -68,6 +89,7 @@ def normalize_official_judgment(
     run_id: str | None = None,
     case_id: str | None = None,
     operation_id: str | None = None,
+    assessment_contract: str | None = None,
 ) -> Mapping[str, Any]:
     """Normalize a public Judgment, validating optional correlation separately.
 
@@ -76,8 +98,12 @@ def normalize_official_judgment(
     receipt permission. Missing expected or unexpected receipts fail before local
     success. Receipt metadata enters a closed extension, not Judge issue content.
     Ordinary callers omit all keywords and retain previous wire behavior.
+    assessment_contract is the sealed request expectation, never inferred from
+    response fields or refreshed config. Opt-in requires a validated assessment;
+    legacy omission stays absent and never becomes three synthetic passes.
     """
 
+    response, assessment = extract_assessment(response, assessment_contract)
     receipt = None
     if "run_receipt" in response:
         if not allow_run_receipt and expected_run_context is None:
@@ -124,18 +150,12 @@ def normalize_official_judgment(
         "status": "pass" if status == "passed" else status,
         "issues": issues,
         "evidence_gaps": evidence_gaps,
-        "extensions": {
-            str(key): plain_json(value)
-            for key, value in response.items()
-            if key not in excluded
-        },
+        "extensions": _report_extensions(response, excluded, receipt, assessment),
     }
     if confidence is not None:
         result["confidence"] = confidence
     if isinstance(response.get("stop_reason"), str):
         result["stop_reason"] = response["stop_reason"]
-    if receipt is not None:
-        result["extensions"]["run_receipt"] = receipt
     return result
 
 

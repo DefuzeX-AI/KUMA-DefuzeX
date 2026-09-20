@@ -1,7 +1,7 @@
 # Explicit cloud observation history
 
-Unreleased API for the coordinated 0.3.0 release; public 0.2.8 does not provide
-these methods. [Local observation](observation.md) needs no key or network.
+These APIs are available in KUMA 0.3.0 or later.
+[Local observation](observation.md) needs no key or network.
 Cloud storage is an additional explicit action, never an automatic side effect
 of observing or exporting. The server must enable this feature.
 
