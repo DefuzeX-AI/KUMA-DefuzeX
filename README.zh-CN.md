@@ -42,6 +42,17 @@ python -m pip install --upgrade kuma-defuzex
 kuma quickstart
 ```
 
+成功时，输出开头为：
+
+```text
+Local check: PASS
+Score: 100/100
+Reason: Output exactly matched the published rule.
+```
+
+这只验证内置的本地示例，不代表你的 Agent 已通过评测，也不会调用托管 Judge。
+要评测自己的 Agent，请继续阅读 [SDK 指南](docs/sdk-guide.md)。
+
 ## 下一步
 
 - [运行官方评测](docs/sdk-guide.md)，完成完整的 Case 与 Judge 流程。
