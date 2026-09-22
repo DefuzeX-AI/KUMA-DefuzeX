@@ -56,6 +56,7 @@ jobs:
       - run: python -c "import importlib.metadata, kuma; assert kuma.__version__ == importlib.metadata.version('kuma-defuzex')"
       - run: python -m kuma --help
       - run: python examples/minimal_local.py
+      - run: python tools/verify_minimal_local.py
       - run: python tools/verify_evidence_capacity.py
       - run: python tools/verify_executed_strategy_group.py
       - run: python tools/verify_cli_atomic_output.py
@@ -77,6 +78,7 @@ jobs:
       - run: python -c "import importlib.metadata, kuma; assert kuma.__version__ == importlib.metadata.version('kuma-defuzex')"
       - run: python -m kuma --help
       - run: python examples/minimal_local.py
+      - run: python tools/verify_minimal_local.py
       - run: python tools/verify_evidence_capacity.py
       - run: python tools/verify_executed_strategy_group.py
       - run: python tools/verify_cli_atomic_output.py
@@ -98,6 +100,7 @@ jobs:
       - run: python -c "import importlib.metadata, kuma; assert kuma.__version__ == importlib.metadata.version('kuma-defuzex')"
       - run: python -m kuma --help
       - run: python examples/minimal_local.py
+      - run: python tools/verify_minimal_local.py
       - run: python tools/verify_evidence_capacity.py
       - run: python tools/verify_executed_strategy_group.py
       - run: python tools/verify_cli_atomic_output.py
