@@ -24,7 +24,20 @@ _ASSIGNMENT = re.compile(
     rf"(?i)(?<![\w])(?P<label>{_CREDENTIAL_NAME}[\"']?\s*[:=]\s*)"
     r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;}]+)"
 )
-_HEADER_LINE = re.compile(r"(?im)\b(?:authorization|(?:set-)?cookie)\s*:[^\r\n]*")
+_AUTHORIZATION_HEADER = re.compile(
+    r"(?im)\bauthorization\s*:\s*(?P<scheme>bearer|basic)\s+(?P<value>\S+)"
+)
+_COOKIE_HEADER = re.compile(r"(?im)\b(?:set-)?cookie\s*:[^\r\n]*")
+_PLACEHOLDER_AUTH_VALUE = re.compile(
+    r"(?ix)^(?:"
+    r"<[^>]+>|"
+    r"\$\{?[A-Z][A-Z0-9_]*\}?|"
+    r"YOUR_[A-Z0-9_]+|"
+    r"TOKEN|ACCESS_TOKEN|API_KEY|"
+    r"\.\.\."
+    r")$"
+)
+_RFC7617_BASIC_SAMPLE = "YWxhZGRpbjpvcGVuc2VzYW1l"
 
 _SENSITIVE_BASENAMES = frozenset(
     {
@@ -43,10 +56,6 @@ _SENSITIVE_BASENAMES = frozenset(
 _SENSITIVE_SUFFIXES = frozenset({".key", ".p12", ".pfx", ".pem"})
 _TEXT_PATTERNS = (
     ("private_key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
-    (
-        "authorization",
-        re.compile(r"(?i)\bauthorization\s*:\s*(?:bearer|basic)\s+\S{8,}"),
-    ),
     ("cookie", re.compile(r"(?i)\b(?:set-)?cookie\s*:\s*[^\s=;]+=[^\s;]{6,}")),
     ("authorization_bearer", re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{16,}")),
     ("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b")),
@@ -123,11 +132,23 @@ def scan_sensitive_path(
 
 def scan_sensitive_text(text: str, *, location: str) -> tuple[SensitiveFinding, ...]:
     """Scan bounded text for credential and private-data signatures."""
-    findings = [
-        SensitiveFinding(kind, location)
-        for kind, pattern in _TEXT_PATTERNS
-        if pattern.search(text) is not None
-    ]
+    safe_authorization_spans = _safe_authorization_spans(text)
+    findings = []
+    for kind, pattern in _TEXT_PATTERNS:
+        matches = pattern.finditer(text)
+        if kind == "authorization_bearer":
+            matches = (
+                match
+                for match in matches
+                if not _inside_spans(match.span(), safe_authorization_spans)
+            )
+        if next(matches, None) is not None:
+            findings.append(SensitiveFinding(kind, location))
+    if any(
+        _authorization_match_is_secret(match)
+        for match in _AUTHORIZATION_HEADER.finditer(text)
+    ):
+        findings.append(SensitiveFinding("authorization", location))
     if any(_assignment_is_secret(match) for match in _ASSIGNMENT.finditer(text)):
         findings.append(SensitiveFinding("credential_assignment", location))
     return tuple(findings)
@@ -140,8 +161,35 @@ def _assignment_is_secret(match: re.Match[str]) -> bool:
     followed by other content is not an exemption. Token counts are not matched
     because their field names are outside the closed credential-name pattern.
     """
+    label = match["label"].casefold()
     value = match["value"].strip("\"'")
+    if "authorization" in label and value.casefold() in {"bearer", "basic"}:
+        return False
     return value not in {"", REDACTED}
+
+
+def _authorization_match_is_secret(match: re.Match[str]) -> bool:
+    """Keep obvious documentation values while failing closed on credentials."""
+    value = match["value"].strip("\"'`.,;)")
+    if _PLACEHOLDER_AUTH_VALUE.fullmatch(value):
+        return False
+    return not (
+        match["scheme"].casefold() == "basic" and value == _RFC7617_BASIC_SAMPLE
+    )
+
+
+def _safe_authorization_spans(text: str) -> tuple[tuple[int, int], ...]:
+    return tuple(
+        match.span()
+        for match in _AUTHORIZATION_HEADER.finditer(text)
+        if not _authorization_match_is_secret(match)
+    )
+
+
+def _inside_spans(
+    span: tuple[int, int], containers: tuple[tuple[int, int], ...]
+) -> bool:
+    return any(start <= span[0] and span[1] <= end for start, end in containers)
 
 
 def redact_sensitive_text(text: str) -> str:
@@ -172,7 +220,21 @@ def redact_sensitive_text(text: str) -> str:
             len(scalar) == 1 or scalar[-1] != scalar[0]
         ):
             return REDACTED
-    result = _HEADER_LINE.sub(REDACTED, text)
+    result = _AUTHORIZATION_HEADER.sub(
+        lambda match: REDACTED if _authorization_match_is_secret(match) else match[0],
+        text,
+    )
+    safe_authorization_spans = _safe_authorization_spans(result)
+    bearer_pattern = dict(_TEXT_PATTERNS)["authorization_bearer"]
+    result = bearer_pattern.sub(
+        lambda match: (
+            match[0]
+            if _inside_spans(match.span(), safe_authorization_spans)
+            else REDACTED
+        ),
+        result,
+    )
+    result = _COOKIE_HEADER.sub(REDACTED, result)
 
     def replace_assignment(match: re.Match[str]) -> str:
         """Retain an assignment label but never its sensitive scalar value."""
@@ -184,9 +246,9 @@ def redact_sensitive_text(text: str) -> str:
     for kind, pattern in _TEXT_PATTERNS:
         if kind not in {
             "private_key",
-            "authorization",
             "cookie",
             "credential_assignment",
+            "authorization_bearer",
         }:
             result = pattern.sub(REDACTED, result)
     return result
