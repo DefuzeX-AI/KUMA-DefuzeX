@@ -1,11 +1,12 @@
-# Public error diagnostics — unreleased
+# Public error diagnostics
 
 > This historical documentation path now contains the English guide. The
 > [canonical guide](public-error-diagnostics.md) is maintained alongside it; the
 > [Chinese overview](../README.zh-CN.md) remains available at the repository root.
 
-This candidate changes error display, not request identity, billing or retry
-decisions. It is not a claim that a package or public release is available.
+This guide describes error display, not changes to request identity, billing or
+retry decisions. Check [GitHub releases](https://github.com/DefuzeX-AI/KUMA-DefuzeX/releases)
+and [PyPI](https://pypi.org/project/kuma-defuzex/) for published versions.
 
 | Category | Codes | Meaning and action |
 | --- | --- | --- |
@@ -31,6 +32,23 @@ recognized as input but displayed in English. These retained semantic aliases
 need an explicit policy resolution; they are not a repository-language exception.
 
 
+
+## Official Judge display
+
+For the official Judge only, `model_invalid_result`, historical
+`model_invalid_response` and `service_busy` are displayed as
+`ServiceBusyError` with code `service_busy` and the fixed message:
+
+> Service is busy. Please try again later.
+
+This display does not identify the underlying cause. It exposes neither remote
+wording nor diagnostic details, and does not ask the user to repair generated
+output. The original `retryable` flag and `request_id` are preserved.
+
+This Judge-specific rule does not change Case-generation error classification
+in the table above or errors from custom providers. It does not automatically
+retry, create another paid task, rewrite stored history, or turn a failed task
+into a successful report. See the [API reference](api-reference.md).
 
 ## Complete public error display
 
