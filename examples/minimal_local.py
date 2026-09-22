@@ -1,4 +1,4 @@
-"""Run one deterministic KUMA Case without credentials or network access."""
+"""Run one deterministic KUMA Case offline; see minimal_local.md for adaptation."""
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -23,7 +23,12 @@ def local_case(_context: CaseGenerationContext) -> dict[str, object]:
     }
 
 
-def main() -> None:
+def call_your_agent(test_input: str) -> dict[str, str]:
+    """Replace this deterministic body with your Agent's JSON-compatible result."""
+    return {"message": "Completed locally", "input": test_input}
+
+
+def main() -> int:
     with TemporaryDirectory(prefix="kuma-example-") as temporary:
         repo = Path(temporary)
         (repo / "README.md").write_text(
@@ -57,13 +62,30 @@ Do not access the network or paths outside the temporary repository.
             allow_local=True,
             track_files=False,
         )
-        test_input = run.get_input()
-        run.submit({"message": "Completed locally", "input": test_input})
+        try:
+            test_input = run.get_input()
+            try:
+                output = call_your_agent(test_input)
+            except TimeoutError:
+                run.submit(status="timeout", error="Agent timed out")
+            except Exception:
+                # Do not submit raw exception text, which can contain secrets.
+                run.submit(status="failed", error="Agent failed")
+            else:
+                run.submit(output)
 
-        print(f"input={test_input}")
-        print(f"state={run.state}")
-        print(f"submissions={len(run.history)}")
+            submission_status = run.history[-1].submission.status
+            print(f"input={test_input}")
+            print(f"state={run.state}")
+            print(f"submissions={len(run.history)}")
+            print(f"submission_status={submission_status}")
+            print(f"report={run.report}")
+            return 0 if submission_status == "completed" else 1
+        finally:
+            # Release an unfinished Run on interruption or invalid Agent output.
+            if run.state in {"ready", "input_delivered"}:
+                run.cancel()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
