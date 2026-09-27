@@ -25,13 +25,13 @@ _ASSIGNMENT = re.compile(
     r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;}]+)"
 )
 _AUTHORIZATION_HEADER = re.compile(
-    r"(?im)\bauthorization\s*:\s*(?P<scheme>bearer|basic)\s+(?P<value>\S+)"
+    r"(?im)\bauthorization[\"']?[ \t]*:[ \t]*(?P<value>[^\r\n]*)"
 )
 _COOKIE_HEADER = re.compile(r"(?im)\b(?:set-)?cookie\s*:[^\r\n]*")
 _PLACEHOLDER_AUTH_VALUE = re.compile(
     r"(?ix)^(?:"
-    r"<[^>]+>|"
-    r"\$\{?[A-Z][A-Z0-9_]*\}?|"
+    r"<your[-_](?:access[-_])?token>|"
+    r"\$(?:[A-Z][A-Z0-9_]*|\{[A-Z][A-Z0-9_]*\})|"
     r"YOUR_[A-Z0-9_]+|"
     r"TOKEN|ACCESS_TOKEN|API_KEY|"
     r"\.\.\."
@@ -149,7 +149,11 @@ def scan_sensitive_text(text: str, *, location: str) -> tuple[SensitiveFinding, 
         for match in _AUTHORIZATION_HEADER.finditer(text)
     ):
         findings.append(SensitiveFinding("authorization", location))
-    if any(_assignment_is_secret(match) for match in _ASSIGNMENT.finditer(text)):
+    if any(
+        _assignment_is_secret(match)
+        and not _inside_spans(match.span(), safe_authorization_spans)
+        for match in _ASSIGNMENT.finditer(text)
+    ):
         findings.append(SensitiveFinding("credential_assignment", location))
     return tuple(findings)
 
@@ -161,24 +165,26 @@ def _assignment_is_secret(match: re.Match[str]) -> bool:
     followed by other content is not an exemption. Token counts are not matched
     because their field names are outside the closed credential-name pattern.
     """
-    label = match["label"].casefold()
     value = match["value"].strip("\"'")
-    if "authorization" in label and value.casefold() in {"bearer", "basic"}:
-        return False
     return value not in {"", REDACTED}
 
 
 def _authorization_match_is_secret(match: re.Match[str]) -> bool:
     """Keep obvious documentation values while failing closed on credentials."""
-    value = match["value"].strip("\"'`.,;)")
-    if _PLACEHOLDER_AUTH_VALUE.fullmatch(value):
+    value = match["value"].strip()
+    if value == REDACTED:
         return False
-    return not (
-        match["scheme"].casefold() == "basic" and value == _RFC7617_BASIC_SAMPLE
-    )
+    example = re.fullmatch(r"(?i)(bearer|basic)[ \t]+(\S+)", value)
+    if example is None:
+        return True
+    scheme, credential = example.groups()
+    if _PLACEHOLDER_AUTH_VALUE.fullmatch(credential):
+        return False
+    return not (scheme.casefold() == "basic" and credential == _RFC7617_BASIC_SAMPLE)
 
 
 def _safe_authorization_spans(text: str) -> tuple[tuple[int, int], ...]:
+    """Locate complete safe headers so generic token rules preserve examples."""
     return tuple(
         match.span()
         for match in _AUTHORIZATION_HEADER.finditer(text)
@@ -189,6 +195,7 @@ def _safe_authorization_spans(text: str) -> tuple[tuple[int, int], ...]:
 def _inside_spans(
     span: tuple[int, int], containers: tuple[tuple[int, int], ...]
 ) -> bool:
+    """Require a whole match to belong to a previously validated safe header."""
     return any(start <= span[0] and span[1] <= end for start, end in containers)
 
 
@@ -236,9 +243,13 @@ def redact_sensitive_text(text: str) -> str:
     )
     result = _COOKIE_HEADER.sub(REDACTED, result)
 
+    safe_authorization_spans = _safe_authorization_spans(result)
+
     def replace_assignment(match: re.Match[str]) -> str:
         """Retain an assignment label but never its sensitive scalar value."""
-        if not _assignment_is_secret(match):
+        if not _assignment_is_secret(match) or _inside_spans(
+            match.span(), safe_authorization_spans
+        ):
             return match[0]
         return match["label"] + '"' + REDACTED + '"'
 
