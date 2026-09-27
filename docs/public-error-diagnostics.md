@@ -1,5 +1,13 @@
 # Public error diagnostics
 
+Local `runtime_evidence_invalid` failures expose a safe `details.reason` and,
+when tied to a history item, a zero-based `details.submission_index`. Reasons
+distinguish association, schema, hash, Trace and diff failures; unknown internal
+errors use `projection_invalid`. Missing usable Evidence uses
+`runtime_evidence_unavailable`. No raw exception text or caller-supplied path/ID
+is included. These local validation errors are non-retryable and have no server
+request ID; fixing captured input or upgrading a defective SDK may be required.
+
 This guide describes error display, not changes to request identity, billing or
 retry decisions. Check [GitHub releases](https://github.com/DefuzeX-AI/KUMA-DefuzeX/releases)
 and [PyPI](https://pypi.org/project/kuma-defuzex/) for published versions.

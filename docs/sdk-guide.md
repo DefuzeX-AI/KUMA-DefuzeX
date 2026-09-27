@@ -338,6 +338,13 @@ Correlation also survives rejected JSON/UTF-8, response-size limits (including H
 
 An operation timeout retains bounded recovery metadata without storing credentials, request content, Evidence, or results. Judge retry requires the original Run and History; the high-level API cannot rebuild a lost Run from only `run_id` after process exit.
 
+After the server definitively reports a failed, retryable Judge operation, an
+explicit later `run.judge()` starts a new attempt with a fresh idempotency key.
+This can incur another charge; KUMA never starts that attempt automatically.
+Lost POST responses and interrupted polling are different: they retain the
+original key, and a known operation ID is resumed with GET only. The committed
+History is unchanged, and failed request records remain available locally.
+
 If `KeyboardInterrupt`, `SystemExit`, or cancellation interrupts Judge, the exception still propagates; KUMA does not swallow it or fabricate a report. If your application catches it and retains the Run, its state is `completed` and `run.judge()` can be called again. An already-started official operation resumes by polling its existing ID, not creating another task. Interrupting local waiting does not cancel the remote operation. This recovery does not apply to forcibly terminating the process.
 
 ## Troubleshooting

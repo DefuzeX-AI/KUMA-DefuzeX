@@ -6,6 +6,41 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
+## 0.3.2 release notes
+
+This optional patch repairs Evidence handling, safe credential-example detection
+and explicit Judge retries. These source notes do not establish publication;
+check the matching GitHub Release and PyPI version before installing a pin.
+
+- Unified diffs remain valid when source files lack a final newline.
+- File patches bind to their captured repository-relative path instead of
+  confusing same-name files in different directories. Ambiguous historical
+  bindings produce an explicit omission, never a guessed patch.
+- Component and byte limits preserve captured Trace and the response claim.
+  The negotiated `file_observation_summary` tells Judge how many enumerated file
+  facts were retained or omitted, with safe reasons and explicit unknown,
+  unavailable and not-captured states. Failed snapshots do not invent changes.
+- Credential-shaped filenames are omitted safely without rejecting an entire
+  Submission. Sensitive diff text remains excluded; user files are not changed.
+- Ordinary credential-related prose and exact Authorization documentation
+  placeholders no longer trigger selected false positives. Real credentials,
+  appended credential-like values and unrelated sensitive text remain checked;
+  this is bounded calibration, not a guarantee of detecting every secret.
+- Local Runtime Evidence errors include a safe reason and history index, not
+  raw exception text or host paths.
+- After a validated retryable terminal Judge failure, the next **explicit**
+  `run.judge()` call starts a new attempt. Interrupted polling still uses GET;
+  lost POST responses retain their original identity. No automatic paid retry
+  is introduced; a new explicit attempt may consume credit.
+
+File completeness summaries require a service advertising that capability.
+For known file losses or incomplete/unavailable capture, an unsupported service
+causes `runtime_evidence_unsupported` before Judge POST. Loss-free or unknown
+historical records retain legacy wire with a local summary-unavailable warning;
+absence is never evidence of complete capture. Existing v1/v2 schemas are not
+extended. See [Runtime Evidence](runtime-evidence.md) and
+[safe error diagnostics](public-error-diagnostics.md).
+
 ## 0.3.1 release notes
 
 This is an optional, backward-compatible patch for 0.3.0 clients. It does not

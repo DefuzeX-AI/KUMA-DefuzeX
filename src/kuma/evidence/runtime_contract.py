@@ -15,6 +15,10 @@ from .runtime_diff_contract import (
     RUNTIME_FILE_DIFF_TOTAL_MAX_BYTES,
     validate_file_diff_components,
 )
+from .runtime_files import (
+    FILE_OBSERVATION_CAPABILITY,
+    validate_file_observation_summary,
+)
 
 RUNTIME_EVIDENCE_SCHEMA_V1 = "defuzex.runtime_evidence.v1"
 RUNTIME_EVIDENCE_SCHEMA_V2 = "defuzex.runtime_evidence.v2"
@@ -462,6 +466,8 @@ def validate_runtime_evidence(
         fields.add("capabilities")
         if isinstance(value, Mapping) and "redactions" in value:
             fields.add("redactions")
+        if isinstance(value, Mapping) and FILE_OBSERVATION_CAPABILITY in value:
+            fields.add(FILE_OBSERVATION_CAPABILITY)
     if not isinstance(value, Mapping) or set(value) != fields:
         raise ValueError("runtime evidence envelope is invalid")
     _validate_association(
@@ -473,11 +479,7 @@ def validate_runtime_evidence(
         schema_version=schema_version,
     )
     capabilities = value.get("capabilities")
-    base_capabilities = (
-        capabilities[:-1]
-        if isinstance(capabilities, list) and capabilities[-1:] == ["redaction"]
-        else capabilities
-    )
+    base_capabilities = base_runtime_capabilities(capabilities)
     if (
         schema_version == RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA
         and base_capabilities
@@ -500,6 +502,7 @@ def validate_runtime_evidence(
             input_id=input_id,
         )
         _validate_trace_redaction(value, enabled="redaction" in capabilities)
+        _validate_file_summary_field(value)
         diff_enabled = "file_diff" in capabilities
         validate_file_diff_components(
             value["components"],
@@ -507,6 +510,40 @@ def validate_runtime_evidence(
         )
     if len(runtime_evidence_json(value).encode("utf-8")) > RUNTIME_EVIDENCE_MAX_BYTES:
         raise ValueError("runtime evidence exceeds the byte limit")
+
+
+def base_runtime_capabilities(value: Any) -> Any:
+    """Strip only ordered negotiated suffixes before validating legacy choices.
+
+    Backend-config and envelope validation share this pure rule. The file
+    observation capability must follow any redaction capability; duplicates,
+    misplaced and unknown values remain in the base and fail existing checks.
+    The caller-owned list is never mutated.
+    """
+    if not isinstance(value, list):
+        return value
+    base = value[:]
+    for suffix in (FILE_OBSERVATION_CAPABILITY, "redaction"):
+        if base[-1:] == [suffix]:
+            base.pop()
+    return base
+
+
+def _validate_file_summary_field(value: Mapping[str, Any]) -> None:
+    """Require the content-free field exactly when its capability is present.
+
+    Called only after envelope/components validation. Bind retained_count to
+    actual serialized file facts; reject unknown or inconsistent summaries with
+    static ValueError, never infer completeness from missing historical data.
+    """
+    enabled = FILE_OBSERVATION_CAPABILITY in value["capabilities"]
+    if enabled != (FILE_OBSERVATION_CAPABILITY in value):
+        raise ValueError("runtime file observation summary is not negotiated")
+    if enabled:
+        validate_file_observation_summary(
+            value[FILE_OBSERVATION_CAPABILITY],
+            retained=sum(c["kind"] == "file_change" for c in value["components"]),
+        )
 
 
 def _validate_trace_redaction(value: Mapping[str, Any], *, enabled: bool) -> None:

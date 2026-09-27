@@ -78,7 +78,22 @@ def _unified_diff(
     old_path: str,
     new_path: str,
 ) -> str | None:
-    """Build a bounded unified text diff when both Snapshots retained content."""
+    """Build a lossless patch for snapshot comparison and Evidence projection.
+
+    Args:
+        before: Retained old text, or ``None`` for a created file.
+        after: Retained new text, or ``None`` for a deleted file.
+        old_path: Local old header path, later canonicalized before upload.
+        new_path: Local new header path, later canonicalized before upload.
+
+    Returns:
+        Unified text with standard missing-final-newline markers, or ``None``
+        for unavailable/equal text. Capture bounds come from Snapshotter;
+        transport independently enforces patch byte limits and privacy.
+
+    Side Effects:
+        None; snapshot text and user files remain unchanged.
+    """
     before_text = "" if before is None else before.text_content
     after_text = "" if after is None else after.text_content
     if before_text is None or after_text is None:
@@ -86,7 +101,8 @@ def _unified_diff(
     if before_text == after_text:
         return None
     return "".join(
-        difflib.unified_diff(
+        line if line.endswith("\n") else line + "\n\\ No newline at end of file\n"
+        for line in difflib.unified_diff(
             before_text.splitlines(keepends=True),
             after_text.splitlines(keepends=True),
             fromfile=old_path if before is not None else "/dev/null",

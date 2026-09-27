@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,7 @@ from .runtime_contract import (
     runtime_evidence_json,
     validate_runtime_evidence,
 )
+from .runtime_files import omit_file_observations, summary_for_projection
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,11 +70,17 @@ class BuiltRuntimeEvidence:
         missing: Stable reasons explaining unavailable or filtered observations.
         dropped_count: Total observations/components omitted for privacy,
             validity, component-count, or character-budget reasons.
+        file_sources: Local-only relative-path to original FileChange index
+            binding, captured under the Run root; never part of the wire.
+        file_summary: Detached file-only counters for negotiated upload. The
+            v1 envelope stays unchanged; historical callers produce unknown.
     """
 
     evidence: Mapping[str, Any]
     missing: tuple[str, ...] = ()
     dropped_count: int = 0
+    file_sources: Mapping[str, int] = field(default_factory=dict)
+    file_summary: Mapping[str, Any] | None = None
 
 
 def runtime_submission_id(run_id: str, input_id: str) -> str:
@@ -372,26 +379,79 @@ def _fit_components(
     *,
     identifiers: Mapping[str, str],
     limits: RuntimeEvidenceLimits,
+    file_summary: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], int, bool]:
-    """Retain ordered facts and the final claim within component and byte caps."""
-    dropped = max(0, len(components) - limits.max_components)
-    retained = components[: limits.max_components]
-    if dropped and limits.max_components > 1:
-        retained[-1] = components[-1]
-    elif dropped:
-        retained = [components[-1]]
+    """Fit optional facts without discarding the response or captured Trace.
+
+    The Runtime builder supplies ordered file/log facts, an optional Trace
+    hash artifact and the response claim. Reserve mandatory slots first, keep
+    the earliest optional facts, and preserve original ordering. Byte trimming
+    removes only optional facts. Returned counters feed the existing local
+    missing/dropped metadata. Optional detached file_summary records only file
+    omissions and reserves its serialized bytes without changing the v1 wire.
+    Raise ValueError if mandatory metadata alone cannot fit the supplied limits.
+    Input components are never mutated and no I/O occurs.
+    """
+    required = {
+        index
+        for index, component in enumerate(components)
+        if component["kind"] == "agent_response_claim"
+        or component.get("artifact_id") == "opentelemetry-trace-evidence"
+    }
+    if len(required) > limits.max_components:
+        raise ValueError("runtime evidence mandatory metadata exceeds the item limit")
+    optional = [index for index in range(len(components)) if index not in required]
+    selected = required | set(optional[: limits.max_components - len(required)])
+    retained = [
+        component for index, component in enumerate(components) if index in selected
+    ]
+    dropped = len(components) - len(retained)
+    if file_summary is not None:
+        omit_file_observations(
+            file_summary,
+            sum(
+                c["kind"] == "file_change"
+                for i, c in enumerate(components)
+                if i not in selected
+            ),
+            "component_limit",
+        )
     envelope = _envelope(**identifiers, components=retained)
     char_limited = False
-    while (
-        len(runtime_evidence_json(envelope).encode("utf-8")) > limits.max_content_chars
-    ):
-        if len(retained) <= 1:
+    while _envelope_budget_size(envelope, file_summary) > limits.max_content_chars:
+        removable = next(
+            (
+                index
+                for index in range(len(retained) - 1, -1, -1)
+                if retained[index]["kind"] != "agent_response_claim"
+                and retained[index].get("artifact_id") != "opentelemetry-trace-evidence"
+            ),
+            None,
+        )
+        if removable is None:
             raise ValueError("runtime evidence metadata exceeds the byte limit")
-        retained.pop(-2)
+        removed = retained.pop(removable)
+        if file_summary is not None and removed["kind"] == "file_change":
+            omit_file_observations(file_summary, 1, "byte_limit")
         dropped += 1
         char_limited = True
         envelope = _envelope(**identifiers, components=retained)
     return envelope, dropped, char_limited
+
+
+def _envelope_budget_size(
+    envelope: Mapping[str, Any], file_summary: Mapping[str, Any] | None
+) -> int:
+    """Reserve mandatory summary bytes while retaining the historical envelope.
+
+    Component fitting invokes this after each removal. Upload projection later
+    measures its complete negotiated envelope again, including capabilities and
+    output. This pure temporary view cannot strip mandatory Trace or claim data.
+    """
+    view = dict(envelope)
+    if file_summary is not None:
+        view["file_observation_summary"] = file_summary
+    return len(runtime_evidence_json(view).encode("utf-8"))
 
 
 def build_runtime_evidence(
@@ -408,11 +468,26 @@ def build_runtime_evidence(
     logs: Sequence[Mapping[str, Any]],
     trace_evidence: Mapping[str, Any] | None,
     limits: RuntimeEvidenceLimits | None = None,
+    file_summary: Mapping[str, Any] | None = None,
 ) -> BuiltRuntimeEvidence:
-    """Build one closed canonical envelope without raw Agent or tool content."""
+    """Build bounded v1 facts and detached counters for later negotiated upload.
+
+    The capture coordinator supplies file_summary from enumerated observations
+    before path projection. Missing metadata remains unknown, never inferred
+    from combined source drop counts. Path/component/byte loss updates only
+    detached file counters. Return immutable-source projections; raise ValueError
+    for inconsistent counters or mandatory metadata that cannot fit. No I/O is
+    performed beyond existing canonical path resolution; no wire is sent here.
+    """
 
     active_limits = limits or RuntimeEvidenceLimits()
     files, file_dropped = _file_components(file_evidence, root, active_limits)
+    candidate_files = sum(
+        2 if change.change_type == "renamed" else 1
+        for change in (file_evidence.changes if file_evidence else ())
+    )
+    file_summary = summary_for_projection(file_summary, retained=candidate_files)
+    omit_file_observations(file_summary, candidate_files - len(files), "path_filtered")
     artifacts, log_dropped = _log_components(logs, root, active_limits)
     trace = _trace_component(trace_evidence)
     components = [*files, *artifacts]
@@ -426,7 +501,10 @@ def build_runtime_evidence(
         "submission_id": submission_id,
     }
     envelope, limit_dropped, char_limited = _fit_components(
-        components, identifiers=identifiers, limits=active_limits
+        components,
+        identifiers=identifiers,
+        limits=active_limits,
+        file_summary=file_summary,
     )
     validate_runtime_evidence(envelope, **identifiers)
     missing = []
@@ -438,9 +516,40 @@ def build_runtime_evidence(
         missing.append("runtime_evidence_character_limit")
     return BuiltRuntimeEvidence(
         evidence=envelope,
+        file_sources=_file_source_indices(file_evidence, root, active_limits),
+        file_summary=file_summary,
         missing=tuple(missing),
         dropped_count=file_dropped + log_dropped + limit_dropped,
     )
+
+
+def _file_source_indices(
+    evidence: FileEvidence | None, root: Path, limits: RuntimeEvidenceLimits
+) -> dict[str, int]:
+    """Bind safe public paths to local observations while the root is known.
+
+    Called by the Runtime builder before local persistence. The same canonical
+    path filter as file components excludes out-of-root and sensitive names.
+    Duplicate paths are omitted rather than guessed. Returned integer indexes
+    refer to the immutable FileEvidence order and contain no absolute paths;
+    the uploader consumes this local-only mapping without adding wire fields.
+    """
+    sources: dict[str, int] = {}
+    duplicates: set[str] = set()
+    for index, change in enumerate(evidence.changes if evidence else ()):
+        paths = (
+            (change.path, change.old_path)
+            if change.change_type == "renamed"
+            else (change.path,)
+        )
+        for value in paths:
+            path = _relative_path(value, root, limits.max_text_length)
+            if path is None:
+                continue
+            if path in sources:
+                duplicates.add(path)
+            sources[path] = index
+    return {path: index for path, index in sources.items() if path not in duplicates}
 
 
 __all__ = [

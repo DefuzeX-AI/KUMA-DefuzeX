@@ -520,13 +520,21 @@ def _record_failure(
     *,
     code: str,
     retryable: bool,
+    terminal_failure: Callable[[bool], None] | None = None,
 ) -> None:
-    """Retain a safe durable failure or clear legacy pending metadata."""
+    """Persist failure before notifying the owner of a definitive failed poll.
+
+    The optional callback receives retryability after a successful local state
+    transition. Callers must omit it for ambiguous failures such as missing
+    operations. No callback executes if persistence fails; it never starts work.
+    """
     marker = getattr(store, "mark_failed", None)
     if marker is None:
         store.clear()
     else:
         marker(state, code=code, retryable=retryable)
+    if terminal_failure is not None:
+        terminal_failure(retryable)
 
 
 @contextmanager
@@ -583,6 +591,7 @@ def await_operation(
     start: StartOperation,
     wait_timeout: float,
     accept_result: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    terminal_failure: Callable[[bool], None] | None = None,
 ) -> Mapping[str, Any]:
     """Start or resume one operation until a validated terminal result arrives.
 
@@ -600,6 +609,10 @@ def await_operation(
         wait_timeout: Total positive seconds for start and all polling attempts.
         accept_result: Optional boundary validator/normalizer called on succeeded
             ``result`` before pending state is cleared.
+        terminal_failure: Optional local callback receiving retryable only after
+            a validated failed operation is durably recorded. Never invoked on
+            transport failures, missing operations or invalid poll/result data;
+            it may retire a future attempt key but must not issue a new request.
 
     Returns:
         Terminal succeeded result, or ``accept_result(result)`` when supplied.
@@ -694,6 +707,7 @@ def await_operation(
                 state,
                 code=error[0],
                 retryable=error[1],
+                terminal_failure=terminal_failure,
             )
             failure = mapped_error(
                 error[0],

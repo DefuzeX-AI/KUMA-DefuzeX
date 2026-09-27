@@ -9,7 +9,7 @@ from typing import Any
 from ..contracts import FileChange, FileEvidence
 from ..errors import LimitExceededError
 from ..repository.privacy import scan_sensitive_text
-from .runtime import project_runtime_evidence_v2
+from .runtime import _file_component, project_runtime_evidence_v2
 from .runtime_contract import (
     RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA,
     RUNTIME_EVIDENCE_CAPABILITY_ORDER,
@@ -19,6 +19,7 @@ from .runtime_contract import (
     runtime_evidence_json,
     validate_runtime_evidence,
 )
+from .runtime_diff_contract import _valid_unified_diff
 
 
 def _diff_omission_reason(change: FileChange) -> str:
@@ -97,33 +98,83 @@ def _wire_path_matches(local_path: str, wire_path: str) -> bool:
     return normalized == wire_path or normalized.endswith(f"/{wire_path}")
 
 
+def _indexed_diff_sources(
+    file_evidence: FileEvidence,
+    components: list[Mapping[str, Any]],
+    file_sources: Mapping[str, int],
+) -> list[FileChange | None]:
+    """Resolve local capture indexes and verify their public metadata.
+
+    The official projector supplies immutable observations and root-checked
+    path bindings. Invalid/stale indexes or mismatched hashes, sizes and change
+    types return None for content-free omission. No source is mutated and no
+    local path or binding is sent to Backend.
+    """
+    result = []
+    for component in components:
+        index = file_sources.get(component["path"])
+        change = (
+            file_evidence.changes[index]
+            if type(index) is int and 0 <= index < len(file_evidence.changes)
+            else None
+        )
+        if change is not None and change.change_type not in {
+            component["change_type"],
+            "renamed",
+        }:
+            change = None
+        expected = (
+            None
+            if change is None
+            else _file_component(
+                change, path=component["path"], operation=component["change_type"]
+            )
+        )
+        actual = {
+            key: value
+            for key, value in component.items()
+            if key not in {"component_id", "sequence"}
+        }
+        result.append(change if expected == actual else None)
+    return result
+
+
 def _ordered_diff_sources(
     file_evidence: FileEvidence | None,
     components: list[Mapping[str, Any]],
-) -> list[FileChange]:
+    file_sources: Mapping[str, int] | None = None,
+) -> list[FileChange | None]:
     """Correlate retained v1 file components with SDK-owned local changes.
 
     Args:
         file_evidence: Submission file observations, or ``None``.
         components: Already validated public v1 file components after unsafe
             paths were dropped by the existing Runtime Evidence builder.
+        file_sources: Optional local capture-time exact relative-path binding.
+            Old history without it only uses unambiguous suffix associations.
 
     Returns:
         File changes in component order; one rename can back its distinct
-        delete/create facts.
+        delete/create facts. Unknown or ambiguous associations return ``None``
+        for honest per-component omission, never a guessed patch.
 
     Raises:
-        ValueError: If any retained public path has no unique local source.
+        ValueError: If file observations are absent or local bindings malformed.
 
     Security/Privacy:
-        Matching uses only repository-relative suffixes and change types. Local
-        absolute prefixes never enter the returned wire projection.
+        New captures use exact root-checked bindings and public hash metadata.
+        Historical records permit only unambiguous suffix matches. Local
+        bindings and absolute prefixes never enter the wire projection.
     """
 
     if file_evidence is None:
         if components:
             raise ValueError("runtime evidence file association is invalid")
         return []
+    if file_sources is not None:
+        if not isinstance(file_sources, Mapping):
+            raise ValueError("runtime evidence file association is invalid")
+        return _indexed_diff_sources(file_evidence, components, file_sources)
     ordered = sorted(
         file_evidence.changes,
         key=lambda item: (item.path.casefold(), item.change_type, item.old_path or ""),
@@ -139,7 +190,7 @@ def _ordered_diff_sources(
             )
         else:
             candidates.append((change, change.path, change.change_type))
-    result: list[FileChange] = []
+    result: list[FileChange | None] = []
     for component in components:
         matches = [
             index
@@ -148,7 +199,8 @@ def _ordered_diff_sources(
             and _wire_path_matches(path, component["path"])
         ]
         if len(matches) != 1:
-            raise ValueError("runtime evidence file association is invalid")
+            result.append(None)
+            continue
         change, _, _ = candidates.pop(matches[0])
         result.append(change)
     return result
@@ -165,6 +217,8 @@ def _included_diff(
 
     Returns:
         A closed unified-diff object, or one of the canonical omission strings.
+        Malformed local patches become ``capture_incomplete`` before envelope
+        validation so other Evidence remains available to the official Judge.
 
     Security/Privacy:
         Any sensitive marker causes content-free ``sensitive_content`` even
@@ -188,22 +242,26 @@ def _included_diff(
         return "binary"
     if len(encoded) > RUNTIME_FILE_DIFF_MAX_BYTES:
         return "size_limit"
-    return {
+    payload = {
         "format": "unified",
         "text": text,
         "text_sha256": hashlib.sha256(encoded).hexdigest(),
         "utf8_bytes": len(encoded),
     }
+    return payload if _valid_unified_diff(component, payload) else "capture_incomplete"
 
 
 def _project_file_diffs(
-    projected: dict[str, Any], file_evidence: FileEvidence | None
+    projected: dict[str, Any],
+    file_evidence: FileEvidence | None,
+    file_sources: Mapping[str, int] | None = None,
 ) -> None:
     """Attach deterministic diff outcomes within per-item and envelope budgets.
 
     Args:
         projected: Detached capability envelope being built for upload.
         file_evidence: Original immutable Submission file Evidence.
+        file_sources: Capture-time local path/index bindings, never uploaded.
 
     Raises:
         ValueError: If local file observations no longer correlate one-to-one
@@ -219,10 +277,14 @@ def _project_file_diffs(
         for component in projected["components"]
         if component["kind"] == "file_change"
     ]
-    sources = _ordered_diff_sources(file_evidence, components)
+    sources = _ordered_diff_sources(file_evidence, components, file_sources)
     retained_bytes = 0
     for component, change in zip(components, sources, strict=True):
-        outcome = _included_diff(change, component)
+        outcome = (
+            "capture_incomplete"
+            if change is None
+            else _included_diff(change, component)
+        )
         if isinstance(outcome, str):
             component["diff_omission_reason"] = outcome
             continue
@@ -311,12 +373,15 @@ def project_runtime_evidence_capabilities(
     output: Any,
     file_evidence: FileEvidence | None,
     upload_diff: bool,
+    file_sources: Mapping[str, int] | None = None,
     trace_evidence: Mapping[str, Any] | None = None,
     capture_status: str | None = None,
     capture_summary: Mapping[str, Any] | None = None,
     case_id: str | None = None,
     model_content_supported: bool = False,
     trace_redaction_supported: bool = False,
+    file_summary_supported: bool = False,
+    file_summary: Mapping[str, Any] | None = None,
     max_bytes: int = RUNTIME_EVIDENCE_MAX_BYTES,
 ) -> dict[str, Any]:
     """Build the negotiated named-capability transport view from stored v1.
@@ -332,6 +397,8 @@ def project_runtime_evidence_capabilities(
         file_evidence: Correlated local file observations used only when
             ``upload_diff`` is explicit.
         upload_diff: Whether the user explicitly requested negotiated patches.
+        file_sources: Local exact path/index associations recorded at capture;
+            omitted for historical records, which may safely omit ambiguous diffs.
         trace_evidence: Already captured, privacy-filtered OTel envelope; when
             present it must be uploaded as body, never silently hash-only.
         capture_status: Actual trace component completeness, not tool status.
@@ -343,6 +410,10 @@ def project_runtime_evidence_capabilities(
         trace_redaction_supported: Whether the existing redaction capability
             was advertised. Otherwise retained redacted tool fields become
             explicit whole-field omissions for legacy closed consumers.
+        file_summary_supported: True only when Backend advertises the closed
+            file-observation capability; never inferred from schema alone.
+        file_summary: Authoritative local file-only counters or None for a
+            historical record, which is projected as unknown, never complete.
         max_bytes: Advertised complete-part budget; never increases the
             canonical envelope ceiling. Optional model fields fit this budget.
 
@@ -375,7 +446,7 @@ def project_runtime_evidence_capabilities(
     projected["capabilities"] = list(RUNTIME_EVIDENCE_CAPABILITY_ORDER[:2])
     if upload_diff:
         projected["capabilities"].append("file_diff")
-        _project_file_diffs(projected, file_evidence)
+        _project_file_diffs(projected, file_evidence, file_sources)
     if trace_evidence is not None:
         _project_trace(
             projected, trace_evidence, capture_status, capture_summary, case_id
@@ -386,6 +457,14 @@ def project_runtime_evidence_capabilities(
         projected["capabilities"].append("runtime_trace")
         if "redactions" in projected:
             projected["capabilities"].append("redaction")
+    if file_summary_supported:
+        from .runtime_files import FILE_OBSERVATION_CAPABILITY, summary_for_projection
+
+        projected[FILE_OBSERVATION_CAPABILITY] = summary_for_projection(
+            file_summary,
+            retained=sum(c["kind"] == "file_change" for c in projected["components"]),
+        )
+        projected["capabilities"].append(FILE_OBSERVATION_CAPABILITY)
     _fit_capability_envelope(
         projected, max_bytes=min(max_bytes, RUNTIME_EVIDENCE_MAX_BYTES)
     )

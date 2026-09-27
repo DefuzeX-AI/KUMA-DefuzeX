@@ -21,10 +21,34 @@ _CREDENTIAL_NAME = (
 )
 _CREDENTIAL_KEY = re.compile(rf"(?i)^{_CREDENTIAL_NAME}$")
 _ASSIGNMENT = re.compile(
-    rf"(?i)(?<![\w])(?P<label>{_CREDENTIAL_NAME}[\"']?\s*[:=]\s*)"
+    rf"(?i)(?<![\w])(?P<label>{_CREDENTIAL_NAME}[\"']?\s*[:=]\s*(?:\*\*\s*)?)"
     r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;}]+)"
 )
 _HEADER_LINE = re.compile(r"(?im)\b(?:authorization|(?:set-)?cookie)\s*:[^\r\n]*")
+_AUTH_EXAMPLE = re.compile(r"(?i)\bauthorization\s*:\s*(bearer|basic)\s+(\S+)")
+
+
+def _documentation_auth_spans(text: str) -> list[tuple[int, int]]:
+    """Locate complete credential-free Authorization example spans only.
+
+    Shared by scanning and redaction; whole scalar matching prevents placeholder
+    prefixes from hiding appended credentials. Accept symbolic shell/template
+    references and the published RFC Basic sample, not arbitrary short values
+    or Digest parameters. Quote/backtick terminators are syntax, not credentials.
+    No source mutation, I/O, decoded real credentials or entropy guesses occur.
+    """
+    spans = []
+    for match in _AUTH_EXAMPLE.finditer(text):
+        value = match[2].rstrip("`\"'\\")
+        placeholder = re.fullmatch(
+            r"(?:<[A-Za-z][A-Za-z0-9_-]*>|\$(?:[A-Z_][A-Z0-9_]*|\{[A-Z_][A-Z0-9_]*\})|YOUR_[A-Z_]+)",
+            value,
+        )
+        sample = match[1].lower() == "basic" and value == "YWxhZGRpbjpvcGVuc2VzYW1l"
+        if placeholder or sample:
+            spans.append(match.span())
+    return spans
+
 
 _SENSITIVE_BASENAMES = frozenset(
     {
@@ -123,6 +147,8 @@ def scan_sensitive_path(
 
 def scan_sensitive_text(text: str, *, location: str) -> tuple[SensitiveFinding, ...]:
     """Scan bounded text for credential and private-data signatures."""
+    for start, end in reversed(_documentation_auth_spans(text)):
+        text = text[:start] + " " + text[end:]
     findings = [
         SensitiveFinding(kind, location)
         for kind, pattern in _TEXT_PATTERNS
@@ -134,14 +160,61 @@ def scan_sensitive_text(text: str, *, location: str) -> tuple[SensitiveFinding, 
 
 
 def _assignment_is_secret(match: re.Match[str]) -> bool:
-    """Exclude only the exact redaction marker or empty quoted assignment.
+    """Keep machine assignments strict while recognizing bounded prose contexts.
 
-    This rule is shared by detection and outbound replacement; a marker prefix
-    followed by other content is not an exemption. Token counts are not matched
-    because their field names are outside the closed credential-name pattern.
+    Detection and replacement share these rules. Exact documentation placeholders
+    carry no credential value. Only unquoted colon labels with explicit academic,
+    employment, no-auth or token-definition wording qualify as prose. Passwords,
+    short real secrets, equals assignments and quoted values remain sensitive;
+    independent known-token/private-key signatures still scan the whole text.
     """
     value = match["value"].strip("\"'")
-    return value not in {"", REDACTED}
+    if value in {"", REDACTED} or re.fullmatch(
+        r"(?:<[A-Za-z][A-Za-z0-9_-]*>|\$[A-Z_][A-Z0-9_]*|YOUR_[A-Z_]+|sk-[.…]+)`?",
+        value,
+    ):
+        return False
+    if "=" in match["label"] or match["value"].startswith(("'", '"')):
+        return True
+    label = match["label"].split(":", 1)[0].casefold()
+    tail = match.string[match.start("value") :].splitlines()[0]
+    contexts = {
+        "credentials": r"(?:PhD|MSc|BSc|(?:academic|professional) qualifications|use a NACES-member evaluator)(?=[ \t]|$)",
+        "authorization": r"Statutory right-to-work checks(?=[ \t]|$)",
+        "auth": r"(?:None required|Authorized)(?=[ \t]|$)",
+        "token": r"the unit of text(?=[ \t]|$)",
+    }
+    if (
+        label in {"auth", "authorization"}
+        and re.search(r"(?i)\bwork[ \t]+$", match.string[: match.start()])
+        and value.casefold()
+        in {
+            "permitted",
+            "authorized",
+            "required",
+            "prohibited",
+        }
+    ):
+        return False
+    pattern = contexts.get(label)
+    return pattern is None or re.match(pattern, tail, re.IGNORECASE) is None
+
+
+def _redact_around_documentation_auth(text: str, spans: list[tuple[int, int]]) -> str:
+    """Preserve proven documentation examples while sanitizing surrounding text.
+
+    The text redactor supplies ordered, non-overlapping spans from the canonical
+    documentation matcher after its private-key check. Return a new string;
+    recursively redact only the gaps so adjacent real credentials remain subject
+    to the same scanner rules. This helper performs no I/O or input mutation.
+    """
+    pieces = []
+    offset = 0
+    for start, end in spans:
+        pieces.extend((redact_sensitive_text(text[offset:start]), text[start:end]))
+        offset = end
+    pieces.append(redact_sensitive_text(text[offset:]))
+    return "".join(pieces)
 
 
 def redact_sensitive_text(text: str) -> str:
@@ -166,13 +239,23 @@ def redact_sensitive_text(text: str) -> str:
     """
     if _TEXT_PATTERNS[0][1].search(text):
         return REDACTED
+    spans = _documentation_auth_spans(text)
+    if spans:
+        return _redact_around_documentation_auth(text, spans)
     for match in _ASSIGNMENT.finditer(text):
         scalar = match["value"]
         if scalar.startswith(("'", '"')) and (
             len(scalar) == 1 or scalar[-1] != scalar[0]
         ):
             return REDACTED
-    result = _HEADER_LINE.sub(REDACTED, text)
+
+    def redact_header(match: re.Match[str]) -> str:
+        """Keep same-line prose context when deciding whole-header redaction."""
+        line_start = text.rfind("\n", 0, match.start()) + 1
+        context = text[line_start : match.end()]
+        return REDACTED if scan_sensitive_text(context, location="header") else match[0]
+
+    result = _HEADER_LINE.sub(redact_header, text)
 
     def replace_assignment(match: re.Match[str]) -> str:
         """Retain an assignment label but never its sensitive scalar value."""

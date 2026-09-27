@@ -164,6 +164,59 @@ across one Run.
 With the default `upload_diff=False`, `file_diff` is absent and file components
 remain hash-only even on a current service.
 
+## File observation completeness
+
+When the service advertises `file_observation_summary`, each named Runtime
+Evidence envelope includes a closed, content-free summary for that step:
+
+```json
+{
+  "status": "partial",
+  "observed_count": 150,
+  "retained_count": 98,
+  "omitted_count": 52,
+  "reasons": ["component_limit"]
+}
+```
+
+Counts describe **file-change facts**, not a census of repository files. A rename
+produces two facts (deletion and creation). Known `observed_count` equals
+`retained_count + omitted_count`; `retained_count` always matches the actual
+uploaded file components. Unknown files outside a completed scan are never
+guessed. Counts are strict integers between 0 and 999,999,999, or `null` where
+specified below; booleans are invalid.
+
+| Status | Meaning and counts |
+| --- | --- |
+| `complete` | Capture completed within the configured scope; zero omitted facts and no reasons. This does not assert that the entire host was scanned. |
+| `partial` | Known candidate counts, with omitted facts or `capture_incomplete`. An interrupted scan may have zero known omissions while its unseen population remains unknown. |
+| `unavailable` | Capture/comparison failed; counts are `null`, `0`, `null`, with `capture_failed`. Failed empty snapshots must not manufacture additions or deletions. |
+| `not_captured` | Tracking was disabled; counts are `null`, `0`, `null`, with `not_enabled`. |
+| `unknown` | Historical typed counters are absent; observed/omitted are `null`, retained counts actual components, with `legacy_metadata_unavailable`. |
+
+Reasons use this canonical order without duplicates: `not_enabled`,
+`capture_failed`, `capture_incomplete`, `privacy_filtered`, `path_filtered`,
+`component_limit`, `byte_limit`, `legacy_metadata_unavailable`. The summary
+contains no path, file body, matched credential, or raw filesystem error.
+Omitted diff **text** is still described by `diff_omission_reason`; it does not
+mean the file observation was lost. File counters are not derived from the
+Submission's mixed log/Trace/file `dropped_count`.
+
+The SDK preserves the response claim, captured Trace, and summary when fitting
+optional file/log components. The summary uses the existing byte budget; it is
+never silently removed to fit an upload. Judge must treat omissions or unknown
+coverage as a limitation, not proof that files were unchanged or grounds to
+invent findings. Retained observations remain usable.
+
+Older services receive no unknown fields and historical v1/v2 wire is unchanged.
+If new capture knows that facts were omitted, capture was incomplete, or capture
+failed, an old service causes `ProviderError(code="runtime_evidence_unsupported")`
+**before Judge POST**. Otherwise legacy upload is permitted with the local
+`file_observation_summary_unavailable` warning. Missing summaries never imply
+complete capture. The local summary is available in
+`run.history[index].submission.extensions["file_observation_summary"]` and is
+included when local Submission persistence is enabled.
+
 ## Privacy and resource behavior
 
 V1 contains hashes instead of Agent output. The named `agent_output` capability
