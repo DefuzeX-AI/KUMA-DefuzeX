@@ -310,6 +310,8 @@ def _adapted_providers(
     explicit official ``max_steps`` also requires that public read before a new
     Case operation; the provider reuses the same response when both apply.
     Private service configuration never enters the SDK.
+    With official Case and Judge, Judge configuration is validated before runtime
+    creation and Case generation. Custom-provider flows keep their existing order.
 
     Args:
         config: Validated options controlling Judge, privacy, timeout, retry, and
@@ -409,6 +411,8 @@ def _adapted_providers(
             operation_wait_timeout=config.operation_wait_timeout,
             state_root=repo_path,
         )
+        if official_case:
+            adapted_judge._load_upload_config()
     else:
         adapted_judge = adapt_judge_provider(judge_provider)
     return (

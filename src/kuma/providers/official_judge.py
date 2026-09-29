@@ -416,6 +416,18 @@ class OfficialJudgeProvider:
         self._idempotency_lock = threading.Lock()
         self._timelines: dict[str, StageTimeline] = {}
 
+    def _load_upload_config(self) -> _JudgeConfig:
+        """Read and validate official Judge discovery without starting a job.
+
+        Official Case/Judge Run construction invokes this before opening runtime
+        state or generating a paid Case. Judge submission reads it again rather than caching a stale
+        configuration across Agent execution. Returns validated upload limits;
+        transport errors and safe ProviderError propagate. Only one public GET
+        occurs; no Evidence, operation identity or local state is written.
+        Known-operation recovery bypasses this method and retains GET-only poll.
+        """
+        return _judge_config(self.client.json("GET", "/sdk/judge/config/"))
+
     def _run_lock(self, run_id: str) -> threading.Lock:
         """Return a stable per-Run lock so concurrent Judge calls submit only once."""
         with self._idempotency_lock:
@@ -666,7 +678,7 @@ class OfficialJudgeProvider:
                 expected_assessment,
                 run_id=run_id,
             )
-        config = _judge_config(self.client.json("GET", "/sdk/judge/config/"))
+        config = self._load_upload_config()
         key = pending.idempotency_key if pending else self._idempotency_key(run_id)
         upload = self._prepare_upload(
             context,
@@ -893,7 +905,7 @@ class OfficialJudgeProvider:
                 context,
                 allow_sensitive=self.allow_sensitive,
             )
-        config = _judge_config(self.client.json("GET", "/sdk/judge/config/"))
+        config = self._load_upload_config()
         _validate_batch_contexts(contexts, max_batch_items=config.max_batch_items)
         uploads = tuple(
             self._prepare_upload(context, config, part_prefix=f"item-{index}-")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -31,6 +32,37 @@ from ._official_wire import history_evidence, plain_json
 from .base import JudgeContext
 
 _MAX_BATCH_ITEMS = 20
+
+
+def _advertised_capabilities(value: Any) -> list[str]:
+    """Filter bounded optional discovery tokens without relaxing Evidence wire.
+
+    Called only by Judge configuration parsing. Accept at most 32 unique ASCII
+    identifiers of 1..64 characters; unknown identifiers describe optional
+    extensions and are discarded, never forwarded. Known order and dependencies
+    are still checked by the caller. Invalid discovery raises safe ProviderError;
+    this pure function performs no I/O and never echoes server values.
+    """
+    if (
+        not isinstance(value, list)
+        or len(value) > 32
+        or any(
+            not isinstance(token, str)
+            or re.fullmatch(r"[a-z][a-z0-9_]{0,63}", token) is None
+            for token in value
+        )
+        or len(set(value)) != len(value)
+    ):
+        raise ProviderError(
+            "The Backend returned invalid Trace capability configuration",
+            code="invalid_response",
+        )
+    known = {
+        *RUNTIME_EVIDENCE_CAPABILITY_ORDER,
+        "redaction",
+        FILE_OBSERVATION_CAPABILITY,
+    }
+    return [token for token in value if token in known]
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +116,11 @@ def judge_upload_config(response: Mapping[str, Any]) -> JudgeUploadConfig:
     manifest_schema_version = response.get("manifest_schema_version")
     evidence_types = response.get("evidence_types")
     max_batch_items = response.get("max_batch_items", _MAX_BATCH_ITEMS)
-    capabilities = response.get("runtime_evidence_capabilities")
+    capabilities = (
+        _advertised_capabilities(response["runtime_evidence_capabilities"])
+        if "runtime_evidence_capabilities" in response
+        else None
+    )
     base_capabilities = base_runtime_capabilities(capabilities)
     trace_schemas = response.get("trace_content_schemas", [])
     context_schemas = response.get("supported_run_context_schemas", [])

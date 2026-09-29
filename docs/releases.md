@@ -6,6 +6,27 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
+## 0.3.3 release notes
+
+This optional patch improves compatibility with additive Judge configuration.
+These candidate notes do not establish publication; check the matching GitHub
+Release and PyPI version before installing a pin.
+
+- Well-formed unknown optional Runtime Evidence capability names in discovery
+  are ignored and never copied into uploaded Evidence. Malformed configuration,
+  known capability dependencies/order and actual Evidence schemas remain strict.
+- Built-in Official Case + Judge runs check Judge configuration during
+  `create_run`, before runtime creation or paid Case generation. Judge submission
+  checks current limits again. Custom providers and loaded Case workflows retain
+  their existing validation order; known operation recovery remains GET-only.
+- Container upgrade guidance explains dependency pins, rebuilding/recreating
+  containers and restarting Python workers. A host-only install cannot update a
+  running container's SDK.
+
+No automatic installation or paid retry is introduced. This patch does not add a
+generic required-version policy or turn optional additions into forced upgrades.
+See [configuration compatibility and container upgrades](sdk-guide.md#configuration-compatibility-and-container-upgrades).
+
 ## 0.3.2 release notes
 
 This optional patch repairs Evidence handling, safe credential-example detection
