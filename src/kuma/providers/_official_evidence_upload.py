@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -18,9 +19,11 @@ from ..evidence.runtime_contract import (
     RUNTIME_EVIDENCE_MEDIA_TYPE,
     RUNTIME_EVIDENCE_SCHEMA_V1,
     RUNTIME_EVIDENCE_SCHEMA_V2,
+    base_runtime_capabilities,
     runtime_evidence_json,
     validate_runtime_evidence,
 )
+from ..evidence.runtime_files import FILE_OBSERVATION_CAPABILITY, summary_for_projection
 from ..repository.privacy import enforce_sensitive_policy, scan_sensitive_json
 from ..transport.backend import UploadPart
 from ._evidence_projection import project_run_evidence
@@ -82,11 +85,7 @@ def judge_upload_config(response: Mapping[str, Any]) -> JudgeUploadConfig:
     evidence_types = response.get("evidence_types")
     max_batch_items = response.get("max_batch_items", _MAX_BATCH_ITEMS)
     capabilities = response.get("runtime_evidence_capabilities")
-    base_capabilities = (
-        capabilities[:-1]
-        if isinstance(capabilities, list) and capabilities[-1:] == ["redaction"]
-        else capabilities
-    )
+    base_capabilities = base_runtime_capabilities(capabilities)
     trace_schemas = response.get("trace_content_schemas", [])
     context_schemas = response.get("supported_run_context_schemas", [])
     assessment_schemas = response.get("supported_assessment_contracts", [])
@@ -156,6 +155,29 @@ def judge_upload_config(response: Mapping[str, Any]) -> JudgeUploadConfig:
     )
 
 
+_RUNTIME_INVALID_REASONS = {
+    "runtime evidence association is invalid": "association_invalid",
+    "runtime evidence components are invalid": "components_invalid",
+    "runtime evidence component is invalid": "component_invalid",
+    "runtime evidence schema version is unsupported": "schema_unsupported",
+    "runtime evidence envelope is invalid": "envelope_invalid",
+    "runtime evidence capabilities are invalid": "capabilities_invalid",
+    "runtime evidence exceeds the byte limit": "envelope_size_limit",
+    "runtime evidence file association is invalid": "file_association_invalid",
+    "runtime evidence file diff is invalid": "file_diff_invalid",
+    "runtime evidence file diffs exceed the byte limit": "file_diff_size_limit",
+    "runtime trace is invalid": "trace_invalid",
+    "Runtime Trace artifact is unavailable": "trace_artifact_unavailable",
+    "runtime trace redaction is invalid": "trace_redaction_invalid",
+    "runtime trace redaction is not negotiated": "trace_redaction_unsupported",
+    "runtime evidence Agent output is invalid": "agent_output_invalid",
+    "runtime evidence must contain exactly one response claim": "response_claim_missing",
+    "runtime evidence completed claim is invalid": "response_claim_invalid",
+    "runtime evidence Agent output hash is invalid": "agent_output_hash_invalid",
+    "runtime evidence claim does not match Submission status": "response_status_mismatch",
+}
+
+
 def _runtime_evidence_part(
     item: Any,
     *,
@@ -166,6 +188,7 @@ def _runtime_evidence_part(
     upload_diff: bool = False,
     model_content_supported: bool = False,
     trace_redaction_supported: bool = False,
+    file_summary_supported: bool = False,
 ) -> tuple[UploadPart, dict[str, Any], list[Any]] | None:
     """Build one negotiated Runtime Evidence part from stored v1 history.
 
@@ -184,6 +207,9 @@ def _runtime_evidence_part(
         part_prefix: Optional batch prefix for multipart field names.
         schema_version: Exact public schema selected from Backend config.
         upload_diff: Whether this Run explicitly requested ``file_diff``.
+        file_summary_supported: Whether Backend explicitly advertised safe
+            file counters. Known loss without support fails before POST; other
+            legacy uploads warn without injecting unsupported wire fields.
 
     Returns:
         Upload part, manifest entry, and findings; ``None`` only when the stored
@@ -197,6 +223,8 @@ def _runtime_evidence_part(
     Security/Privacy:
         This is the final SDK boundary before multipart construction. It never
         uses ``allow_sensitive`` to expose Agent output or diff text.
+        Local validation failures expose only an allowlisted reason and the
+        zero-based history index in details, never raw causes or caller IDs.
     """
     value = item.submission.extensions.get("runtime_evidence")
     if value is None:
@@ -204,6 +232,7 @@ def _runtime_evidence_part(
     submission_id = runtime_submission_id(
         item.submission.run_id, item.submission.input_id
     )
+    projection_error = None
     try:
         validate_runtime_evidence(
             value,
@@ -212,6 +241,12 @@ def _runtime_evidence_part(
             step_id=item.test_input.input_id,
             submission_id=submission_id,
             schema_version=RUNTIME_EVIDENCE_SCHEMA_V1,
+        )
+        file_summary = _negotiate_file_summary(
+            item,
+            value,
+            supported=file_summary_supported
+            and schema_version == RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA,
         )
         if schema_version in {
             RUNTIME_EVIDENCE_SCHEMA_V2,
@@ -234,6 +269,7 @@ def _runtime_evidence_part(
                 value = project_runtime_evidence_capabilities(
                     value,
                     file_evidence=item.submission.file_evidence,
+                    file_sources=item.submission.extensions.get("runtime_file_sources"),
                     upload_diff=upload_diff,
                     trace_evidence=item.submission.extensions.get("trace_evidence"),
                     capture_summary=item.submission.extensions.get(
@@ -243,15 +279,25 @@ def _runtime_evidence_part(
                     case_id=item.submission.case_id,
                     model_content_supported=model_content_supported,
                     trace_redaction_supported=trace_redaction_supported,
+                    file_summary_supported=file_summary_supported,
+                    file_summary=file_summary,
                     max_bytes=max_file_bytes,
                     **projection_args,
                 )
             else:
                 value = project_runtime_evidence_v2(value, **projection_args)
     except ValueError as exc:
-        raise ProviderError(
-            "Runtime Evidence is invalid", code="runtime_evidence_invalid"
-        ) from exc
+        message = exc.args[0] if len(exc.args) == 1 and type(exc.args[0]) is str else ""
+        projection_error = ProviderError(
+            "Runtime Evidence is invalid",
+            code="runtime_evidence_invalid",
+            details={
+                "reason": _RUNTIME_INVALID_REASONS.get(message, "projection_invalid"),
+                "submission_index": index,
+            },
+        )
+    if projection_error is not None:
+        raise projection_error from None
     encoded = runtime_evidence_json(value).encode()
     if len(encoded) > min(max_file_bytes, RUNTIME_EVIDENCE_MAX_BYTES):
         raise LimitExceededError(
@@ -273,6 +319,38 @@ def _runtime_evidence_part(
         },
         scan_sensitive_json(value, location="runtime_evidence"),
     )
+
+
+def _negotiate_file_summary(
+    item: Any, value: Mapping[str, Any], *, supported: bool
+) -> dict[str, Any]:
+    """Validate file counters and fail closed on known losses to old servers.
+
+    Called after v1 association validation but before multipart construction.
+    Unknown old metadata stays unknown; no mixed drop total is consulted.
+    Without negotiation, known omitted facts, incomplete or failed capture raise
+    ProviderError(runtime_evidence_unsupported). Otherwise emit a static local
+    RuntimeWarning and preserve legacy wire. No paths, contents or IDs appear in
+    the warning/error, and immutable history is not altered.
+    """
+    summary = summary_for_projection(
+        item.submission.extensions.get(FILE_OBSERVATION_CAPABILITY),
+        retained=sum(c["kind"] == "file_change" for c in value["components"]),
+    )
+    if not supported:
+        if (
+            (summary["omitted_count"] or 0) > 0
+            or "capture_incomplete" in summary["reasons"]
+            or summary["status"] == "unavailable"
+        ):
+            raise ProviderError(
+                "The Backend does not support file observation loss summaries",
+                code="runtime_evidence_unsupported",
+            )
+        warnings.warn(
+            "file_observation_summary_unavailable", RuntimeWarning, stacklevel=3
+        )
+    return summary
 
 
 def _runtime_evidence_parts(
@@ -340,6 +418,8 @@ def _runtime_evidence_parts(
             in config.trace_content_schemas,
             trace_redaction_supported="redaction"
             in config.runtime_evidence_capabilities,
+            file_summary_supported=FILE_OBSERVATION_CAPABILITY
+            in config.runtime_evidence_capabilities,
         )
         if built is None:
             continue
@@ -351,6 +431,7 @@ def _runtime_evidence_parts(
         raise ProviderError(
             "File-diff Evidence is unavailable for this Run",
             code="runtime_evidence_invalid",
+            details={"reason": "runtime_evidence_unavailable"},
         )
     return parts, manifest, findings
 
@@ -418,7 +499,24 @@ def _typed_upload(
 def _legacy_upload(
     context: JudgeContext, config: JudgeUploadConfig, part_prefix: str
 ) -> tuple[tuple[UploadPart, ...], dict[str, Any], list[Any]]:
-    """Project complete history into one bounded legacy Evidence file."""
+    """Project bounded legacy history only when known file losses are supported.
+
+    Raw-log fallback cannot bypass the negotiated summary boundary. Check typed
+    local metadata first without injecting new fields; malformed counters fail
+    safely and known loss raises before serialization or POST.
+    """
+    invalid = False
+    try:
+        for item in context.history:
+            value = item.submission.extensions.get("runtime_evidence")
+            if value is not None:
+                _negotiate_file_summary(item, value, supported=False)
+    except (ValueError, KeyError, TypeError):
+        invalid = True
+    if invalid:
+        raise ProviderError(
+            "Runtime Evidence is invalid", code="runtime_evidence_invalid"
+        )
     evidence = {
         "schema_version": "defuzex.run_evidence.v1",
         "run_status": context.run_status,

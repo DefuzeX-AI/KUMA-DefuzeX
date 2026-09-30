@@ -32,6 +32,7 @@ from ...repository.privacy import (
 )
 from ..runtime import build_runtime_evidence, runtime_submission_id
 from ..runtime_actors import selected_span_index
+from ..runtime_files import file_observation_summary
 from ..trace import (
     PreparedOtelLogs,
     PreparedTraceEvidence,
@@ -64,6 +65,18 @@ def _failed_snapshot(root: Path) -> Snapshot:
     return Snapshot(root=root, entries={}, errors=("snapshot_failed",), complete=False)
 
 
+def _file_fact_count(evidence: FileEvidence) -> int:
+    """Count enumerated wire candidates, treating each rename as two endpoints.
+
+    File preparation measures this before and after privacy filtering. Snapshot
+    errors and unknown scan population are deliberately excluded; this pure
+    count is not a claim about the number of files on disk.
+    """
+    return sum(
+        2 if change.change_type == "renamed" else 1 for change in evidence.changes
+    )
+
+
 def _snapshot_component(*snapshots: Snapshot) -> CaptureComponent:
     """Aggregate Snapshot statuses and bounded reason codes into one component."""
     errors = tuple(
@@ -85,12 +98,15 @@ class _PreparedFiles:
         diff: File comparison completeness.
         evidence: Public file Evidence, or ``None`` when tracking is disabled.
         result: Full comparison result including local-only diffs.
+        observation_summary: Authoritative file-only counters before projection;
+            absent for older internal callers, never inferred from error counts.
     """
 
     snapshot: CaptureComponent
     diff: CaptureComponent
     evidence: FileEvidence | None
     result: DiffResult | None
+    observation_summary: Mapping[str, Any] | None = None
 
 
 @dataclass(slots=True)
@@ -590,8 +606,11 @@ class EvidenceCollector:
                 file_evidence=prepared_files.evidence,
                 logs=prepared_logs.segments,
                 trace_evidence=trace_evidence,
+                file_summary=prepared_files.observation_summary,
             )
             extensions["runtime_evidence"] = built.evidence
+            extensions["runtime_file_sources"] = built.file_sources
+            extensions["file_observation_summary"] = built.file_summary
             summary.missing.extend(built.missing)
             summary.dropped_count += built.dropped_count
         return extensions
@@ -716,10 +735,15 @@ class EvidenceCollector:
         this boundary removes any diff matched by the canonical sensitive-data
         scanner and records the content-free ``sensitive_content`` reason. File
         hashes and other metadata remain available to Runtime Evidence.
+        File-only counts are measured before privacy filtering, with two facts
+        per rename, and passed to the Runtime builder independently of mixed
+        drop counters. Failed baseline/final snapshots or comparison suppress
+        all inferred changes instead of manufacturing creates/deletes. Unknown
+        scan population and omitted diff bodies never increment file counts.
 
         Returns:
             Staged snapshot, comparison status, public file Evidence, and
-            local-only safe diffs for the active input.
+            local-only safe diffs and typed completeness for the active input.
 
         Side Effects:
             Reads the configured repository through ``Snapshotter``. It does
@@ -727,14 +751,30 @@ class EvidenceCollector:
         """
         if not self.track_files:
             skipped = CaptureComponent(status="skipped")
-            return _PreparedFiles(skipped, skipped, None, None)
+            return _PreparedFiles(
+                skipped,
+                skipped,
+                None,
+                None,
+                file_observation_summary(
+                    status="not_captured", retained=0, reasons=("not_enabled",)
+                ),
+            )
 
         baseline = self._baseline or _failed_snapshot(self.root)
         try:
             after = self.snapshotter.capture()
         except Exception:
             after = _failed_snapshot(self.root)
+        snapshot_status = _snapshot_component(baseline, after)
+        failed = any(
+            "snapshot_failed" in snapshot.errors
+            or (not snapshot.entries and not snapshot.complete)
+            for snapshot in (baseline, after)
+        )
         try:
+            if failed:
+                raise ValueError("file capture unavailable")
             result = compare_snapshots(
                 baseline,
                 after,
@@ -742,6 +782,7 @@ class EvidenceCollector:
                 upload_diff=self.upload_diff,
             )
         except Exception:
+            failed = True
             result = DiffResult(
                 evidence=FileEvidence(
                     complete=False,
@@ -750,16 +791,82 @@ class EvidenceCollector:
                 ),
                 local_diffs={},
             )
+        observed = _file_fact_count(result.evidence)
+        result = self._omit_sensitive_file_paths(result)
+        retained = _file_fact_count(result.evidence)
+        reasons = []
+        if not failed and (
+            not baseline.complete
+            or not after.complete
+            or any(not change.complete for change in result.evidence.changes)
+        ):
+            reasons.append("capture_incomplete")
+        if observed > retained:
+            reasons.append("privacy_filtered")
+        observation_summary = file_observation_summary(
+            status="unavailable" if failed else "partial" if reasons else "complete",
+            observed=None if failed else observed,
+            retained=retained,
+            reasons=("capture_failed",) if failed else tuple(reasons),
+        )
         result = self._omit_sensitive_file_diffs(result)
         diff = CaptureComponent(
             status="complete" if result.evidence.complete else "partial",
             reasons=result.evidence.errors,
         )
         return _PreparedFiles(
-            snapshot=_snapshot_component(baseline, after),
+            snapshot=snapshot_status,
             diff=diff,
             evidence=result.evidence,
             result=result,
+            observation_summary=observation_summary,
+        )
+
+    def _omit_sensitive_file_paths(self, result: DiffResult) -> DiffResult:
+        """Omit credential-named observations without rejecting the whole step.
+
+        File preparation invokes this before scans and local persistence, even
+        for hash-only capture and allow_sensitive. Both rename endpoints use
+        the canonical path scanner. Unsafe observations and their local diffs
+        are removed together; index-only reasons feed existing missing/drop
+        accounting. User files and snapshot baselines are not modified. No
+        substituted path, invented hash fact or new wire field is generated.
+        """
+        omitted = {
+            change.path
+            for change in result.evidence.changes
+            if scan_sensitive_path(change.path, location="file_path")
+            or (
+                change.old_path is not None
+                and scan_sensitive_path(change.old_path, location="file_path")
+            )
+        }
+        if not omitted:
+            return result
+        changes = tuple(
+            change for change in result.evidence.changes if change.path not in omitted
+        )
+        count = len(result.evidence.changes) - len(changes)
+        extensions = dict(result.evidence.extensions)
+        extensions["diff_included_count"] = sum(
+            change.diff is not None for change in changes
+        )
+        return DiffResult(
+            evidence=replace(
+                result.evidence,
+                complete=False,
+                changes=changes,
+                errors=(
+                    *result.evidence.errors,
+                    *(f"sensitive_path:{index}" for index in range(count)),
+                ),
+                extensions=extensions,
+            ),
+            local_diffs={
+                path: text
+                for path, text in result.local_diffs.items()
+                if path not in omitted
+            },
         )
 
     def _omit_sensitive_file_diffs(self, result: DiffResult) -> DiffResult:

@@ -21,11 +21,11 @@ _CREDENTIAL_NAME = (
 )
 _CREDENTIAL_KEY = re.compile(rf"(?i)^{_CREDENTIAL_NAME}$")
 _ASSIGNMENT = re.compile(
-    rf"(?i)(?<![\w])(?P<label>{_CREDENTIAL_NAME}[\"']?\s*[:=]\s*)"
+    rf"(?i)(?<![\w])(?P<label>{_CREDENTIAL_NAME}[\"']?\s*[:=]\s*(?:\*\*\s*)?)"
     r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;}]+)"
 )
 _AUTHORIZATION_HEADER = re.compile(
-    r"(?im)\bauthorization[\"']?[ \t]*:[ \t]*(?P<value>[^\r\n]*)"
+    r"(?im)\bauthorization[\"']?[ \t]*:[ \t]*(?=(?P<value>[^\r\n]*))"
 )
 _COOKIE_HEADER = re.compile(r"(?im)\b(?:set-)?cookie\s*:[^\r\n]*")
 _PLACEHOLDER_AUTH_VALUE = re.compile(
@@ -159,37 +159,146 @@ def scan_sensitive_text(text: str, *, location: str) -> tuple[SensitiveFinding, 
 
 
 def _assignment_is_secret(match: re.Match[str]) -> bool:
-    """Exclude only the exact redaction marker or empty quoted assignment.
+    """Keep machine assignments strict while recognizing bounded prose contexts.
 
-    This rule is shared by detection and outbound replacement; a marker prefix
-    followed by other content is not an exemption. Token counts are not matched
-    because their field names are outside the closed credential-name pattern.
+    Detection and replacement share these rules. Exact documentation placeholders
+    carry no credential value. Only unquoted colon labels with explicit academic,
+    employment, no-auth or token-definition wording qualify as prose. Passwords,
+    short real secrets, equals assignments and quoted values remain sensitive;
+    independent known-token/private-key signatures still scan the whole text.
     """
     value = match["value"].strip("\"'")
-    return value not in {"", REDACTED}
+    if value in {"", REDACTED} or re.fullmatch(
+        r"(?:<[A-Za-z][A-Za-z0-9_-]*>|\$[A-Z_][A-Z0-9_]*|YOUR_[A-Z_]+|sk-[.…]+)`?",
+        value,
+    ):
+        return False
+    return not _assignment_is_prose(match)
+
+
+def _assignment_is_prose(match: re.Match[str]) -> bool:
+    """Share the existing bounded prose exceptions without exempting their tails."""
+    if "=" in match["label"] or match["value"].startswith(("'", '"')):
+        return False
+    value = match["value"]
+    label = match["label"].split(":", 1)[0].casefold()
+    tail = match.string[match.start("value") :].splitlines()[0]
+    contexts = {
+        "credentials": r"(?:PhD|MSc|BSc|(?:academic|professional) qualifications|use a NACES-member evaluator)(?=[ \t]|$)",
+        "authorization": r"Statutory right-to-work checks(?=[ \t]|$)",
+        "auth": r"(?:None required|Authorized)(?=[ \t]|$)",
+        "token": r"the unit of text(?=[ \t]|$)",
+    }
+    if (
+        label in {"auth", "authorization"}
+        and re.search(r"(?i)\bwork[ \t]+$", match.string[: match.start()])
+        and value.casefold()
+        in {
+            "permitted",
+            "authorized",
+            "required",
+            "prohibited",
+        }
+    ):
+        return True
+    pattern = contexts.get(label)
+    return pattern is not None and re.match(pattern, tail, re.IGNORECASE) is not None
 
 
 def _authorization_match_is_secret(match: re.Match[str]) -> bool:
-    """Keep obvious documentation values while failing closed on credentials."""
-    value = match["value"].strip()
-    if value == REDACTED:
+    """Reject headers without a complete recognized safe value or prose form."""
+    return _safe_authorization_end(match) is None
+
+
+def _authorization_value_is_safe(value: str) -> bool:
+    """Accept only complete Bearer/Basic placeholders or the public RFC sample."""
+    if any(
+        pattern.search(value)
+        for kind, pattern in _TEXT_PATTERNS
+        if kind != "authorization_bearer"
+    ):
         return False
-    example = re.fullmatch(r"(?i)(bearer|basic)[ \t]+(\S+)", value)
+    example = re.fullmatch(r"(?i)(bearer|basic)[ \t]+(\S+)", value.strip())
     if example is None:
-        return True
-    scheme, credential = example.groups()
-    if _PLACEHOLDER_AUTH_VALUE.fullmatch(credential):
         return False
-    return not (scheme.casefold() == "basic" and credential == _RFC7617_BASIC_SAMPLE)
+    scheme, credential = example.groups()
+    return bool(_PLACEHOLDER_AUTH_VALUE.fullmatch(credential)) or (
+        scheme.casefold() == "basic" and credential == _RFC7617_BASIC_SAMPLE
+    )
+
+
+def _safe_authorization_end(match: re.Match[str]) -> int | None:
+    """Return the end of a proven safe header, leaving surrounding text untrusted.
+
+    The header pattern looks ahead through the line without consuming it, so a
+    second header on that line is checked independently. Quotes/backticks must
+    be adjacent and paired exactly, including JSON-escaped double quotes. Bare
+    prose is limited to the two issue examples and existing employment wording;
+    arbitrary suffixes and incomplete delimiters fail closed.
+    """
+    value = match["value"]
+    prefix = match.string[: match.start()]
+    delimiter = prefix[-1:]
+    if delimiter in {"'", '"', "`"}:
+        if prefix.endswith('\\"'):
+            delimiter = '\\"'
+        end = value.find(delimiter)
+        if end < 0 or not _authorization_value_is_safe(value[:end]):
+            return None
+        tail = value[end + len(delimiter) :]
+        if tail and not tail[0].isspace():
+            return None
+        return match.start("value") + end + len(delimiter)
+    if value.strip() == REDACTED or _authorization_value_is_safe(value):
+        return match.end("value")
+    line_prefix = prefix.rsplit("\n", 1)[-1].strip()
+    documentation = re.fullmatch(
+        r"(?i)(?P<header>basic[ \t]+"
+        + _RFC7617_BASIC_SAMPLE
+        + r")[ \t]+\(RFC 7617 sample\)[ \t]*",
+        value,
+    )
+    if (
+        line_prefix == "Example:"
+        and documentation
+        and _authorization_value_is_safe(documentation["header"])
+    ):
+        return match.start("value") + documentation.end("header")
+    documentation = re.fullmatch(
+        r"(?i)(?P<header>bearer[ \t]+\S+)[ \t]+before calling\.[ \t]*", value
+    )
+    if (
+        line_prefix == "Set the header to"
+        and documentation
+        and _authorization_value_is_safe(documentation["header"])
+    ):
+        return match.start("value") + documentation.end("header")
+    assignment = _ASSIGNMENT.match(match.string, match.start())
+    if assignment and _assignment_is_prose(assignment):
+        return assignment.end()
+    return None
 
 
 def _safe_authorization_spans(text: str) -> tuple[tuple[int, int], ...]:
     """Locate complete safe headers so generic token rules preserve examples."""
     return tuple(
-        match.span()
+        (match.start(), end)
         for match in _AUTHORIZATION_HEADER.finditer(text)
-        if not _authorization_match_is_secret(match)
+        if (end := _safe_authorization_end(match)) is not None
     )
+
+
+def _redact_authorization_headers(text: str) -> str:
+    """Remove every non-exempt header through the line end, for all schemes."""
+    pieces = []
+    offset = 0
+    for match in _AUTHORIZATION_HEADER.finditer(text):
+        if match.start() < offset or not _authorization_match_is_secret(match):
+            continue
+        pieces.extend((text[offset : match.start()], REDACTED))
+        offset = match.end("value")
+    pieces.append(text[offset:])
+    return "".join(pieces)
 
 
 def _inside_spans(
@@ -227,10 +336,7 @@ def redact_sensitive_text(text: str) -> str:
             len(scalar) == 1 or scalar[-1] != scalar[0]
         ):
             return REDACTED
-    result = _AUTHORIZATION_HEADER.sub(
-        lambda match: REDACTED if _authorization_match_is_secret(match) else match[0],
-        text,
-    )
+    result = _redact_authorization_headers(text)
     safe_authorization_spans = _safe_authorization_spans(result)
     bearer_pattern = dict(_TEXT_PATTERNS)["authorization_bearer"]
     result = bearer_pattern.sub(

@@ -45,6 +45,17 @@ Run a deterministic local check without an account, API key, Docker, or network:
 kuma quickstart
 ```
 
+Successful output starts with:
+
+```text
+Local check: PASS
+Score: 100/100
+Reason: Output exactly matched the published rule.
+```
+
+This checks the bundled local example, not your Agent or the hosted Judge.
+To evaluate your Agent, follow the [SDK guide](docs/sdk-guide.md).
+
 ## Next steps
 
 - [Run an official evaluation](docs/sdk-guide.md) with the full Case and Judge workflow.

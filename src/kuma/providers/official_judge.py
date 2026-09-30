@@ -458,6 +458,19 @@ class OfficialJudgeProvider:
                 self._idempotency_keys[run_id] = key
             return key
 
+    def _retire_failed_attempt(self, run_id: str, retryable: bool) -> None:
+        """Retire only a definitively failed retryable Judge attempt's cached key.
+
+        The poller invokes this after persisting terminal failure, while the
+        Provider holds the Run lock. A subsequent explicit judge call can create
+        a fresh attempt; this method never retries or bills. Ambiguous transport,
+        malformed results and active operations retain their original identity.
+        Durable failed request records and immutable history remain untouched.
+        """
+        if retryable:
+            with self._idempotency_lock:
+                self._idempotency_keys.pop(run_id, None)
+
     def _prepare_upload(
         self,
         context: JudgeContext,
@@ -647,7 +660,11 @@ class OfficialJudgeProvider:
                 else self._assessment_contracts.get(run_id)
             )
             return self._resume_judgment(
-                store, pending.idempotency_key, context.run_context, expected_assessment
+                store,
+                pending.idempotency_key,
+                context.run_context,
+                expected_assessment,
+                run_id=run_id,
             )
         config = _judge_config(self.client.json("GET", "/sdk/judge/config/"))
         key = pending.idempotency_key if pending else self._idempotency_key(run_id)
@@ -706,6 +723,8 @@ class OfficialJudgeProvider:
         idempotency_key: str,
         run_context: Mapping[str, Any] | None = None,
         assessment_contract: str | None = None,
+        *,
+        run_id: str,
     ) -> Mapping[str, Any]:
         """Poll the stored Judge operation without issuing a replacement POST."""
         response = await_operation(
@@ -716,6 +735,9 @@ class OfficialJudgeProvider:
             wait_timeout=self.operation_wait_timeout,
             accept_result=lambda value: self._accept_judgment(
                 store, value, run_context, assessment_contract
+            ),
+            terminal_failure=lambda retryable: self._retire_failed_attempt(
+                run_id, retryable
             ),
         )
         return response
@@ -784,6 +806,9 @@ class OfficialJudgeProvider:
             wait_timeout=self.operation_wait_timeout,
             accept_result=lambda value: self._accept_judgment(
                 store, value, upload.metadata.get("run_context"), assessment
+            ),
+            terminal_failure=lambda retryable: self._retire_failed_attempt(
+                upload.run_id, retryable
             ),
         )
         return response

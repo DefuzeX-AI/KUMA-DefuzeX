@@ -50,6 +50,7 @@ python tools/verify_executed_strategy_group.py
 python tools/verify_cli_atomic_output.py
 python tools/verify_transport_failures.py
 python tools/verify_operation_poll_backoff.py
+python tools/verify_privacy_authorization.py
 python -m compileall -q src examples tools
 kuma quickstart
 python examples/minimal_local.py
@@ -70,6 +71,10 @@ invalid-response recovery without another Case POST, and saved Case reuse.
 The CLI cleanup check uses temporary files. Transport interruption checks use
 synthetic credentials and a local loopback HTTP server only; no hosted API,
 model, or paid evaluation is called.
+
+The Authorization privacy check is also offline. It covers the original
+documentation/curl examples, malformed boundaries, adjacent credentials and
+redaction followed by rescanning.
 
 ## Pull requests
 

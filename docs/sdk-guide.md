@@ -229,6 +229,8 @@ Framework-neutral runtime metadata follows the [Runtime Evidence contract](runti
 
 Before official upload, KUMA scans output, errors, paths, diffs, explicit logs, and custom Cases for sensitive material. The API key is used for authorization and is not added to Evidence. `allow_sensitive=True` is an explicit ordinary-Evidence override, not a substitute for isolation or secret hygiene.
 
+Authorization examples are preserved only when their complete Bearer/Basic value is a recognized placeholder (such as `$TOKEN`, `${ACCESS_TOKEN}`, `YOUR_TOKEN_HERE`, or `<your-access-token>`) or the public RFC 7617 Basic sample. Supported boundaries are the line end or an immediately enclosing, matching single quote, double quote, or backtick, followed by whitespace or the line end; JSON-escaped double quotes are also supported. Two unquoted documentation forms are recognized: `Example: Authorization: Basic YWxhZGRpbjpvcGVuc2VzYW1l (RFC 7617 sample)` and `Set the header to Authorization: Bearer YOUR_TOKEN_HERE before calling.` Other prose suffixes, malformed boundaries, unknown schemes and extra material inside a header remain sensitive. Non-exempt headers are redacted from `Authorization` through the line end; surrounding text and additional headers still undergo credential checks.
+
 ## OpenTelemetry
 
 OpenTelemetry (OTel) is the standard observability API used by Agent frameworks and instrumentation to emit spans. KUMA maps spans that were **actually emitted in the same process** into bounded Evidence. It does not invent Agent activity and is not an OTel Collector, backend, or trace UI.
@@ -337,6 +339,13 @@ Common subclasses include `ConfigurationError`, `AuthenticationError`, `Permissi
 Correlation also survives rejected JSON/UTF-8, response-size limits (including HTTP error bodies), unexpected HTTP status, and invalid operation start/poll/result schemas. It refers only to the response whose validation failed. Network failures before receiving a response, local persistence failures, and missing-header responses do not inherit an earlier response's ID.
 
 An operation timeout retains bounded recovery metadata without storing credentials, request content, Evidence, or results. Judge retry requires the original Run and History; the high-level API cannot rebuild a lost Run from only `run_id` after process exit.
+
+After the server definitively reports a failed, retryable Judge operation, an
+explicit later `run.judge()` starts a new attempt with a fresh idempotency key.
+This can incur another charge; KUMA never starts that attempt automatically.
+Lost POST responses and interrupted polling are different: they retain the
+original key, and a known operation ID is resumed with GET only. The committed
+History is unchanged, and failed request records remain available locally.
 
 If `KeyboardInterrupt`, `SystemExit`, or cancellation interrupts Judge, the exception still propagates; KUMA does not swallow it or fabricate a report. If your application catches it and retains the Run, its state is `completed` and `run.judge()` can be called again. An already-started official operation resumes by polling its existing ID, not creating another task. Interrupting local waiting does not cancel the remote operation. This recovery does not apply to forcibly terminating the process.
 
