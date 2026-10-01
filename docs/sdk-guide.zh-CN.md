@@ -67,6 +67,36 @@ python examples/minimal_local.py
 
 ## Configuration
 
+### Official Case difficulty
+
+```python
+from kuma import create_run
+
+run = create_run(
+    repo_path="/workspace/repo",
+    agent_profile_path="/workspace/repo/agent-profile.md",
+    difficulty="D2",
+)
+```
+
+In an authenticated official workflow, `difficulty` requests how many problems
+the service injects: `"D0"` means zero, `"D1"` (default) one, and `"D2"` two.
+It does not select a Strategy Group, change Judge severity or set a step count.
+Only these exact strings are valid; `None`, lowercase strings and other values
+raise `ConfigurationError(code="config_invalid")` before filesystem/network work.
+The SDK forwards the choice; Core implements injection, and the SDK does not
+claim that generated content has been independently verified.
+
+Direct provider users can set
+`OfficialCaseProvider(client, difficulty="D2").generate_case(context)`.
+Both this synchronous Python call and `create_run` use the same asynchronous
+Backend operation and polling path. Omitted or explicit D1 preserves the previous
+request bytes; D0/D2 change the request hash. Retry with the same level preserves
+pending-operation identity and uses GET-only polling once an operation is known.
+Custom providers, local observation and loaded Case content are unchanged.
+Non-default levels require a service supporting the difficulty field; unsupported
+requests are not silently retried at D1.
+
 ### API key
 
 Official Case or Judge Providers require a KUMA API key beginning with `dfx_`. Keep it in the process environment or user credential store; never place it in source, Notebook output, logs, or Git.

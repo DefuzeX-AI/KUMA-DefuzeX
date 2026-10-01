@@ -54,6 +54,15 @@ Accept: application/json
 
 ## Entitlements
 
+Official generation accepts optional `difficulty` with exact values D0/D1/D2.
+These request zero/one/two injected problems, not Judge severity. SDK
+`create_run` and `OfficialCaseProvider` default to D1 and omit it from the
+serialized request even when explicitly supplied. D0/D2 are serialized and
+included in canonical request identity. Invalid Python values, including None,
+fail with `ConfigurationError(config_invalid)` before I/O. No Case response field
+or local custom-provider contract is added; injection is service-owned. The
+synchronous Python API starts/polls the existing v2 asynchronous operation.
+
 `GET /sdk/entitlements/`
 
 Official Case `max_steps` is an upper bound, not an exact count. Without a pending

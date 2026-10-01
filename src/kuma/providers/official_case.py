@@ -7,7 +7,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from ..config import DEFAULT_CASE_MAX_STEPS
+from ..config import DEFAULT_CASE_MAX_STEPS, validate_difficulty
 from ..errors import (
     ConfigurationError,
     LimitExceededError,
@@ -513,6 +513,7 @@ def _safe_case_payload(
     allow_sensitive: bool,
     evidence_capabilities: tuple[str, ...],
     max_steps: int | None,
+    difficulty: str = "D1",
 ) -> tuple[dict[str, Any], str]:
     """Build and privacy-scan the exact public Case-generation request payload.
 
@@ -530,13 +531,17 @@ def _safe_case_payload(
             this Run can truthfully produce.
         max_steps: Explicit user ceiling to serialize, or ``None`` to omit the
             field and select the service default.
+        difficulty: D0/D1/D2 injection level; D1 (default) is omitted even when
+            explicit, preserving existing canonical bytes and recovery identity.
+            D0 and D2 are transmitted unchanged. Core owns actual injection.
 
     Returns:
         Detached public JSON payload and the canonical repository fingerprint
         used later to validate the returned Case.
 
     Raises:
-        ConfigurationError: If official generation cannot represent the Input.
+        ConfigurationError: If difficulty is invalid or official generation
+            cannot represent the Input.
         ValidationError: If required behavior sections are malformed, or with
             ``tool_capabilities_invalid`` if the declared document is invalid.
         LimitExceededError: If public text or metadata exceeds a size bound.
@@ -551,6 +556,7 @@ def _safe_case_payload(
     Side Effects:
         None. This helper does not perform entitlement or Case network requests.
     """
+    difficulty = validate_difficulty(difficulty)
     if context.input_type != "text":
         raise ConfigurationError(
             "The official Case service currently supports text Inputs only"
@@ -580,6 +586,8 @@ def _safe_case_payload(
     # off the wire preserves the legacy request identity and idempotency key.
     if max_steps is not None and max_steps != DEFAULT_CASE_MAX_STEPS:
         payload["max_steps"] = max_steps
+    if difficulty != "D1":
+        payload["difficulty"] = difficulty
     if evidence_capabilities:
         payload["evidence_capabilities"] = list(evidence_capabilities)
     return payload, repo_meta["repo_fingerprint"]
@@ -720,6 +728,7 @@ class OfficialCaseProvider:
         allow_sensitive: bool = False,
         operation_wait_timeout: float = 600.0,
         max_steps: int | None = None,
+        difficulty: str = "D1",
     ) -> None:
         """Configure public Case transport, privacy policy, and wait deadline.
 
@@ -735,6 +744,11 @@ class OfficialCaseProvider:
                 ``CaseGenerationContext.max_steps``. Values above the advertised
                 service ceiling fail before operation creation; ``None`` lets
                 the context select a non-default ceiling or the default of 10.
+            difficulty: Exact D0/D1/D2 string requesting zero/one/two injected
+                problems. Defaults to D1; None is invalid. D1 is omitted from
+                the public request to preserve default identity; D0/D2 change
+                its hash. This never changes Judge severity. Core implements
+                injection; the SDK does not fabricate an injection result.
 
         Preconditions:
             ``client`` targets the public Backend and owns a validated key. If
@@ -746,8 +760,9 @@ class OfficialCaseProvider:
 
         Raises:
             ConfigurationError: If ``max_steps`` is not a positive integer or
-                ``None``.
+                ``None``, or difficulty is not D0/D1/D2. No network occurs.
         """
+        self.difficulty = validate_difficulty(difficulty)
         if max_steps is not None and (
             isinstance(max_steps, bool)
             or not isinstance(max_steps, int)
@@ -877,6 +892,7 @@ class OfficialCaseProvider:
             allow_sensitive=self.allow_sensitive,
             evidence_capabilities=self._evidence_capabilities,
             max_steps=wire_max_steps,
+            difficulty=self.difficulty,
         )
         return self._run_operation(
             context,

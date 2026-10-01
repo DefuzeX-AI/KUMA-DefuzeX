@@ -208,6 +208,8 @@ def main(argv: list[str] | None = None) -> int:
             agent_profile_path=agent_profile,
             case_provider=None if use_official else _local_case,
             max_steps=None if use_official else 1,
+            # Official only: D0 injects zero problems, D1 one, D2 two.
+            difficulty="D1",
             judge=use_official,
             on_failure="stop",
             allow_local=_environment_flag("KUMA_ALLOW_LOCAL", default=not use_official),

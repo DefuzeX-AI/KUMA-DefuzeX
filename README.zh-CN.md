@@ -53,6 +53,8 @@ Reason: Output exactly matched the published rule.
 这只验证内置的本地示例，不代表你的 Agent 已通过评测，也不会调用托管 Judge。
 要评测自己的 Agent，请继续阅读 [SDK 指南](docs/sdk-guide.md)。
 
+官方 Case 可用 `create_run(..., difficulty="D1")` 选择问题注入数量：D0 不注入、D1 一个（默认）、D2 两个。这不是 Judge 评分严格程度。
+
 ## 下一步
 
 - [运行官方评测](docs/sdk-guide.md)，完成完整的 Case 与 Judge 流程。

@@ -56,6 +56,9 @@ Reason: Output exactly matched the published rule.
 This checks the bundled local example, not your Agent or the hosted Judge.
 To evaluate your Agent, follow the [SDK guide](docs/sdk-guide.md).
 
+For official Case generation, `create_run(..., difficulty="D1")` selects problem
+injection: D0 requests zero problems, D1 one (default), D2 two—not Judge severity.
+
 ## Next steps
 
 - [Run an official evaluation](docs/sdk-guide.md) with the full Case and Judge workflow.

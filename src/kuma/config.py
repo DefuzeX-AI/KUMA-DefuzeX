@@ -23,6 +23,26 @@ DEFAULT_CASE_MAX_STEPS = 10
 _MAX_API_KEY_BYTES = 512
 
 
+def validate_difficulty(value: str) -> str:
+    """Validate the official Case injection level without external effects.
+
+    Args:
+        value: Exact string D0, D1 or D2, selecting zero, one or two injected
+            problems. D1 is the public default; None is not an omission value.
+
+    Returns:
+        The unchanged validated string for Run configuration or official payload
+        projection. This does not generate problems or change Judge severity.
+
+    Raises:
+        ConfigurationError: For any other type/value, before credentials,
+            persistence or network access; the message never echoes the input.
+    """
+    if not isinstance(value, str) or value not in ("D0", "D1", "D2"):
+        raise ConfigurationError("difficulty must be 'D0', 'D1', or 'D2'")
+    return value
+
+
 def _validate_strategy_scan(enabled: bool) -> None:
     """Reject the disabled strategy matcher before any input or network I/O.
 
@@ -114,6 +134,9 @@ class CreateRunConfig:
         max_steps: Positive upper bound on Case steps, or ``None`` to use the
             selected provider/service default. It is not an exact requested
             count. Custom Case Providers require an explicit value.
+        difficulty: Official generation only: D0 requests zero injected problems,
+            D1 (default) one, D2 two. None and other values are invalid. This is
+            not Judge severity; custom providers and saved Cases are unchanged.
         judge: Whether the Run automatically requests a final report after its
             last submission.
         on_failure: ``"continue"`` delivers the next input after a failed,
@@ -158,6 +181,7 @@ class CreateRunConfig:
     operation_wait_timeout: float = DEFAULT_OPERATION_WAIT_TIMEOUT
     max_retries: int = 2
     scan_strategy_group: bool = False
+    difficulty: str = "D1"
 
     def __post_init__(self) -> None:
         """Reject invalid Run options before filesystem or network effects.
@@ -178,6 +202,7 @@ class CreateRunConfig:
             None. Validation does not read credentials, inspect repositories,
             create runtime directories, or perform network requests.
         """
+        validate_difficulty(self.difficulty)
         if not isinstance(self.strategy, str) or not self.strategy.strip():
             raise ConfigurationError("strategy must be a non-empty string")
         if self.max_steps is not None and (
