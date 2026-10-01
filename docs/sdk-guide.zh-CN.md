@@ -45,6 +45,43 @@ Repository contributors should install this checkout with `python -m pip install
 Observation and correlation APIs are available in KUMA 0.3.0 or later.
 Upgrade the published package using the command above; no source checkout is required.
 
+### Configuration compatibility and container upgrades
+
+Official Case + Judge runs validate the public Judge configuration during
+`create_run`, before creating runtime state or submitting paid Case generation.
+Judge submission reads current limits again; an early check cannot guarantee that
+the server configuration will remain unchanged during Agent execution. Custom
+providers, loaded Case workflows, and Judge-disabled runs retain their existing
+validation order. Resuming a known Judge operation still polls that operation;
+it does not start another job or require a fresh discovery request.
+
+Unknown optional Runtime Evidence capability names in a bounded, valid discovery
+list are ignored, never copied into uploaded Evidence. Malformed configuration,
+invalid known-capability order/dependencies, and explicitly requested unsupported
+features still fail closed. Actual Evidence schemas remain strict. No generic
+required-version policy or automatic SDK installation is implemented; an optional
+server capability alone is not a mandatory-upgrade signal.
+
+If an application pins `kuma-defuzex==0.3.1`, upgrading the host does not upgrade
+its Docker image, virtual environment, or running Python process. Update the pin
+to the intended published version (for example `kuma-defuzex==0.3.2`), rebuild the
+image, recreate the container, and restart long-lived workers/notebook kernels.
+Verify **inside the environment that runs the Agent**:
+
+```bash
+python -c "from importlib.metadata import version; import kuma; print(version('kuma-defuzex')); print(kuma.__file__)"
+```
+
+For Docker Compose, use your application's service name:
+
+```bash
+docker compose build --no-cache <agent-service>
+docker compose up -d --force-recreate <agent-service>
+```
+
+Installing or rebuilding does not replay a Case or Judge request. Resume an
+existing recorded operation instead of rerunning an entire paid workflow.
+
 ## Local quickstart
 
 To save and execute the same complete Case in another process, use
