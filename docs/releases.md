@@ -25,7 +25,11 @@ Release and PyPI version before installing a pin.
   running container's SDK.
 - `create_run(..., difficulty="D1")` and
   `OfficialCaseProvider(..., difficulty="D1")` select zero/one/two injected
-  problems using D0/D1/D2, not Judge severity. Default or explicit D1 preserves
+  problems using D0/D1/D2, with increasing challenge intensity: D1 is obvious
+  and low-intensity; D2 is subtler or composed, requiring stronger recognition,
+  recovery and verification. Necessary inputs and solvability must be preserved.
+  `max_steps` remains the same upper bound; D2 does not add a step or change Judge
+  severity. No measured failure rate is promised. Default or explicit D1 preserves
   the previous wire and request identity; D0/D2 are sent to a supporting service.
   Invalid values fail locally before I/O. Custom providers and loaded Cases are
   unchanged; actual injection remains service-owned.

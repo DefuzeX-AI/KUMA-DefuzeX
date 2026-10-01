@@ -55,7 +55,11 @@ Accept: application/json
 ## Entitlements
 
 Official generation accepts optional `difficulty` with exact values D0/D1/D2.
-These request zero/one/two injected problems, not Judge severity. SDK
+These request both count and intensity: D0 injects zero problems, D1 one obvious
+low-intensity problem, and D2 two subtler or composed problems requiring stronger
+recognition, recovery and verification. Necessary inputs and solvability must be
+preserved. `max_steps` remains the unchanged upper bound; D2 is not an extra step.
+This does not change Judge severity or promise a measured failure rate. SDK
 `create_run` and `OfficialCaseProvider` default to D1 and omit it from the
 serialized request even when explicitly supplied. D0/D2 are serialized and
 included in canonical request identity. Invalid Python values, including None,

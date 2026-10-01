@@ -616,6 +616,10 @@ def create_run(
             before I/O. D1 is omitted from the wire even when explicitly passed;
             D0/D2 participate in request identity. Custom providers and saved
             Cases are unchanged; the SDK does not generate or verify injections.
+            D1 is obvious and low-intensity; D2 is subtler or composed, requiring
+            stronger recognition, recovery and verification. Necessary inputs
+            and solvability must be preserved, with max_steps unchanged as an
+            upper bound. No measured failure rate is promised.
         judge: Whether to request a final Judgment after the last Submission.
         on_failure: ``"continue"`` advances after a non-completed Submission;
             ``"stop"`` closes the Run immediately.

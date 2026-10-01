@@ -53,7 +53,7 @@ Reason: Output exactly matched the published rule.
 这只验证内置的本地示例，不代表你的 Agent 已通过评测，也不会调用托管 Judge。
 要评测自己的 Agent，请继续阅读 [SDK 指南](docs/sdk-guide.md)。
 
-官方 Case 可用 `create_run(..., difficulty="D1")` 选择问题注入数量：D0 不注入、D1 一个（默认）、D2 两个。这不是 Judge 评分严格程度。
+官方 Case 可用 `create_run(..., difficulty="D1")` 选择问题数量和挑战强度：D0 不注入；D1（默认）注入一个明显、低强度的问题；D2 注入两个更隐蔽或组合的问题，要求更强的识别、恢复和验证能力。必须保留必要输入和可解性；`max_steps` 仍是原有上限，D2 不表示额外增加一步。不改变 Judge 评分严格程度，也不承诺实际失败率；具体挑战由服务端构建。
 
 ## 下一步
 

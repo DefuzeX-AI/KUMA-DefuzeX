@@ -79,9 +79,15 @@ run = create_run(
 )
 ```
 
-In an authenticated official workflow, `difficulty` requests how many problems
-the service injects: `"D0"` means zero, `"D1"` (default) one, and `"D2"` two.
-It does not select a Strategy Group, change Judge severity or set a step count.
+In an authenticated official workflow, `difficulty` requests both problem count
+and challenge intensity: `"D0"` injects zero problems; `"D1"` (default) injects
+one obvious, low-intensity problem; `"D2"` injects two subtler or composed problems
+that require stronger recognition, recovery and verification. For example, D1
+may present one clearly signaled recoverable obstacle, while D2 may combine two
+less obvious obstacles that require checking the recovery result.
+It does not select a Strategy Group or change Judge severity. `max_steps` remains
+the same upper bound: D2 does not request an extra step. Necessary inputs and
+solvability must be preserved; difficulty is not a measured failure-rate promise.
 Only these exact strings are valid; `None`, lowercase strings and other values
 raise `ConfigurationError(code="config_invalid")` before filesystem/network work.
 The SDK forwards the choice; Core implements injection, and the SDK does not

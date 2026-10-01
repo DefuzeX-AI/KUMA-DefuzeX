@@ -137,6 +137,10 @@ class CreateRunConfig:
         difficulty: Official generation only: D0 requests zero injected problems,
             D1 (default) one, D2 two. None and other values are invalid. This is
             not Judge severity; custom providers and saved Cases are unchanged.
+            D1 is obvious and low-intensity; D2 is subtler or composed, requiring
+            stronger recognition, recovery and verification. Necessary inputs
+            and solvability must be preserved. max_steps remains an upper bound,
+            and no measured failure rate is promised.
         judge: Whether the Run automatically requests a final report after its
             last submission.
         on_failure: ``"continue"`` delivers the next input after a failed,

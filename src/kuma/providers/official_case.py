@@ -749,6 +749,10 @@ class OfficialCaseProvider:
                 the public request to preserve default identity; D0/D2 change
                 its hash. This never changes Judge severity. Core implements
                 injection; the SDK does not fabricate an injection result.
+                D1 is obvious and low-intensity; D2 is subtler or composed,
+                requiring stronger recognition, recovery and verification.
+                Necessary inputs and solvability must be preserved. max_steps
+                remains an upper bound, with no measured failure-rate promise.
 
         Preconditions:
             ``client`` targets the public Backend and owns a validated key. If
