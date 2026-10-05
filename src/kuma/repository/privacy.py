@@ -83,7 +83,14 @@ _TEXT_PATTERNS = (
         "sk_api_key",
         re.compile(r"\bsk-(?:(?:proj|ant-api03)-)?[A-Za-z0-9_-]{12,}\b"),
     ),
-    ("kuma_key", re.compile(r"\bdfx_[A-Za-z0-9_-]{6,}\.[A-Za-z0-9._-]{12,}\b")),
+    # Unkey issues 32-byte no-dot keys; retain legacy dot-separated credentials.
+    (
+        "kuma_key",
+        re.compile(
+            r"\bdfx_(?:[A-Za-z0-9_-]{6,}\.[A-Za-z0-9._-]{12,}\b|"
+            r"[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-]))"
+        ),
+    ),
     (
         "credential_assignment",
         re.compile(

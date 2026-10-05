@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
 import secrets
 import stat
@@ -14,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
+from .._json_values import is_finite_number
 from ..errors import ProviderError, ValidationError
 from ..repository.strategy_groups import validate_strategy_group_wire_selection
 from .backend import validate_client_request_id
@@ -217,7 +217,7 @@ def read_record(path: Path) -> StoredRequest:
         raise ProviderError(
             "Request record was not found", code="request_not_found"
         ) from None
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    except (OSError, UnicodeError, ValueError, RecursionError):
         raise ProviderError(
             "The request record is unreadable", code="request_state_invalid"
         ) from None
@@ -267,7 +267,9 @@ def validate_stored(raw: Any) -> StoredRequest:
     error_retryable = raw["error_retryable"]
     valid = (
         raw["schema_version"] == REQUEST_RECORD_SCHEMA
+        and isinstance(request_type, str)
         and request_type in REQUEST_TYPES
+        and isinstance(status, str)
         and status in STATUSES
         and valid_timestamp(created)
         and valid_timestamp(updated)
@@ -469,10 +471,5 @@ def is_safe_code(value: Any) -> bool:
 
 
 def valid_timestamp(value: Any) -> bool:
-    """Return whether a value is a finite nonnegative UNIX timestamp."""
-    return (
-        not isinstance(value, bool)
-        and isinstance(value, int | float)
-        and math.isfinite(value)
-        and value >= 0
-    )
+    """Reject nonnumeric or overflowing timestamps before clock conversion."""
+    return is_finite_number(value) and value >= 0

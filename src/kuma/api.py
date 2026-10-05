@@ -49,6 +49,7 @@ from .repository.strategy_groups import (
 from .repository.tool_capabilities import prepare_agent_capabilities_upload
 from .run import Run
 from .runtime import RuntimeSession
+from .storage import resolve_storage_path
 from .timeline import elapsed_ms
 from .transport.backend import DEFAULT_BASE_URL, BackendClient
 from .transport.catalog_cache import read_strategy_catalog
@@ -296,6 +297,7 @@ def _adapted_providers(
     api_key: str | None,
     repo_path: Path,
     trace_evidence: TraceEvidenceCapture | None,
+    storage_root: Path | None = None,
     agent_profile: AgentProfileSpec | None = None,
 ) -> tuple[
     CaseProvider,
@@ -321,6 +323,8 @@ def _adapted_providers(
         judge_provider: User provider/callback, or ``None`` for official Judge.
         api_key: Optional explicit public Backend credential.
         repo_path: Canonical repository root used for safe pending-state paths.
+        storage_root: Validated external parent for operation state, or None.
+            Never included in Backend payloads or semantic request identities.
         trace_evidence: Active in-process OTel capture, or ``None``.
         agent_profile: Agent Profile validated by preflight, or ``None`` when the
             Run carries no Profile.
@@ -396,6 +400,7 @@ def _adapted_providers(
             operation_wait_timeout=config.operation_wait_timeout,
             max_steps=config.max_steps,
             difficulty=config.difficulty,
+            state_root=storage_root,
         )
         if entitlements is not None:
             official_case_provider._configure_entitlements(entitlements)
@@ -410,7 +415,7 @@ def _adapted_providers(
             backend,
             allow_sensitive=config.allow_sensitive,
             operation_wait_timeout=config.operation_wait_timeout,
-            state_root=repo_path,
+            state_root=storage_root or repo_path,
         )
         if official_case:
             adapted_judge._load_upload_config()
@@ -482,6 +487,7 @@ def _prepare_case_source(
     case_provider: Any,
     agent_profile_path: str | os.PathLike[str] | None,
     config: CreateRunConfig,
+    storage_root: Path | None = None,
 ) -> tuple[
     CaseProvider | None,
     AgentProfileSpec | None,
@@ -492,6 +498,7 @@ def _prepare_case_source(
 
     Args:
         repo_path: Repository used to resolve a relative artifact file.
+        storage_root: Validated external artifact parent, or None for repo_path.
         case_path: Optional saved artifact; None retains generation preflight.
         case_provider: Caller provider, forbidden alongside a file.
         agent_profile_path: Generation Profile, forbidden alongside a file.
@@ -519,7 +526,9 @@ def _prepare_case_source(
             "case_path cannot be combined with a Provider, Profile, or strategy selection"
         )
     data = load_case_artifact(
-        _resolve_repo_path(repo_path), case_path, alias=_repo_root_alias(repo_path)
+        storage_root or _resolve_repo_path(repo_path),
+        case_path,
+        alias=storage_root or _repo_root_alias(repo_path),
     )
     loaded = LoadedCaseProvider(data)
     if config.max_steps is not None and config.max_steps < loaded.count:
@@ -538,6 +547,7 @@ def _prepare_case_source(
 def create_run(
     *,
     repo_path: str | os.PathLike[str] = ".",
+    storage_path: str | os.PathLike[str] | None = None,
     agent_profile_path: str | os.PathLike[str] | None = None,
     case_path: str | os.PathLike[str] | None = None,
     case_provider: Any = None,
@@ -585,8 +595,17 @@ def create_run(
             normalized content, but never its local path; omission sends none.
         case_provider: :class:`CaseProvider` or compatible callable. ``None``
             selects the official authenticated provider.
-        case_path: Explicit saved Case artifact inside repo_path, or None to
-            generate normally. Relative paths use repo_path, not cwd. Cannot be
+        storage_path: Existing external artifact directory, absolute or relative
+            to repo_path; None retains legacy repo/.kuma storage. Must be disjoint
+            from repo_path (not equal, ancestor or descendant). Runtime, request
+            records and optional local submissions/reports use storage_path/.kuma;
+            Case filenames use storage_path as their containment root. No silent
+            fallback or workspace .gitignore changes occur in external mode.
+            This is not a sandbox: protect artifacts and process state from the
+            Agent independently. Paths never enter server request identity.
+        case_path: Explicit saved Case artifact inside the selected storage_path
+            (repo_path when omitted), or None to generate normally. Relative paths
+            use that selected root, not cwd. Cannot be
             combined with case_provider, agent_profile_path, or non-auto strategy.
             Loading performs no CaseGen/catalog request; preserves original IDs,
             order and content while assigning a new Run ID. Official origin never
@@ -712,9 +731,15 @@ def create_run(
     if config.upload_diff and not config.track_files:
         raise ConfigurationError("upload_diff requires track_files=True")
     external_run_id = external_identifier(external_run_id)
+    storage_root = (
+        None
+        if storage_path is None
+        else resolve_storage_path(_resolve_repo_path(repo_path), storage_path)
+    )
     adapted_case_input, agent_profile, config, loaded = _prepare_case_source(
         repo_path=repo_path,
         case_path=case_path,
+        storage_root=storage_root,
         case_provider=case_provider,
         agent_profile_path=agent_profile_path,
         config=config,
@@ -741,6 +766,7 @@ def create_run(
         repo_path=resolved_repo,
         trace_evidence=trace_evidence,
         agent_profile=agent_profile,
+        storage_root=storage_root,
     )
     if loaded is not None:
         official_case = loaded.origin == "official"
@@ -751,6 +777,7 @@ def create_run(
         repo_path=resolved_repo,
         allow_local=config.allow_local,
         save_local=config.save_local,
+        storage_root=storage_root,
     )
     try:
         effective_max_steps = config.max_steps or (
@@ -823,7 +850,7 @@ def create_run(
             scope="container" if runtime.mode == "docker" else "local",
             excluded_roots=(
                 runtime.workspace.runtime_root,
-                resolved_repo / ".kuma",
+                (storage_root or resolved_repo) / ".kuma",
             ),
             track_files=config.track_files,
             upload_diff=config.upload_diff,

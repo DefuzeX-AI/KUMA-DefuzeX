@@ -15,6 +15,22 @@ class JsonStructureError(ValueError):
     """Report an invalid JSON graph without retaining or displaying its values."""
 
 
+def is_finite_number(value: Any) -> bool:
+    """Accept real numeric scalars representable as finite floats, excluding bool.
+
+    Recovery timestamps and configuration durations use floating-point clocks.
+    Unlike arbitrary JSON integers, their values must not overflow conversion.
+    Unsupported types and overflowing integers return False without I/O or an
+    exception containing the caller's value.
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 def _transform_json(
     value: Any,
     *,

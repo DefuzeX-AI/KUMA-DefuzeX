@@ -71,7 +71,7 @@ class RequestOperationStore:
         preserves legacy records exactly and never infers response negotiation.
         """
         self.root = canonical_repo_root(repo_path)
-        if request_type not in REQUEST_TYPES:
+        if not isinstance(request_type, str) or request_type not in REQUEST_TYPES:
             raise ProviderError("Request type is invalid", code="request_state_invalid")
         require_hash(request_sha256, "request_sha256")
         require_hash(api_key_sha256, "api_key_sha256")
@@ -159,7 +159,7 @@ class RequestOperationStore:
 
     def set_status(self, state: PendingOperation, status: str) -> PendingOperation:
         """Persist one validated queued/running poll transition."""
-        if status not in {"queued", "running"}:
+        if not isinstance(status, str) or status not in {"queued", "running"}:
             raise ProviderError(
                 "Request status is invalid", code="request_state_invalid"
             )

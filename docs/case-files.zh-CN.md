@@ -1,8 +1,11 @@
 # Save and reuse a complete Case
 
-> This historical documentation path now contains the English guide. The
-> [canonical guide](case-files.md) is maintained alongside it; the
-> [Chinese overview](../README.zh-CN.md) remains available at the repository root.
+With external `storage_path`, both `run.save_case(path)` and
+`create_run(case_path=path, storage_path=...)` resolve Case paths within that
+existing external directory, not repo_path. Absolute paths must also stay inside
+it. None retains repository-relative behavior. Hash/privacy/no-overwrite and
+link/mount checks are unchanged. Keep the complete future-step file inaccessible
+to the Agent; path separation is not a sandbox.
 
 [Chinese overview](../README.zh-CN.md) | English
 
@@ -81,8 +84,9 @@ save its resulting custom Case. Never remove `origin` or fake official integrity
 `case_artifact_invalid` means malformed, oversized or changed content;
 `case_origin_invalid` means absent/conflicting origin. Sensitive data is rejected
 without returning its value. Missing/unreadable/unsafe paths and existing save
-targets raise safe `ConfigurationError`. Relative paths use `repo_path`, not
-process cwd. Parents must exist; links, mount escapes and overwrite are rejected.
+targets raise safe `ConfigurationError`. Relative paths use `storage_path` when
+set, otherwise `repo_path`, not process cwd. Parents must exist; links, mount
+escapes and overwrite are rejected.
 Publication uses a temporary file, fsync and atomic no-replace hard link under a
 pinned parent. A filesystem lacking that operation fails rather than overwriting.
 Save/load never executes tools or uploads local configuration.

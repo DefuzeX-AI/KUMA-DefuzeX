@@ -1,9 +1,5 @@
 # Runtime Trace sent to Judge
 
-> This historical documentation path now contains the English guide. The
-> [canonical guide](runtime-trace.md) is maintained alongside it; the
-> [Chinese overview](../README.zh-CN.md) remains available at the repository root.
-
 See [OpenInference capture semantics](openinference.md) for supported semantic
 fields, observed model/tool bodies, privacy states and old-server behavior.
 

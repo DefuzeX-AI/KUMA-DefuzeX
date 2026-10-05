@@ -63,6 +63,10 @@ recovery and verification. Necessary inputs and solvability must be preserved.
 `max_steps` remains the same upper bound; D2 does not add a step or change Judge
 severity. No measured failure rate is promised; the service builds the challenge.
 
+File tracking stays within `repo_path` and skips descendant junctions or other
+reparse points, reporting incomplete capture. An explicitly configured external
+`storage_path` remains supported and does not expand the file tracking boundary.
+
 ## Next steps
 
 - [Run an official evaluation](docs/sdk-guide.md) with the full Case and Judge workflow.

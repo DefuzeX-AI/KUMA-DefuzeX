@@ -443,6 +443,7 @@ class RuntimeWorkspace:
         persistent_path: Stable ``.kuma/runs/<run_id>`` directory when local
             persistence is enabled, otherwise ``None``.
         runtime_root: Canonical parent allowed to contain temporary directories.
+        storage_root: External artifact parent, or None for legacy repo storage.
         _closed: Whether cleanup already ran; makes ``close`` idempotent.
     """
 
@@ -452,6 +453,7 @@ class RuntimeWorkspace:
     persistent_path: Path | None
     runtime_root: Path
     _closed: bool = False
+    storage_root: Path | None = None
 
     @classmethod
     def create(
@@ -462,6 +464,7 @@ class RuntimeWorkspace:
         mode: RuntimeMode,
         save_local: bool,
         runtime_root: Path | None = None,
+        storage_root: Path | None = None,
     ) -> RuntimeWorkspace:
         """Create temporary and optional persistent directories for one Run.
 
@@ -471,6 +474,8 @@ class RuntimeWorkspace:
             mode: Resolved ``docker`` or ``local`` mode.
             save_local: Create persistent ``.kuma/runs/<run_id>`` output when true.
             runtime_root: Optional controlled temporary parent for tests/embedding.
+            storage_root: Validated external artifact parent; temporary and
+                persistent directories use its .kuma child when set.
 
         Returns:
             Open workspace whose temporary directory is uniquely owned by this Run.
@@ -488,11 +493,17 @@ class RuntimeWorkspace:
         """
         _validate_run_id(run_id)
         root, resolved_runtime_root = _resolve_workspace_roots(
-            repo_path, mode, runtime_root
+            repo_path,
+            mode,
+            (storage_root / ".kuma" / "runtime") if storage_root else runtime_root,
         )
         temporary_path = _create_temporary_workspace(resolved_runtime_root, run_id)
         try:
-            repo_runtime = ensure_repo_runtime_directory(root)
+            repo_runtime = (
+                storage_root / ".kuma"
+                if storage_root is not None
+                else ensure_repo_runtime_directory(root)
+            )
         except BaseException:
             with suppress(OSError):
                 shutil.rmtree(temporary_path)
@@ -505,6 +516,7 @@ class RuntimeWorkspace:
             temporary_path=temporary_path,
             persistent_path=persistent_path,
             runtime_root=resolved_runtime_root,
+            storage_root=storage_root,
         )
 
     def close(self) -> None:
@@ -573,6 +585,7 @@ class RuntimeSession:
         save_local: bool,
         lock_path: Path | None = None,
         runtime_root: Path | None = None,
+        storage_root: Path | None = None,
     ) -> RuntimeSession:
         """Acquire the active-Run lease and create its workspace atomically.
 
@@ -583,6 +596,10 @@ class RuntimeSession:
             save_local: Whether committed Evidence receives a persistent directory.
             lock_path: Optional isolated lock path for tests/embedding.
             runtime_root: Optional isolated temporary root.
+            storage_root: External artifact parent selected by create_run. Uses
+                its .kuma directories. The container-wide coordination lock
+                remains at its legacy location and retains single-Run semantics.
+                No tracked-workspace files are written.
 
         Returns:
             Open session owning both lock and workspace.
@@ -601,6 +618,10 @@ class RuntimeSession:
             Acquires an OS lock and creates the Run directories.
         """
         mode = resolve_runtime_mode(allow_local=allow_local)
+        if storage_root is not None:
+            from .storage import resolve_storage_path
+
+            storage_root = resolve_storage_path(repo_path, storage_root)
         lock = ContainerRunLock(lock_path)
         lock.acquire(run_id)
         try:
@@ -610,6 +631,7 @@ class RuntimeSession:
                 mode=mode,
                 save_local=save_local,
                 runtime_root=runtime_root,
+                storage_root=storage_root,
             )
         except BaseException:
             lock.release()

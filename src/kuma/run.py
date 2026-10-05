@@ -367,8 +367,9 @@ class Run:
         """Save the complete reusable public Case without execution data.
 
         Args:
-            path: Explicit destination within this Run's repo_path. Relative
-                paths resolve from that repository. Parent must exist; an
+            path: Explicit destination within this Run's storage_path, or repo_path
+                when storage_path was omitted. Relative paths use that root,
+                never the process cwd. Parent must exist; an
                 existing file is never overwritten, including concurrent saves.
         Returns:
             Absolute Path to the new UTF-8 kuma.case_artifact.v1 document.
@@ -390,7 +391,10 @@ class Run:
         """
         with self._mutex:
             artifact = artifact_from_case(self._case)
-            root = self._runtime.workspace.repo_path
+            root = (
+                self._runtime.workspace.storage_root
+                or self._runtime.workspace.repo_path
+            )
             return save_case_artifact(root, path, artifact)
 
     @property
