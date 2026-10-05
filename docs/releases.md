@@ -11,6 +11,11 @@ new functionality to an old release as a substitute for a new version.
 This optional patch strengthens evidence capture, interrupted-operation recovery
 and input validation without changing the default Case difficulty or Judge wire.
 
+- Select optional external `storage_path` independently of tracked `repo_path`.
+  Run artifacts and recovery ledgers stay outside the Agent workspace when
+  explicitly configured; omission preserves legacy locations. This is path
+  separation, not sandbox isolation. Ledger initialization is serialized across
+  concurrent connections.
 - Detect current KUMA credential formats before evidence egress. This is bounded
   detection, not a guarantee of recognizing every secret format.
 - Keep captured files within the admitted snapshot boundary, including Windows

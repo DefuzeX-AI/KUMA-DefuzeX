@@ -32,21 +32,56 @@ def canonical_repo_root(value: Path) -> Path:
 
 @contextmanager
 def locked_ledger(root: Path, directory: Path, *, create: bool) -> Iterator[None]:
-    """Hold process and OS locks for one short ledger transaction."""
+    """Serialize initialization and record writes across processes.
+
+    Only the checked parent may be created before taking the OS lock. Ignore-rule
+    replacement runs under that lock. Empty lock files need no initial write,
+    avoiding Windows buffered writes to another process's locked byte.
+    """
     with _PROCESS_LOCK:
         if create:
-            ensure_ledger_directory(root, directory)
+            _prepare_ledger_parent(root)
         else:
             validate_existing_ledger(root, directory)
         handle = _open_lock(root, root / ".kuma" / "requests.lock")
         try:
             _lock(handle)
+            if create:
+                ensure_ledger_directory(root, directory)
             yield
         finally:
             with suppress(OSError):
                 _unlock(handle)
             with suppress(OSError):
                 handle.close()
+
+
+def _prepare_ledger_parent(root: Path) -> None:
+    """Create only a checked runtime parent before cross-process locking.
+
+    A concurrent mkdir is harmless. Links, reparse points and different devices
+    fail closed; no ignore-file replacement occurs until locked_ledger owns the
+    shared OS lease. Native diagnostics are replaced by the ledger error.
+    """
+    failed = False
+    try:
+        parent = root / ".kuma"
+        parent.mkdir(exist_ok=True)
+        info = parent.lstat()
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or stat.S_ISLNK(info.st_mode)
+            or getattr(info, "st_file_attributes", 0) & 0x400
+            or info.st_dev != root.stat().st_dev
+            or parent.resolve(strict=True) != parent
+        ):
+            raise OSError
+    except (OSError, RuntimeError):
+        failed = True
+    if failed:
+        raise ProviderError(
+            "The request ledger is unavailable", code="operation_state_unavailable"
+        ) from None
 
 
 def ensure_ledger_directory(root: Path, directory: Path) -> None:
@@ -218,9 +253,8 @@ def _open_lock(root: Path, path: Path) -> BinaryIO:
             raise OSError
         handle = os.fdopen(descriptor, "r+b")
         descriptor = None
-        if frozen.st_size == 0:
-            handle.write(b"\0")
-            handle.flush()
+        # Both flock and Windows byte-range locking support an empty lock file.
+        # Do not initialize byte zero here: another process may already own it.
         return handle
     except OSError:
         if descriptor is not None:

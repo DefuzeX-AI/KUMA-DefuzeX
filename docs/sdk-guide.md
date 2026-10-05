@@ -100,6 +100,59 @@ python examples/minimal_local.py
 
 ## Configuration
 
+### Keep evaluation artifacts outside the Agent workspace
+
+`create_run(storage_path=...)` selects an existing external artifact directory
+independently of the tracked `repo_path`. Relative storage paths resolve against
+`repo_path`, not the process working directory. Equal, ancestor and descendant
+roots, filesystem roots, linked/reparse destinations and unsafe SDK subdirectories
+are rejected before runtime setup or network calls. Create the directory yourself
+first; there is no silent fallback into the repository.
+
+```python
+from pathlib import Path
+from kuma import create_run
+
+workspace = Path("./agent-workspace").resolve()
+artifacts = Path("./evaluation-artifacts").resolve()
+artifacts.mkdir(parents=True, exist_ok=True)
+run = create_run(
+    repo_path=workspace,
+    storage_path=artifacts,
+    agent_profile_path="agent-profile.md",
+    save_local=True,
+)
+saved_case = run.save_case("case.json")  # artifacts/case.json, never overwritten
+```
+
+Runtime directories, request/recovery ledgers and optional
+saved submissions/Evidence/reports use `storage_path/.kuma/`. File tracking and
+repository metadata still use `repo_path`; external mode creates neither
+`repo_path/.kuma` nor a workspace `.gitignore` rule. The active-Run lock remains
+at its platform-wide location to preserve container-wide exclusion.
+Discovery caching remains in memory. Credentials and
+the user-config/update cache retain their existing user-level locations; they
+are not Run artifacts or relocated into the Agent workspace.
+
+With external storage, `run.save_case("case.json")` and
+`create_run(repo_path=workspace, storage_path=artifacts, case_path="case.json")`
+use the artifact directory as their containment root. Absolute Case paths must
+also remain inside it; parent directories must exist. Checksums, privacy scanning,
+no-overwrite publication and link/mount protection remain enforced. Loading never
+regenerates or truncates the Case. `storage_path=None` preserves legacy locations.
+
+Use the same `storage_path` with `list_requests`, `show_request` and
+`resume_request`, or `kuma requests list/show/resume --repo-path ... --storage-path ...`.
+Report locators are relative to the selected artifact parent. Storage paths do
+not enter requests or semantic request hashes; known operations still resume
+through GET only. Pure observation already has independent explicit storage:
+`observation.save("observation.json", root=artifacts)`; it does not create a Run.
+
+**Storage separation is not Agent isolation.** The integration must independently
+protect the artifact directory, complete future-step Case files, ledger,
+output/control mounts, environment and history from Agent access. Moving files
+alone provides no sandbox or access-control guarantee.
+
 ### Official Case difficulty
 
 ```python

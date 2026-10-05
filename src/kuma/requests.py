@@ -13,6 +13,8 @@ from .providers._official_judgment import normalize_official_judgment
 from .providers._official_wire import plain_json
 from .providers.normalization import normalize_report
 from .providers.official_case import _normalized_case
+from .storage import resolve_storage_path
+from .transport._request_files import canonical_repo_root
 from .transport.backend import BackendClient
 from .transport.operations import await_operation
 from .transport.request_records import (
@@ -27,6 +29,8 @@ from .transport.request_records import (
 
 def list_requests(
     repo_path: str | Path = ".",
+    *,
+    storage_path: str | Path | None = None,
 ) -> tuple[RequestRecord, ...]:
     """List addressable official requests saved for one repository.
 
@@ -34,6 +38,8 @@ def list_requests(
         repo_path: Repository whose SDK-owned ``.kuma/requests`` ledger should
             be inspected. Relative paths resolve from the caller's current
             process directory.
+        storage_path: Existing external artifact parent, relative to repo_path
+            or absolute. None uses repo_path; must match create_run's selection.
 
     Returns:
         Immutable newest-first summaries. An absent ledger returns an empty
@@ -46,19 +52,24 @@ def list_requests(
     Side Effects:
         Reads bounded local metadata only; no credential or network is used.
     """
-    return list_request_records(Path(repo_path))
+    return list_request_records(
+        resolve_storage_path(canonical_repo_root(Path(repo_path)), storage_path)
+    )
 
 
 def show_request(
     client_request_id: str,
     *,
     repo_path: str | Path = ".",
+    storage_path: str | Path | None = None,
 ) -> RequestRecord:
     """Return one closed, non-secret local request summary.
 
     Args:
         client_request_id: Exact ``kreq_`` recovery identifier printed by KUMA.
         repo_path: Repository containing the local request ledger.
+        storage_path: External artifact parent used by create_run, or None for
+            repo_path. Relative values resolve against repo_path.
 
     Returns:
         Public request status and optional Case/Run/report locators.
@@ -70,13 +81,15 @@ def show_request(
     Side Effects:
         Reads one local JSON record and performs no network request.
     """
-    return load_request_record(Path(repo_path), client_request_id).public
+    root = resolve_storage_path(canonical_repo_root(Path(repo_path)), storage_path)
+    return load_request_record(root, client_request_id).public
 
 
 def resume_request(
     client_request_id: str,
     *,
     repo_path: str | Path = ".",
+    storage_path: str | Path | None = None,
     api_key: str | None = None,
     base_url: str = DEFAULT_BASE_URL,
     timeout: float = 30.0,
@@ -89,6 +102,9 @@ def resume_request(
         client_request_id: Exact local request handle created before the first
             official Case/Judge POST.
         repo_path: Repository containing ``.kuma/requests``.
+        storage_path: External artifact parent used by create_run, or None for
+            repo_path. Relative values resolve against repo_path. Report locators
+            are relative to this selected parent, not the tracked workspace.
         api_key: Exact creating API key, or ``None`` to use normal KUMA
             credential resolution.
         base_url: Public Website Backend URL used for the original request.
@@ -127,7 +143,7 @@ def resume_request(
         No request, Evidence, Rubric, prompt, API key, or remote error body is
         persisted or printed. Binding uses one-way Backend/key identities.
     """
-    root = Path(repo_path)
+    root = resolve_storage_path(canonical_repo_root(Path(repo_path)), storage_path)
     stored = load_request_record(root, client_request_id)
     if stored.public.status in {"succeeded", "failed"}:
         return stored.public

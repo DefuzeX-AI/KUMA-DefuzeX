@@ -161,13 +161,24 @@ def cmd_strategies_suggest(args: argparse.Namespace) -> int:
 
 def cmd_requests_list(args: argparse.Namespace) -> int:
     """Print bounded non-secret request summaries from one repository ledger."""
-    _emit([record.to_dict() for record in list_requests(args.repo_path)])
+    _emit(
+        [
+            record.to_dict()
+            for record in list_requests(args.repo_path, storage_path=args.storage_path)
+        ]
+    )
     return 0
 
 
 def cmd_requests_show(args: argparse.Namespace) -> int:
     """Print one exact local request summary without contacting the Backend."""
-    _emit(show_request(args.client_request_id, repo_path=args.repo_path).to_dict())
+    _emit(
+        show_request(
+            args.client_request_id,
+            repo_path=args.repo_path,
+            storage_path=args.storage_path,
+        ).to_dict()
+    )
     return 0
 
 
@@ -177,6 +188,7 @@ def cmd_requests_resume(args: argparse.Namespace) -> int:
     record = resume_request(
         args.client_request_id,
         repo_path=args.repo_path,
+        storage_path=args.storage_path,
         base_url=base_url,
         timeout=args.timeout,
         operation_wait_timeout=args.operation_wait_timeout,
@@ -296,6 +308,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     request_resume.add_argument("client_request_id")
     request_resume.add_argument("--repo-path", default=".")
+    for command in (request_list, request_show, request_resume):
+        command.add_argument("--storage-path", help="External artifact directory")
     request_resume.add_argument("--base-url")
     request_resume.add_argument("--timeout", type=float, default=30.0)
     request_resume.add_argument("--operation-wait-timeout", type=float, default=600.0)

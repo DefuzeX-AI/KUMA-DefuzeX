@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from ..config import DEFAULT_CASE_MAX_STEPS, validate_difficulty
@@ -599,8 +600,14 @@ def _case_operation_store(
     payload: Mapping[str, Any],
     base_url: str,
     api_key_sha256: str,
+    state_root: Path | None = None,
 ) -> PendingOperationStore | RequestOperationStore:
-    """Bind one Case request to the addressable repository request ledger."""
+    """Bind Case identity to a local ledger without changing request hashing.
+
+    state_root overrides only the persistence parent; context.repo_path and its
+    fingerprint remain the generation source. create_run validates that parent
+    before provider discovery. Direct providers must authorize their own root.
+    """
     if not isinstance(context, CaseGenerationContext):
         raise ProviderError("Case context is invalid", code="request_state_invalid")
     if not context.repo_path.is_dir():
@@ -610,7 +617,7 @@ def _case_operation_store(
             base_url=base_url,
         )
     return RequestOperationStore(
-        context.repo_path,
+        state_root or context.repo_path,
         request_type="case_generation",
         request_sha256=canonical_request_sha256(payload),
         base_url=base_url,
@@ -729,6 +736,7 @@ class OfficialCaseProvider:
         operation_wait_timeout: float = 600.0,
         max_steps: int | None = None,
         difficulty: str = "D1",
+        state_root: Path | None = None,
     ) -> None:
         """Configure public Case transport, privacy policy, and wait deadline.
 
@@ -753,6 +761,9 @@ class OfficialCaseProvider:
                 requiring stronger recognition, recovery and verification.
                 Necessary inputs and solvability must be preserved. max_steps
                 remains an upper bound, with no measured failure-rate promise.
+            state_root: Optional existing directory for local recovery records;
+                None uses context.repo_path. This never enters the wire payload
+                or request hash. create_run supplies its validated storage root.
 
         Preconditions:
             ``client`` targets the public Backend and owns a validated key. If
@@ -767,6 +778,7 @@ class OfficialCaseProvider:
                 ``None``, or difficulty is not D0/D1/D2. No network occurs.
         """
         self.difficulty = validate_difficulty(difficulty)
+        self.state_root = state_root
         if max_steps is not None and (
             isinstance(max_steps, bool)
             or not isinstance(max_steps, int)
@@ -956,6 +968,7 @@ class OfficialCaseProvider:
             payload=payload,
             base_url=self.client.base_url,
             api_key_sha256=_client_credential_identity(self.client),
+            state_root=self.state_root,
         )
 
         if preflight_max_steps is not None and store.load() is None:
