@@ -1,9 +1,5 @@
 # Strategy Groups
 
-> This historical documentation path now contains the English guide. The
-> [canonical guide](strategy-groups.md) is maintained alongside it; the
-> [Chinese overview](../README.zh-CN.md) remains available at the repository root.
-
 ## Inspect actual execution
 
 After `create_run(...)` succeeds, inspect `run.executed_strategy_group`:

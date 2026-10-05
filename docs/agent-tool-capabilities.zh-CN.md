@@ -1,9 +1,5 @@
 # KUMA Agent tool capabilities
 
-> This historical documentation path now contains the English guide. The
-> [canonical guide](agent-tool-capabilities.md) is maintained alongside it; the
-> [Chinese overview](../README.zh-CN.md) remains available at the repository root.
-
 [English](agent-tool-capabilities.md) | [Chinese overview](../README.zh-CN.md)
 
 KUMA can normalize tool metadata explicitly exported by an Agent into a local, versioned, editable JSON document. The feature is optional: you may create the same document manually. In both modes, you own and review the final file referenced by the Agent Profile.

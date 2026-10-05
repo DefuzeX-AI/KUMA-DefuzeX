@@ -1,9 +1,5 @@
 # KUMA Python API reference
 
-> This historical documentation path now contains the English guide. The
-> [canonical guide](api-reference.md) is maintained alongside it; the
-> [Chinese overview](../README.zh-CN.md) remains available at the repository root.
-
 For explicit `KumaClient.upload_observation`, `list_observations`,
 `get_observation` and `delete_observation`, including arguments, return fields,
 scopes and privacy, see [Cloud observations](cloud-observations.md).
@@ -104,8 +100,9 @@ run = create_run(
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
 | `repo_path` | `str \| os.PathLike[str]` | `"."` | Chooses the repository being tested. KUMA reads bounded metadata and, when enabled, observes file changes below this directory. Use `"."` when your Python process already runs at the repository root. |
+| `storage_path` | `str \| os.PathLike[str] \| None` | `None` | Existing external artifact directory, absolute or relative to repo_path. Must not overlap repo_path. None preserves repo/.kuma; explicit mode stores Run state and ledgers under storage_path/.kuma without writing workspace .kuma or .gitignore. Saved Case paths are contained in this selected root. Invalid/unsafe roots raise ConfigurationError before external work, never fall back. This is not sandbox isolation; see the SDK guide. |
 | `agent_profile_path` | `str \| os.PathLike[str] \| None` | `None` | Points to the UTF-8 Agent Profile describing the Agent, production scenario, expected behavior, and prohibited boundaries. It gives context to the selected Strategy Group but never selects or overrides it. Supply it for official Case generation. Front matter may contain the only explicit group selector—a closed `strategy_group` coordinate—and a relative `tool_capabilities` file; both are validated before Provider I/O. Omit when loading `case_path` or when a custom Case Provider declares `agent_profile_required=False`. |
-| `case_path` | `str \| os.PathLike[str] \| None` | `None` | Loads a complete saved `kuma.case_artifact.v1` instead of generating a Case. Relative paths use `repo_path`, not cwd. Cannot combine with `case_provider`, `agent_profile_path`, or non-`auto` strategy. Loading validates at most 5 MiB before credentials/runtime setup and makes no CaseGen/catalog call; `max_steps=None` uses the saved count, a smaller explicit limit fails without truncation. Official Judge still needs credentials and validates the server original. |
+| `case_path` | `str \| os.PathLike[str] \| None` | `None` | Loads a complete saved `kuma.case_artifact.v1` instead of generating a Case. Relative and absolute paths are contained in storage_path when set, otherwise repo_path; never cwd. Cannot combine with `case_provider`, `agent_profile_path`, or non-`auto` strategy. Loading validates at most 5 MiB before credentials/runtime setup and makes no CaseGen/catalog call; `max_steps=None` uses the saved count, a smaller explicit limit fails without truncation. Official Judge still needs credentials and validates the server original. |
 | `case_provider` | `CaseProvider \| callable \| None` | `None` | Chooses who creates the test Inputs. Leave `None` to request an official Case from KUMA; pass a callable when your application supplies its own local Case. |
 | `judge_provider` | `JudgeProvider \| callable \| None` | `None` | Chooses who evaluates all submitted results and builds the final report. Leave `None` for the official Judge, or pass a callable for your own local evaluation. Ignored when `judge=False`. |
 | `strategy` | `str` | `"auto"` | `auto` uses the catalog's exact default unless a Profile group is explicit. `safety-baseline` uniformly samples one of seven validated Basic Safety groups for one Case; an explicit Profile group wins. Custom providers receive the value unchanged. Other strategy ID validation is unchanged. See [selection and recovery boundaries](strategy-groups.md#sample-one-basic-safety-group). |
