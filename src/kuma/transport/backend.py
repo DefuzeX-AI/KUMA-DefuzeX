@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
-import math
 import re
 import secrets
 import socket
@@ -18,6 +17,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from .._json_values import JsonStructureError, detach_json, is_finite_number
 from .._version import __version__
 from ..config import DEFAULT_CASE_MAX_STEPS, resolve_api_key, validate_max_retries
 from ..errors import (
@@ -121,11 +121,12 @@ def _decode(raw: bytes, status: int) -> Mapping[str, Any]:
         status: HTTP status associated with those bytes.
 
     Returns:
-        Parsed JSON mapping. Arrays, scalars, and ``null`` are rejected because
-        every public Backend response must be an object.
+        Parsed finite JSON mapping with at most 256 nested containers, counting
+        the root object. Arrays, scalars, and ``null`` are rejected because every
+        public Backend response must be an object.
 
     Raises:
-        _RemoteError: UTF-8 decoding, JSON parsing, or top-level shape fails. Its
+        _RemoteError: UTF-8, JSON parsing/depth, finite values, or top-level shape fails. Its
             replacement payload uses only stable ``invalid_response`` fields.
 
     Preconditions:
@@ -139,8 +140,13 @@ def _decode(raw: bytes, status: int) -> Mapping[str, Any]:
         Malformed server content is deliberately replaced rather than echoed.
     """
     try:
-        value = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        value = detach_json(json.loads(raw.decode("utf-8")))
+    except (
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        RecursionError,
+        JsonStructureError,
+    ) as exc:
         raise _RemoteError(
             status,
             {"error": {"code": "invalid_response", "retryable": False}},
@@ -525,12 +531,7 @@ def _validate_timeout(value: float) -> float:
     Postconditions:
         The result is safe to pass to the HTTP transport as a blocking timeout.
     """
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, int | float)
-        or not math.isfinite(value)
-        or value <= 0
-    ):
+    if not is_finite_number(value) or value <= 0:
         raise ConfigurationError("timeout must be greater than zero")
     return float(value)
 

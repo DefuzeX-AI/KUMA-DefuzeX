@@ -6,6 +6,25 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
+## 0.3.4 release notes
+
+This optional patch strengthens evidence capture, interrupted-operation recovery
+and input validation without changing the default Case difficulty or Judge wire.
+
+- Detect current KUMA credential formats before evidence egress. This is bounded
+  detection, not a guarantee of recognizing every secret format.
+- Keep captured files within the admitted snapshot boundary, including Windows
+  junctions and files replaced or enlarged during capture.
+- Preserve complete UTF-8 prefixes when log capture reaches its byte limit.
+- Reject malformed or deeply nested responses and persisted operation records
+  with safe SDK errors instead of leaking parser or type exceptions.
+- Validate timeout overflow before network calls and use English diagnostic
+  labels when an Agent Profile section is invalid.
+
+No automatic installation or additional paid retry is introduced. Existing
+operation identities and GET-only recovery remain intact. Check the matching
+GitHub Release and PyPI version for publication status.
+
 ## 0.3.3 release notes
 
 This optional patch improves compatibility with additive Judge configuration

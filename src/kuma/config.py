@@ -7,7 +7,6 @@ time. Callers opt into those effects through ``resolve_api_key`` or ``configure`
 from __future__ import annotations
 
 import json
-import math
 import os
 import tempfile
 from collections.abc import Mapping
@@ -15,6 +14,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
+from ._json_values import is_finite_number
 from .errors import AuthenticationError, ConfigurationError
 
 MAX_RETRIES = 5
@@ -102,14 +102,9 @@ def validate_operation_wait_timeout(value: float) -> float:
 
     Raises:
         ConfigurationError: If the value is boolean, non-numeric, non-finite,
-            zero, or negative.
+            zero, negative, or an integer that overflows floating-point seconds.
     """
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, int | float)
-        or not math.isfinite(value)
-        or value <= 0
-    ):
+    if not is_finite_number(value) or value <= 0:
         raise ConfigurationError(
             "operation_wait_timeout must be a positive finite number"
         )
@@ -231,12 +226,7 @@ class CreateRunConfig:
         ):
             if not isinstance(getattr(self, name), bool):
                 raise ConfigurationError(f"{name} must be a boolean")
-        if (
-            isinstance(self.timeout, bool)
-            or not isinstance(self.timeout, int | float)
-            or not math.isfinite(self.timeout)
-            or self.timeout <= 0
-        ):
+        if not is_finite_number(self.timeout) or self.timeout <= 0:
             raise ConfigurationError("timeout must be a positive finite number")
         validate_operation_wait_timeout(self.operation_wait_timeout)
         validate_max_retries(self.max_retries)

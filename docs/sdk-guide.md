@@ -407,6 +407,10 @@ Common subclasses include `ConfigurationError`, `AuthenticationError`, `Permissi
 
 `exc.request_id` is the actual response's `X-Request-ID`, retained only when it is exactly 32 lowercase hexadecimal characters. It may be `None`: the header is optional, invalid or duplicate headers are ignored, and no ID is invented. It is not proof that the server generated the ID, since the server can echo an incoming ID. For an asynchronous failed operation it identifies the failing poll response, not the original start request. JSON-body IDs, private Core IDs, and the local `kreq_…` client recovery ID are never substituted; use `kuma requests list/show` for that separate local identity. Error class, code, and retry decisions are unchanged.
 
+HTTP JSON responses must be objects containing finite JSON values with at most 256 nested
+containers (the root object counts as one). Excessive nesting, including parser recursion
+failures, raises a terminal `invalid_response` SDK error without exposing the response body.
+
 Correlation also survives rejected JSON/UTF-8, response-size limits (including HTTP error bodies), unexpected HTTP status, and invalid operation start/poll/result schemas. It refers only to the response whose validation failed. Network failures before receiving a response, local persistence failures, and missing-header responses do not inherit an earlier response's ID.
 
 An operation timeout retains bounded recovery metadata without storing credentials, request content, Evidence, or results. Judge retry requires the original Run and History; the high-level API cannot rebuild a lost Run from only `run_id` after process exit.

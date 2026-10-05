@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
 import tempfile
 import threading
@@ -15,6 +14,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from .._json_values import is_finite_number
 from ..config import (
     DEFAULT_OPERATION_WAIT_TIMEOUT,
     validate_operation_wait_timeout,
@@ -40,6 +40,7 @@ _MAX_POLL_MS = 60_000
 _MAX_FALLBACK_POLL_MS = 8_000
 _FINAL_POLL_RESERVE_SECONDS = 0.1
 _MAX_OPERATION_ID_CHARS = 64
+_MAX_STATE_BYTES = 8_192
 _STATE_SCHEMA = "defuzex.pending_operation.v1"
 _STATE_LOCK = threading.RLock()
 
@@ -147,8 +148,8 @@ class PendingOperationStore:
                 be inspected, decoded, or validated; raw local errors are detached.
 
         Side Effects:
-            Reads at most the configured local state file and performs no network
-            request or operation replay.
+            Reads at most 8 KiB plus one size-check byte from the configured local
+            file. Performs no network request, replay or deletion of invalid state.
         """
         with _STATE_LOCK:
             if self.path is None:
@@ -156,8 +157,12 @@ class PendingOperationStore:
             try:
                 if not self.path.exists():
                     return None
-                raw = json.loads(self.path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError, json.JSONDecodeError):
+                with self.path.open("rb") as handle:
+                    content = handle.read(_MAX_STATE_BYTES + 1)
+                if len(content) > _MAX_STATE_BYTES:
+                    raise ValueError("Pending operation state exceeds its limit")
+                raw = json.loads(content.decode("utf-8"))
+            except (OSError, UnicodeError, ValueError, RecursionError):
                 pass
             else:
                 return self._validate(raw)
@@ -352,13 +357,8 @@ class PendingOperationStore:
 
 
 def _valid_timestamp(value: Any) -> bool:
-    """Return whether timestamp satisfies the resumable asynchronous operations contract."""
-    return (
-        not isinstance(value, bool)
-        and isinstance(value, int | float)
-        and math.isfinite(value)
-        and value >= 0
-    )
+    """Reject nonnumeric or overflowing timestamps before pending clock conversion."""
+    return is_finite_number(value) and value >= 0
 
 
 def _operation_id(value: Any) -> str:

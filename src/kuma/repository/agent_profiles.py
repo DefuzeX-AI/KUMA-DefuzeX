@@ -181,18 +181,20 @@ def _extract_sections(body: str) -> dict[str, str]:
 
     sections: dict[str, str] = {}
     for canonical, aliases in _SECTION_ALIASES.items():
+        # Each alias tuple ends with the canonical English diagnostic label.
+        section_label = aliases[-1]
         matching_heading = next(
             (alias for alias in aliases if alias in sections_by_heading), None
         )
         if matching_heading is None:
             raise ValidationError(
-                f"Agent Profile section is missing: {aliases[0]}",
+                f"Agent Profile section is missing: {section_label}",
                 code="agent_profile_invalid",
             )
         section = sections_by_heading[matching_heading]
         if not section:
             raise ValidationError(
-                f"Agent Profile section is empty: {matching_heading}",
+                f"Agent Profile section is empty: {section_label}",
                 code="agent_profile_invalid",
             )
         sections[canonical] = section

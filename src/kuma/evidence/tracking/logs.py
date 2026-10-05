@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import hashlib
 import os
 from collections.abc import Mapping, Sequence
@@ -352,7 +353,9 @@ class LogTracker:
         Postconditions:
             Tracker committed offsets are unchanged. The returned next state is
             installed only by ``PreparedLogs.commit``. Rotation/truncation starts
-            a new segment rather than skipping bytes.
+            a new segment rather than skipping bytes. A bounded prefix ends on a
+            complete UTF-8 character; any partial character is retried from its
+            original byte offset in the next capture.
 
         Side Effects:
             Opens and reads the file plus stable stat metadata; writes nothing.
@@ -383,7 +386,12 @@ class LogTracker:
             return _CapturedLog(reason=f"log_read_failed:{index}")
 
         try:
-            content = payload.decode("utf-8")
+            decoder = codecs.getincrementaldecoder("utf-8")(errors="strict")
+            content = decoder.decode(payload, final=end == size)
+            pending_bytes, _ = decoder.getstate()
+            if pending_bytes:
+                payload = payload[: -len(pending_bytes)]
+                end -= len(pending_bytes)
         except UnicodeDecodeError:
             return _CapturedLog(reason=f"binary_log_unsupported:{index}")
 

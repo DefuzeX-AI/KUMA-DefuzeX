@@ -5,11 +5,17 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from itertools import islice
 from pathlib import Path
 from types import MappingProxyType
+from typing import BinaryIO
+
+from kuma.repository._case_file_directory import pinned_case_directory
+
+from ._log_paths import open_verified_log
 
 _EXCLUDED_DIRECTORY_NAMES = frozenset(
     {
@@ -104,10 +110,47 @@ def _is_within(path: Path, root: Path) -> bool:
         return False
 
 
+def _same_file(first: os.stat_result, second: os.stat_result) -> bool:
+    """Compare immutable file identity and version across a snapshot read."""
+    return (
+        stat.S_ISREG(second.st_mode)
+        and first.st_size == second.st_size
+        and first.st_mtime_ns == second.st_mtime_ns
+        and first.st_dev == second.st_dev
+        and first.st_ino == second.st_ino
+        and not getattr(second, "st_file_attributes", 0) & 0x400
+    )
+
+
+@contextmanager
+def _open_snapshot_file(
+    root: Path, path: Path, parent_fd: int | None
+) -> Iterator[BinaryIO]:
+    """Own one verified read handle under the already pinned parent directory.
+
+    Snapshot capture reuses the artifact directory pin for ancestor safety.
+    Windows verifies the final file with the log boundary before any bytes are
+    read; POSIX opens relative to the pinned descriptor with O_NOFOLLOW. Every
+    opened descriptor closes on success, fdopen failure or caller failure.
+    """
+    if parent_fd is None:
+        handle, _ = open_verified_log(root, path)
+    else:
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent_fd)
+        try:
+            handle = os.fdopen(descriptor, "rb")
+        except BaseException:
+            os.close(descriptor)
+            raise
+    with handle:
+        yield handle
+
+
 class Snapshotter:
     """Capture a bounded repository tree without following boundary escapes.
 
-    Symlinks are recorded as symlinks and not traversed. Descendant mount/device
+    Symlinks are recorded as symlinks and not traversed. Other Windows reparse
+    points are recorded as incomplete and never traversed. Descendant mount/device
     changes, excluded runtime roots, filesystem roots, and paths outside the
     canonical root are rejected or recorded as partial rather than scanned.
     """
@@ -138,7 +181,9 @@ class Snapshotter:
             raise ValueError("snapshot root must be an existing directory")
         if self.root == Path(self.root.anchor):
             raise ValueError("snapshot root must not be a filesystem root")
-        self._root_device = self.root.lstat().st_dev
+        root_info = self.root.lstat()
+        self._root_device = root_info.st_dev
+        self._root_inode = root_info.st_ino
         limits = (max_entries, max_hash_bytes, max_text_bytes, max_total_text_bytes)
         if any(
             isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0
@@ -159,7 +204,9 @@ class Snapshotter:
             if self._excluded(directory):
                 continue
             children, directory_truncated, scan_error = self._scan_directory(
-                directory, self.max_entries - len(entries)
+                directory,
+                self.max_entries - len(entries),
+                expected=entries.get(_canonical(directory)),
             )
             if scan_error is not None:
                 errors.append(scan_error)
@@ -169,7 +216,9 @@ class Snapshotter:
                 child_errors,
                 retained_text_bytes,
                 text_dropped,
-            ) = self._capture_children(children, entries, retained_text_bytes)
+            ) = self._capture_children(
+                children, entries, retained_text_bytes, directory=directory
+            )
             errors.extend(child_errors)
             text_limit_hit |= text_dropped
             if directory_truncated:
@@ -188,32 +237,54 @@ class Snapshotter:
             complete=not errors and not truncated,
         )
 
-    @staticmethod
     def _scan_directory(
-        directory: Path, remaining: int
+        self, directory: Path, remaining: int, *, expected: SnapshotEntry | None = None
     ) -> tuple[list[os.DirEntry[str]], bool, str | None]:
         """Scan one verified directory without crossing mounts or following symlinks."""
         try:
-            with os.scandir(directory) as iterator:
-                scanned = list(islice(iterator, remaining + 1))
+            with pinned_case_directory(self.root, directory) as directory_fd:
+                self._verify_root()
+                named = directory.lstat()
+                if expected is not None and (named.st_dev, named.st_ino) != (
+                    expected.device,
+                    expected.inode,
+                ):
+                    raise OSError("snapshot directory identity changed")
+                target = directory if directory_fd is None else directory_fd
+                with os.scandir(target) as iterator:
+                    scanned = list(islice(iterator, remaining + 1))
         except OSError:
             return [], False, f"scan_failed:{_canonical(directory)}"
         truncated = len(scanned) > remaining
         children = sorted(scanned[:remaining], key=lambda item: item.name.casefold())
         return children, truncated, None
 
+    def _verify_root(self) -> None:
+        """Reject replacement of the authorized root before filesystem reads."""
+        root_info = self.root.lstat()
+        if (root_info.st_dev, root_info.st_ino) != (
+            self._root_device,
+            self._root_inode,
+        ):
+            raise OSError("snapshot root identity changed")
+
     def _capture_children(
         self,
         children: list[os.DirEntry[str]],
         entries: dict[str, SnapshotEntry],
         retained_text_bytes: int,
+        *,
+        directory: Path | None = None,
     ) -> tuple[list[Path], list[str], int, bool]:
         """Capture sorted direct children while enforcing entry and byte budgets."""
         child_directories: list[Path] = []
         errors: list[str] = []
         text_limit_hit = False
         for child in children:
+            # Descriptor-based scandir returns basename-only paths on POSIX.
             path = Path(child.path)
+            if not path.is_absolute() and directory is not None:
+                path = directory / child.name
             if not _is_within(Path(os.path.abspath(path)), self.root):
                 errors.append(f"path_outside_root:{_canonical(path)}")
                 continue
@@ -297,6 +368,14 @@ class Snapshotter:
             ), f"mount_boundary:{canonical}"
         if stat.S_ISLNK(before.st_mode):
             return self._capture_symlink(path, canonical, common)
+        if getattr(before, "st_file_attributes", 0) & 0x400:
+            return SnapshotEntry(
+                **common,
+                file_type="special",
+                sha256=None,
+                hash_complete=False,
+                scan_error="reparse_point",
+            ), f"reparse_point:{canonical}"
         if stat.S_ISDIR(before.st_mode):
             return SnapshotEntry(
                 **common,
@@ -370,21 +449,29 @@ class Snapshotter:
             content-free ``binary`` or ``size_limit`` classification.
 
         Security/Privacy:
-            At most ``max_text_bytes`` is retained for diff construction; a
-            changed file identity invalidates the hash and retained text.
+            Read at most the initially admitted size, bounded by ``max_hash_bytes``.
+            Retain at most ``max_text_bytes`` for diff construction; growth or
+            another file version change invalidates the hash and retained text.
         """
         digest = hashlib.sha256()
         captured = bytearray()
+        remaining = before.st_size
         try:
-            with path.open("rb") as handle:
-                while True:
-                    chunk = handle.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    digest.update(chunk)
-                    if before.st_size <= self.max_text_bytes:
-                        captured.extend(chunk)
-            after = path.lstat()
+            with pinned_case_directory(self.root, path.parent) as parent_fd:
+                self._verify_root()
+                with _open_snapshot_file(self.root, path, parent_fd) as handle:
+                    if not _same_file(before, os.fstat(handle.fileno())):
+                        raise OSError("snapshot file identity changed before read")
+                    while remaining:
+                        chunk = handle.read(min(1024 * 1024, remaining))
+                        if not chunk:
+                            break
+                        remaining -= len(chunk)
+                        digest.update(chunk)
+                        if before.st_size <= self.max_text_bytes:
+                            captured.extend(chunk)
+                    after = os.fstat(handle.fileno())
+                    named = path.lstat()
         except OSError:
             return SnapshotEntry(
                 **common,
@@ -394,10 +481,7 @@ class Snapshotter:
                 scan_error="read_failed",
             ), f"read_failed:{canonical}"
         stable = (
-            before.st_size == after.st_size
-            and before.st_mtime_ns == after.st_mtime_ns
-            and before.st_dev == after.st_dev
-            and before.st_ino == after.st_ino
+            remaining == 0 and _same_file(before, after) and _same_file(before, named)
         )
         text_content: str | None = None
         text_omission_reason: str | None = None
