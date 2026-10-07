@@ -355,6 +355,8 @@ Framework-neutral runtime metadata follows the [Runtime Evidence contract](runti
 
 Before official upload, KUMA scans output, errors, paths, diffs, explicit logs, and custom Cases for sensitive material. The API key is used for authorization and is not added to Evidence. `allow_sensitive=True` is an explicit ordinary-Evidence override, not a substitute for isolation or secret hygiene.
 
+Authorization examples are preserved only when their complete Bearer/Basic value is a recognized placeholder (such as `$TOKEN`, `${ACCESS_TOKEN}`, `YOUR_TOKEN_HERE`, or `<your-access-token>`) or the public RFC 7617 Basic sample. Supported boundaries are the line end or an immediately enclosing, matching single quote, double quote, or backtick, followed by whitespace or the line end; JSON-escaped double quotes are also supported. Two unquoted documentation forms are recognized: `Example: Authorization: Basic YWxhZGRpbjpvcGVuc2VzYW1l (RFC 7617 sample)` and `Set the header to Authorization: Bearer YOUR_TOKEN_HERE before calling.` Other prose suffixes, malformed boundaries, unknown schemes and extra material inside a header remain sensitive. Non-exempt headers are redacted from `Authorization` through the line end; surrounding text and additional headers still undergo credential checks.
+
 ## OpenTelemetry
 
 OpenTelemetry (OTel) is the standard observability API used by Agent frameworks and instrumentation to emit spans. KUMA maps spans that were **actually emitted in the same process** into bounded Evidence. It does not invent Agent activity and is not an OTel Collector, backend, or trace UI.
