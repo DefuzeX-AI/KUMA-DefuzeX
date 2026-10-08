@@ -253,3 +253,35 @@ model found every natural-language claim, nor proof an Agent never uploaded data
 SDK validates closed syntax/bounds/privacy; Core resolves witnesses and performs
 the assessment. The legacy top-level report status remains available but must not
 be treated as three detailed passes.
+
+## Local readable explanations
+
+After validating an Official Judgment, the SDK adds optional display fields to
+`Report.extensions` for non-pass reports:
+
+- `explanation`: a static English summary (under 1600 characters) of the overall
+  verdict and any validated global attribution or axis `missing_evidence` /
+  `partial_capture` reason. These are explicitly **Judge-reported claims**, not
+  independent proof that capture failed or that the Agent is defective.
+- `step_explanations`: one `{step_id, message}` entry per non-passed step, in
+  server order. Each message is static English under 200 characters; `step_id`
+  is the validated public step identifier. Issue steps point to their existing
+  issue-ID references. Inconclusive steps state that no reliably associated
+  cause is available. Global environment/model/input causes are never assigned
+  to individual steps: the current assessment does not provide that binding.
+
+```python
+if report is not None:
+    print(report.extensions.get("explanation", ""))
+    for entry in report.extensions.get("step_explanations", ()):
+        print(entry["step_id"], entry["message"])
+```
+
+Passed reports get neither field; reports without non-passed steps omit the
+step list. Older saved reports and custom Judge reports need not have either
+field. Newly saved Official reports preserve these local explanations; existing
+reports are not rewritten. Remote fields with these names cannot supply their
+text. No model call, private Evidence read or new server field is involved.
+Original status, `step_results`, issue-ID references, issues, `evidence_gaps`
+and assessment remain unchanged. Consult those source fields for actual findings
+and factual gaps; a local explanation is not an additional finding.

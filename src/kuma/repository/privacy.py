@@ -20,9 +20,11 @@ _CREDENTIAL_NAME = (
     r"credential(?:s)?|password|passwd|secret|auth(?:orization)?|(?:set[_-]?)?cookie)"
 )
 _CREDENTIAL_KEY = re.compile(rf"(?i)^{_CREDENTIAL_NAME}$")
+_BRACED_ENV_REFERENCE = re.compile(r"\$\{[A-Z_][A-Z0-9_]*\}")
 _ASSIGNMENT = re.compile(
     rf"(?i)(?<![\w])(?P<label>{_CREDENTIAL_NAME}[\"']?\s*[:=]\s*(?:\*\*\s*)?)"
-    r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;}]+)"
+    r"(?P<value>(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|"
+    r"\$\{[^\s,;]*|[^\s,;}])+)"
 )
 _AUTHORIZATION_HEADER = re.compile(
     r"(?im)\bauthorization[\"']?[ \t]*:[ \t]*(?=(?P<value>[^\r\n]*))"
@@ -173,8 +175,15 @@ def _assignment_is_secret(match: re.Match[str]) -> bool:
     employment, no-auth or token-definition wording qualify as prose. Passwords,
     short real secrets, equals assignments and quoted values remain sensitive;
     independent known-token/private-key signatures still scan the whole text.
+    Whole braced environment references are syntax only, never resolved. The
+    assignment matcher consumes adjacent scalar fragments together so a valid
+    reference cannot exempt an attached literal, expansion operator or suffix.
     """
-    value = match["value"].strip("\"'")
+    value = match["value"]
+    if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
+        value = value[1:-1]
+    if _BRACED_ENV_REFERENCE.fullmatch(value):
+        return False
     if value in {"", REDACTED} or re.fullmatch(
         r"(?:<[A-Za-z][A-Za-z0-9_-]*>|\$[A-Z_][A-Z0-9_]*|YOUR_[A-Z_]+|sk-[.…]+)`?",
         value,
@@ -412,13 +421,20 @@ def _credential_value(key: str, value: Any, *, containers: bool = False) -> bool
     supported schema property objects. Outbound Evidence redaction alone may
     conservatively replace whole credential-labelled containers via ``containers``.
     Numeric usage and exact markers are never treated as credential payloads.
+    Complete braced environment-reference scalars are also syntax-only markers;
+    no environment access or interpolation occurs. Prefix/suffix/encoded forms
+    and container values retain the existing sensitive-value behavior.
     """
     normalized = "_".join(
         part for part in re.split(r"[^a-z0-9]+", key.casefold()) if part
     )
     return bool(_CREDENTIAL_KEY.fullmatch(normalized)) and (
         (containers and isinstance(value, (dict, list)))
-        or (isinstance(value, str) and value not in {"", REDACTED})
+        or (
+            isinstance(value, str)
+            and value not in {"", REDACTED}
+            and _BRACED_ENV_REFERENCE.fullmatch(value) is None
+        )
     )
 
 

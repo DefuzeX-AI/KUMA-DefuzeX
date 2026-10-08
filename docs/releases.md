@@ -6,6 +6,28 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
+## 0.3.5 candidate notes (not yet published)
+
+This optional patch improves safe diagnostics and readable Official Judgment
+reports. These local candidate notes do not announce a released package.
+
+- Preserve bounded Authorization documentation examples while still rejecting
+  real credentials, malformed delimiters, appended values, Digest and unknown
+  header schemes. Retain complete `${ENV_NAME}` references without resolving
+  environment variables; attached literal secrets remain checked.
+- Distinguish a service-generated Case rejected for sensitive content from bad
+  caller input. Keep its original operation identity and signed content intact;
+  retrying validation does not generate another Case or refund existing usage.
+- Validate optional safe HTTP admission diagnostics using closed rule/location
+  fields and an optional upload index, never raw values or host paths.
+- Add optional local report and step explanations after Official validation.
+  Global causes remain Judge-reported claims, never inferred step-level causes
+  or proof of missing capture. Original findings and report status are unchanged.
+
+No automatic paid retry, new server contract, or historical report rewrite is
+introduced. Thanks to the contributor of [PR106](https://github.com/DefuzeX-AI/KUMA-DefuzeX/pull/106)
+for Authorization example and full-header redaction protections.
+
 ## 0.3.4 release notes
 
 This optional patch strengthens evidence capture, interrupted-operation recovery

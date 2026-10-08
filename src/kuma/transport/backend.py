@@ -38,7 +38,12 @@ from ..errors import (
 from ..evidence.runtime_contract import CASEGEN_EVIDENCE_CAPABILITY_ORDER
 from ..runtime import is_running_in_docker
 from ..updates import schedule_update_check
-from .error_details import field_error_message, validated_field_details
+from .error_details import (
+    ADMISSION_RULES,
+    field_error_message,
+    validated_admission_details,
+    validated_field_details,
+)
 from .http import (
     WireResponse,
     header_request_id,
@@ -554,6 +559,8 @@ def _error_envelope(
     Postconditions:
         Only typed ``code``, ``retryable``, optional text ``message``, and the
         explicitly validated per-code static public details remain.
+        Optional HTTP admission diagnostics use a separate closed validator;
+        legacy omission and async operation detail contracts are unchanged.
 
     Security/Privacy:
         Backend/Core/provider diagnostics cannot flow through ``details``.
@@ -566,6 +573,13 @@ def _error_envelope(
     retryable = raw_retryable if isinstance(raw_retryable, bool) else False
     raw_message = envelope.get("message")
     message = raw_message if isinstance(raw_message, str) else None
+    if code in ADMISSION_RULES and "details" in envelope:
+        return (
+            code,
+            retryable,
+            message,
+            validated_admission_details(code, envelope["details"]),
+        )
     return code, retryable, message, _public_error_details(code, envelope)
 
 
