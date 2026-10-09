@@ -13,6 +13,7 @@ from ..errors import (
     ConfigurationError,
     LimitExceededError,
     ProviderError,
+    SensitiveDataError,
     ValidationError,
 )
 from ..evidence.runtime_contract import CASEGEN_EVIDENCE_CAPABILITY_ORDER
@@ -663,12 +664,17 @@ def _normalized_case(
 
     Raises:
         ProviderError: If the response exceeds ``max_steps`` or violates the
-            closed public Case/integrity contract.
+            closed public Case/integrity contract. Privacy rejection uses
+            ``service_generated_sensitive_data`` with fixed safe metadata,
+            rather than attributing service-generated content to caller input.
 
     Postconditions:
         The result contains the complete Case; it is never truncated to fit the
         requested upper bound. Official provenance records the returned public
         compatibility strategy; actual execution is a separate optional record.
+        Both ordinary generation and request recovery call this projector before
+        committing local success. Rejection leaves operation identity intact;
+        signed content is never redacted or changed to make it acceptable.
     """
     requested_strategy_version = None
     (
@@ -701,10 +707,24 @@ def _normalized_case(
     if executed is not None:
         provenance["executed_strategy_group"] = executed
     invalid_original = False
+    sensitive_original = False
     try:
         provenance["public_case"] = validate_public_original(raw_case)
+    except SensitiveDataError:
+        sensitive_original = True
     except ValidationError:
         invalid_original = True
+    if sensitive_original:
+        raise ProviderError(
+            "The service-generated Case contains sensitive content and was rejected. "
+            "The original operation is retained; do not start a new generation.",
+            code="service_generated_sensitive_data",
+            details={
+                "source": "service_generated_case",
+                "reasons": ("sensitive_content",),
+                "location": "public_case",
+            },
+        )
     if invalid_original:
         raise ProviderError(
             "The Backend returned an invalid public Case", code="invalid_response"

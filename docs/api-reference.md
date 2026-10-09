@@ -475,7 +475,7 @@ The main immutable contracts are exported from `kuma`:
 | `KumaInput` | `run_id`, `case_id`, `input_id`, zero-based `index`, `payload_type`, frozen `payload`, public constraints, schema version, and public extensions. |
 | `Submission` | Correlated IDs, terminal step `status`, JSON output/error, capture completeness, bounded logs/file Evidence, dropped/missing counters, schema version, and extensions. |
 | `HistoryItem` | One `KumaInput` paired with its ID-matching `Submission`. |
-| `TestReport` | `report_id`, `run_id`, `status` (`pass`, `issue`, or `insufficient_evidence`), confidence, stop reason, public issues/evidence gaps, and extensions. |
+| `TestReport` | `report_id`, `run_id`, `status` (`pass`, `issue`, or `insufficient_evidence`), confidence, stop reason, public issues/evidence gaps, and extensions. Official non-pass reports may include local `explanation` and `step_explanations`; see [interpretation and limits](judge-assessment.md#local-readable-explanations). |
 | `CaptureStatus` | Completeness for file snapshot/diff, logs, sensitive scan, and traces. Each component is `complete`, `partial`, `failed`, or `skipped`. |
 
 Private Rubrics, prompts, model settings, and Core records are not part of these

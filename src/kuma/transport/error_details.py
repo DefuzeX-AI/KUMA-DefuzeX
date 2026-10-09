@@ -45,6 +45,104 @@ _FIELD_REASONS = {
     "invalid": "is invalid",
 }
 
+ADMISSION_RULES = {
+    "invalid_manifest": frozenset(
+        {
+            "manifest_shape",
+            "manifest_count",
+            "manifest_entry",
+            "manifest_name_association",
+            "manifest_hash",
+            "manifest_evidence_type",
+            "manifest_closed_entry",
+            "case_association",
+            "submission_association",
+            "validation_failed",
+        }
+    ),
+    "sensitive_content_detected": frozenset(
+        {
+            "sensitive_field_name",
+            "named_credential_assignment",
+            "private_key_pem",
+            "authorization_bearer",
+            "authorization_header",
+            "cookie_header",
+            "provider_secret_key",
+            "github_classic_token",
+            "github_fine_grained_token",
+            "slack_token",
+            "defuzex_api_key",
+            "validation_failed",
+        }
+    ),
+}
+_ADMISSION_LOCATIONS = frozenset(
+    {
+        "logs",
+        "manifest",
+        "manifest.files",
+        "evidence",
+        "run_context",
+    }
+)
+_INDEXED_LOCATIONS = frozenset({"logs", "evidence", "manifest.files"})
+
+
+def validated_admission_details(code: str, details: object) -> dict[str, Any]:
+    """Detach only frozen HTTP upload-rejection diagnostics for the error mapper.
+
+    Args:
+        code: One of the two admission codes in ADMISSION_RULES.
+        details: Present wire object with exactly rule and location, plus optional
+            file_index. Strings must belong to the per-code/closed location sets;
+            an index is a strict integer 0..999, permitted only for logs, evidence
+            or manifest.files. Omission is handled by the HTTP caller, not here.
+
+    Returns:
+        A detached dictionary of safe scalar values. The index is zero-based
+        upload order (logs/evidence) or manifest entry order (manifest.files).
+
+    Raises:
+        ProviderError: Any unsupported shape/value gives invalid_response without
+            echoing the supplied values. No cause is inferred from fallback rules.
+
+    Security/Privacy:
+        Only HTTP admission mapping uses this validator; async contracts remain
+        unchanged. No I/O, raw values, dynamic field paths or filenames escape.
+        It validates server claims, not their truth or server provenance.
+    """
+    if not isinstance(details, Mapping) or set(details) not in (
+        {"rule", "location"},
+        {"rule", "location", "file_index"},
+    ):
+        raise ProviderError(
+            "Invalid public admission diagnostics", code="invalid_response"
+        )
+    rule, location = details["rule"], details["location"]
+    if (
+        type(rule) is not str
+        or rule not in ADMISSION_RULES[code]
+        or type(location) is not str
+        or location not in _ADMISSION_LOCATIONS
+    ):
+        raise ProviderError(
+            "Invalid public admission diagnostics", code="invalid_response"
+        )
+    result = {"rule": rule, "location": location}
+    if "file_index" in details:
+        index = details["file_index"]
+        if (
+            type(index) is not int
+            or not 0 <= index <= 999
+            or location not in _INDEXED_LOCATIONS
+        ):
+            raise ProviderError(
+                "Invalid public admission diagnostics", code="invalid_response"
+            )
+        result["file_index"] = index
+    return result
+
 
 def validated_field_details(details: object) -> dict[str, Any]:
     """Detach bounded static input diagnostics at the public transport boundary.

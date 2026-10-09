@@ -51,6 +51,7 @@ python tools/verify_cli_atomic_output.py
 python tools/verify_transport_failures.py
 python tools/verify_operation_poll_backoff.py
 python tools/verify_privacy_authorization.py
+python tools/verify_safe_diagnostics.py
 python -m compileall -q src examples tools
 kuma quickstart
 python examples/minimal_local.py
@@ -75,6 +76,12 @@ model, or paid evaluation is called.
 The Authorization privacy check is also offline. It covers the original
 documentation/curl examples, malformed boundaries, adjacent credentials and
 redaction followed by rescanning.
+
+The safe-diagnostics check uses only synthetic public payloads and real SDK
+validators. It covers local report/step explanations, optional closed HTTP
+admission errors, service-generated sensitive Case errors and whole braced
+environment-reference boundaries. It runs offline from this checkout without
+private tests, credentials, model calls or additional testing frameworks.
 
 ## Pull requests
 

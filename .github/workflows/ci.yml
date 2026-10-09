@@ -37,6 +37,7 @@ jobs:
       - run: python tools/verify_judge_busy.py
       - run: python tools/verify_operation_poll_backoff.py
       - run: python tools/verify_privacy_authorization.py
+      - run: python tools/verify_safe_diagnostics.py
       - run: python -m compileall -q src examples tools
 
   test:
@@ -65,6 +66,7 @@ jobs:
       - run: python tools/verify_judge_busy.py
       - run: python tools/verify_operation_poll_backoff.py
       - run: python tools/verify_privacy_authorization.py
+      - run: python tools/verify_safe_diagnostics.py
 
   windows:
     name: Windows
