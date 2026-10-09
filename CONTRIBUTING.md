@@ -37,7 +37,7 @@ Then install the development dependencies:
 
 ```bash
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,otel]"
 ```
 
 Run the canonical checks:
@@ -46,18 +46,26 @@ Run the canonical checks:
 python -m ruff format --check --exclude "*.ipynb" .
 python -m ruff check --exclude "*.ipynb" .
 python tools/verify_public_api_docs.py
+python tools/verify_agent_profile_migration.py
+python tools/verify_evidence_capacity.py
 python tools/verify_executed_strategy_group.py
 python tools/verify_cli_atomic_output.py
 python tools/verify_transport_failures.py
+python tools/verify_judge_busy.py
 python tools/verify_operation_poll_backoff.py
 python tools/verify_privacy_authorization.py
 python tools/verify_safe_diagnostics.py
+python tools/verify_otel_compat.py
 python -m compileall -q src examples tools
 kuma quickstart
 python examples/minimal_local.py
+python tools/verify_minimal_local.py
 python -m build
 python -m twine check dist/*
 ```
+
+`tools/verify_otel_compat.py` needs the `otel` extra installed above; CI also
+runs it against several pinned OpenTelemetry releases.
 
 Public CI checks lint, supported-Python installation and imports, the CLI,
 offline examples, and package construction. This public repository does not
