@@ -389,6 +389,29 @@ def _negotiate_file_summary(
     return summary
 
 
+def _validate_file_diff_support(
+    config: JudgeUploadConfig, *, upload_diff: bool
+) -> None:
+    """Reject explicit diff upload when the Backend omits ``file_diff``.
+
+    Called by Runtime Evidence negotiation before any multipart construction.
+    An empty capability tuple means the historical server omitted the field,
+    so only an explicit advertisement lacking ``file_diff`` is rejected.
+
+    Raises:
+        ProviderError: With ``runtime_evidence_unsupported``; no I/O happens.
+    """
+    if (
+        upload_diff
+        and config.runtime_evidence_capabilities
+        and "file_diff" not in config.runtime_evidence_capabilities
+    ):
+        raise ProviderError(
+            "The Backend does not support file-diff Evidence",
+            code="runtime_evidence_unsupported",
+        )
+
+
 def _runtime_evidence_parts(
     context: JudgeContext, config: JudgeUploadConfig, part_prefix: str
 ) -> tuple[list[UploadPart], list[dict[str, Any]], list[Any]]:
@@ -419,6 +442,7 @@ def _runtime_evidence_parts(
         "trace_evidence" in item.submission.extensions for item in context.history
     )
     _validate_trace_associations(context)
+    _validate_file_diff_support(config, upload_diff=context.upload_diff)
     if trace_enabled and "runtime_trace" not in config.runtime_evidence_capabilities:
         raise ProviderError(
             "The Backend does not support captured Runtime Trace Evidence",
