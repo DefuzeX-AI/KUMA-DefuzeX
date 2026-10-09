@@ -1,0 +1,6 @@
+# Hosted KUMA configuration
+# Do not commit real credentials.
+KUMA_API_KEY=your_api_key_here
+KUMA_REPO_PATH=C:\path\to\repository
+# Optional: path to the Agent profile
+KUMA_AGENT_PROFILE_PATH=examples/agent_integration_demo/agent-profile.md
