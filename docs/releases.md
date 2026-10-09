@@ -6,10 +6,10 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
-## 0.3.5 candidate notes (not yet published)
+## 0.3.5 release notes
 
 This optional patch improves safe diagnostics and readable Official Judgment
-reports. These local candidate notes do not announce a released package.
+reports. Check the matching GitHub Release and PyPI version for publication status.
 
 - Preserve bounded Authorization documentation examples while still rejecting
   real credentials, malformed delimiters, appended values, Digest and unknown
