@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from bisect import bisect_right
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -159,9 +160,9 @@ def scan_sensitive_path(
 
 def scan_sensitive_text(text: str, *, location: str) -> tuple[SensitiveFinding, ...]:
     """Scan bounded text for credential and private-data signatures."""
-    safe_authorization_spans = _safe_authorization_spans(text)
-    source_spans = _source_reference_spans(text)
-    pem_spans = _pem_reference_spans(text)
+    safe_authorization_spans = _index_spans(_safe_authorization_spans(text))
+    source_spans = _index_spans(_source_reference_spans(text))
+    pem_spans = _index_spans(_pem_reference_spans(text))
     findings = []
     for kind, pattern in _TEXT_PATTERNS:
         matches = pattern.finditer(text)
@@ -245,7 +246,9 @@ def _assignment_is_secret(match: re.Match[str]) -> bool:
         return False
     if _placeholder_value(value):
         return False
-    if value == "`" and re.search(r"`--[A-Za-z_-]*$", match.string[: match.start()]):
+    if value == "`" and re.search(
+        r"`--[A-Za-z_-]*$", _line_prefix(match.string, match.start())
+    ):
         return False
     if re.fullmatch(
         r"(?i)(?:[a-z0-9_]+_)?private_key[\"']?[ \t]*=\s*", match["label"]
@@ -283,6 +286,31 @@ def _placeholder_value(value: str) -> bool:
     )
 
 
+def _line_prefix(text: str, position: int) -> str:
+    """Slice only the current LF-delimited prefix for contextual classifiers.
+
+    Shared scanning/redaction helpers retain the previous rsplit-on-LF policy,
+    but use indexed search instead of allocating the entire preceding document
+    per match. No classification, size limit or external state is changed.
+    """
+    return text[text.rfind("\n", 0, position) + 1 : position]
+
+
+def _line_tail(text: str, position: int) -> str:
+    """Slice the current value line without splitting the remaining document.
+
+    Preserve str.splitlines' full separator set (including CRLF and Unicode)
+    for the prose classifiers. Regex search starts at the value offset and stops
+    at the first separator; only the current line is allocated. Existing caller
+    length checks remain authoritative; no new truncation or exemption occurs.
+    """
+    end = _LINE_END.search(text, position)
+    return text[position : end.start() if end is not None else len(text)]
+
+
+_LINE_END = re.compile(r"[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]")
+
+
 def _contextual_prose(match: re.Match[str]) -> bool:
     """Distinguish embedded narrative labels from standalone credential slots.
 
@@ -293,8 +321,8 @@ def _contextual_prose(match: re.Match[str]) -> bool:
     Work is limited to the current <=4096-character line; no entropy inference.
     """
     label = match["label"].split(":", 1)[0].casefold()
-    prefix = match.string[: match.start()].rsplit("\n", 1)[-1]
-    tail = match.string[match.start("value") :].splitlines()[0]
+    prefix = _line_prefix(match.string, match.start())
+    tail = _line_tail(match.string, match.start("value"))
     if len(prefix) + len(tail) > 4096 or match["value"].startswith(("'", '"')):
         return False
     if label in {"auth", "authorization"} and re.fullmatch(
@@ -357,7 +385,7 @@ def _assignment_is_prose(match: re.Match[str]) -> bool:
         return True
     value = match["value"]
     label = match["label"].split(":", 1)[0].casefold()
-    tail = match.string[match.start("value") :].splitlines()[0]
+    tail = _line_tail(match.string, match.start("value"))
     contexts = {
         "credentials": r"(?:PhD|MSc|BSc|(?:academic|professional) qualifications|use a NACES-member evaluator)(?=[ \t]|$)",
         "authorization": r"Statutory right-to-work checks(?=[ \t]|$)",
@@ -366,7 +394,7 @@ def _assignment_is_prose(match: re.Match[str]) -> bool:
     }
     if (
         label in {"auth", "authorization"}
-        and re.search(r"(?i)\bwork[ \t]+$", match.string[: match.start()])
+        and re.search(r"(?i)\bwork[ \t]+$", _line_prefix(match.string, match.start()))
         and value.casefold()
         in {
             "permitted",
@@ -402,7 +430,7 @@ def _glossary_prose(match: re.Match[str]) -> bool:
     label = match["label"].split(":", 1)[0].casefold()
     if label not in {"token", "authorization"}:
         return False
-    tail = match.string[match.start("value") :].splitlines()[0]
+    tail = _line_tail(match.string, match.start("value"))
     if len(tail) > 4096 or re.fullmatch(r"[A-Za-z\s.,()'\-]+", tail) is None:
         return False
     words = re.findall(r"[A-Za-z]+", tail)
@@ -410,7 +438,7 @@ def _glossary_prose(match: re.Match[str]) -> bool:
         return False
     if label == "token":
         return True
-    prefix = match.string[: match.start()].rsplit("\n", 1)[-1]
+    prefix = _line_prefix(match.string, match.start())
     return (
         re.fullmatch(
             r"(?i)[ \t]*(?:[-*][ \t]+)?(?:\*\*)?"
@@ -468,7 +496,7 @@ def _safe_authorization_end(match: re.Match[str]) -> int | None:
     value = match["value"]
     if (source_end := _source_header_end(match)) is not None:
         return source_end
-    prefix = match.string[: match.start()]
+    prefix = match.string[max(0, match.start() - 2) : match.start()]
     delimiter = prefix[-1:]
     if delimiter in {"'", '"', "`"}:
         if prefix.endswith('\\"'):
@@ -482,7 +510,7 @@ def _safe_authorization_end(match: re.Match[str]) -> int | None:
         return match.start("value") + end + len(delimiter)
     if value.strip() == REDACTED or _authorization_value_is_safe(value):
         return match.end("value")
-    line_prefix = prefix.rsplit("\n", 1)[-1].strip()
+    line_prefix = _line_prefix(match.string, match.start()).strip()
     documentation = re.fullmatch(
         r"(?i)(?P<header>basic[ \t]+"
         + _RFC7617_BASIC_SAMPLE
@@ -538,11 +566,41 @@ def _redact_cookie_header(match: re.Match[str]) -> str:
     return match[0] if assignment and _assignment_is_prose(assignment) else REDACTED
 
 
-def _inside_spans(
-    span: tuple[int, int], containers: tuple[tuple[int, int], ...]
-) -> bool:
-    """Require a whole match to belong to a previously validated safe header."""
-    return any(start <= span[0] and span[1] <= end for start, end in containers)
+@dataclass(frozen=True, slots=True)
+class _SpanIndex:
+    """Sorted starts and prefix maximum ends for exact single-span containment."""
+
+    starts: tuple[int, ...]
+    ends: tuple[int, ...]
+
+
+def _index_spans(spans: tuple[tuple[int, int], ...]) -> _SpanIndex:
+    """Index validated intervals once per immutable text/redaction stage.
+
+    Sorting costs O(n log n); cumulative maximum ends allow logarithmic exact
+    containment checks without scanning every reference for every assignment.
+    Gaps are not merged and only a single original interval may contain a query.
+    No source text or matched values are retained, only existing integer offsets.
+    """
+    starts = []
+    ends = []
+    maximum = -1
+    for start, end in sorted(spans):
+        starts.append(start)
+        maximum = max(maximum, end)
+        ends.append(maximum)
+    return _SpanIndex(tuple(starts), tuple(ends))
+
+
+def _inside_spans(span: tuple[int, int], containers: _SpanIndex) -> bool:
+    """Require whole-match containment in one validated interval in O(log n).
+
+    Only intervals starting at or before the query are eligible. Their maximum
+    endpoint preserves the prior existential check, including overlapping and
+    nested intervals; adjacent spans never jointly exempt a gap or partial match.
+    """
+    position = bisect_right(containers.starts, span[0]) - 1
+    return position >= 0 and span[1] <= containers.ends[position]
 
 
 def redact_sensitive_text(text: str) -> str:
@@ -565,13 +623,13 @@ def redact_sensitive_text(text: str) -> str:
         None. Callers must recompute digests and mark changed Evidence partial;
         this function must not be applied indiscriminately to protocol IDs.
     """
-    pem_spans = _pem_reference_spans(text)
+    pem_spans = _index_spans(_pem_reference_spans(text))
     if any(
         not _inside_spans(m.span(), pem_spans)
         for m in _TEXT_PATTERNS[0][1].finditer(text)
     ):
         return REDACTED
-    source_spans = _source_reference_spans(text)
+    source_spans = _index_spans(_source_reference_spans(text))
     for match in _ASSIGNMENT.finditer(text):
         if _inside_spans(match.span("value"), source_spans):
             continue
@@ -581,8 +639,8 @@ def redact_sensitive_text(text: str) -> str:
         ):
             return REDACTED
     result = _redact_authorization_headers(text)
-    safe_authorization_spans = _safe_authorization_spans(result)
-    source_spans = _source_reference_spans(result)
+    safe_authorization_spans = _index_spans(_safe_authorization_spans(result))
+    source_spans = _index_spans(_source_reference_spans(result))
     bearer_pattern = dict(_TEXT_PATTERNS)["authorization_bearer"]
     result = bearer_pattern.sub(
         lambda match: (
@@ -594,7 +652,7 @@ def redact_sensitive_text(text: str) -> str:
     )
     result = _COOKIE_HEADER.sub(_redact_cookie_header, result)
 
-    safe_authorization_spans = _safe_authorization_spans(result)
+    safe_authorization_spans = _index_spans(_safe_authorization_spans(result))
 
     def replace_assignment(match: re.Match[str]) -> str:
         """Retain an assignment label but never its sensitive scalar value."""

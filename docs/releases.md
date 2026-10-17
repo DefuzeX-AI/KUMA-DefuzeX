@@ -17,6 +17,8 @@ and account permissions.
 - Preserve bounded explanatory prose, symbolic placeholders and recognizable
   source credential references without disabling adjacent literal-secret,
   structured credential or known-signature detection.
+- Reduce repeated multiline privacy-scanning work with line-local context and
+  indexed safe-reference containment, without changing detection rules or limits.
 - Report required-but-unavailable Agent-output redaction negotiation explicitly
   as `runtime_evidence_unsupported`, before history/local Evidence commit or POST.
 - Expose optional `judge_input_limit` discovery and safe HTTP/async limit details.

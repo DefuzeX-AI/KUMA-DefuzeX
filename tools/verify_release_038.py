@@ -13,6 +13,7 @@ from kuma.config import resolve_create_run_config
 from kuma.errors import ConfigurationError, LimitExceededError, ProviderError
 from kuma.providers._official_evidence_upload import JudgeUploadConfig
 from kuma.providers.official_judge import OfficialJudgeProvider
+from kuma.repository import privacy
 from kuma.repository.privacy import scan_sensitive_json
 from kuma.transport.backend import _mapped_remote_error, _RemoteError
 from kuma.transport.judge_limits import validate_judge_input_limit
@@ -36,6 +37,45 @@ def store(root, handle=HANDLE, **changes):
 
 
 class ReleaseChecks(unittest.TestCase):
+    def test_multiline_privacy_context_and_index_cost(self):
+        class LocalSlices(str):
+            def __getitem__(self, key):
+                if isinstance(key, slice) and len(range(*key.indices(len(self)))) > 256:
+                    raise AssertionError("nonlocal context allocation")
+                return super().__getitem__(key)
+
+        class IndexedOnly(tuple):
+            def __iter__(self):
+                raise AssertionError("linear containment traversal")
+
+        text = LocalSlices(
+            "But here's the secret: the first draft is never the last.\n" * 300
+        )
+        for match in privacy._ASSIGNMENT.finditer(text):
+            self.assertFalse(privacy._assignment_is_secret(match))
+        spans = ((5, 9), (1, 4), (2, 3), (10, 20))
+        index = privacy._index_spans(spans)
+        guarded = privacy._SpanIndex(IndexedOnly(index.starts), IndexedOnly(index.ends))
+        for start in range(22):
+            for end in range(start, 23):
+                self.assertEqual(
+                    privacy._inside_spans((start, end), guarded),
+                    any(a <= start and end <= b for a, b in spans),
+                )
+        for line in (
+            "API_KEY=your_key\n",
+            'token = os.environ.get("API_TOKEN")\n',
+            "Authorization: Bearer <token>\n",
+        ):
+            value = line * 300
+            self.assertFalse(scan_sensitive_json(value, location="output"))
+            self.assertEqual(privacy.redact_sensitive_json(value), (value, False))
+            self.assertTrue(
+                scan_sensitive_json(
+                    value + "password=literal-secret", location="output"
+                )
+            )
+
     def test_privacy_safe_context_and_adjacent_secret(self):
         safe = (
             "But here's the secret: the first draft is never the last.",
