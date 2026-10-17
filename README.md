@@ -29,10 +29,10 @@ expose private evaluation logic.
 
 ## Install
 
-The local 0.3.8 candidate adds opt-in high-difficulty generation, explicit
+Version 0.3.8 adds opt-in high-difficulty generation, explicit
 `case_request_id` recovery, privacy classification fixes and optional Judge input
-budget discovery. See [release notes](docs/releases.md); candidate source does
-not establish package availability or service rollout.
+budget discovery. Server features depend on service support and account
+permissions. See [release notes](docs/releases.md).
 
 Requires Python 3.10 or newer:
 

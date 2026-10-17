@@ -6,10 +6,11 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
-## 0.3.8 release candidate (draft)
+## 0.3.8
 
-Optional patch candidate; version and publication remain subject to review.
-No tag, GitHub Release, PyPI upload or server rollout is implied by these notes.
+An optional patch update with clearer request recovery, privacy classification
+and Judge input-limit diagnostics. Server features depend on service support
+and account permissions.
 
 - Add explicit `high_difficulty=True` generation intent, subject to service
   support and account permission; it does not change Judge scoring strictness.
@@ -30,11 +31,10 @@ No output truncation, automatic paid replacement, global sensitive-data bypass
 or signed Case rewriting is introduced. Callers must integrate explicit job IDs;
 upgrading alone does not assign IDs to their jobs. Omitting the option preserves
 legacy matching, isolated from explicit records. Older SDK readers may reject
-explicitly tagged ledger records; downgrade recovery is not promised. Backend/Core
-features require separately accepted deployments; SDK source is not evidence of
-their availability. The contributor examples and existing public tools remain.
+explicitly tagged ledger records; downgrade recovery is not promised. The
+contributor examples and existing public tools remain.
 
-Credential-free candidate regression: `python tools/verify_release_038.py`.
+Credential-free regression checks: `python tools/verify_release_038.py`.
 
 ## 0.3.7 release candidate
 
