@@ -11,6 +11,7 @@ from typing import Any
 
 from .._json_values import detach_json
 from ..errors import SensitiveDataError
+from ._privacy_syntax import source_value_spans
 
 REDACTED = "[REDACTED]"
 _CREDENTIAL_NAME = (
@@ -39,7 +40,7 @@ _PEM_SOURCE_TEMPLATE = re.compile(
 )
 _ASSIGNMENT = re.compile(
     rf"(?i)(?<![\w])(?P<label>{_CREDENTIAL_NAME}[\"']?\s*[:=]\s*(?:\*\*\s*)?)"
-    r"(?P<value>(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|"
+    r"(?P<value>(?:<[^<>\r\n]{1,128}>|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|"
     r"\$\{[^\s,;]*|[^\s,;}])+)"
 )
 _AUTHORIZATION_HEADER = re.compile(
@@ -48,7 +49,7 @@ _AUTHORIZATION_HEADER = re.compile(
 _COOKIE_HEADER = re.compile(r"(?im)\b(?:set-)?cookie\s*:[^\r\n]*")
 _PLACEHOLDER_AUTH_VALUE = re.compile(
     r"(?ix)^(?:"
-    r"<your[-_](?:access[-_])?token>|"
+    r"<(?:[A-Za-z][A-Za-z0-9_-]*[-_])?(?:token|api[-_]key)>|"
     r"\$(?:[A-Z][A-Z0-9_]*|\{[A-Z][A-Z0-9_]*\})|"
     r"YOUR_[A-Z0-9_]+|"
     r"TOKEN|ACCESS_TOKEN|API_KEY|"
@@ -82,6 +83,7 @@ _TEXT_PATTERNS = (
         re.compile(r"\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{20,}\b"),
     ),
     ("aws_access_key", re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")),
+    ("stripe_key", re.compile(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b")),
     (
         "sk_api_key",
         re.compile(r"\bsk-(?:(?:proj|ant-api03)-)?[A-Za-z0-9_-]{12,}\b"),
@@ -159,7 +161,7 @@ def scan_sensitive_text(text: str, *, location: str) -> tuple[SensitiveFinding, 
     """Scan bounded text for credential and private-data signatures."""
     safe_authorization_spans = _safe_authorization_spans(text)
     source_spans = _source_reference_spans(text)
-    pem_spans = tuple(m.span("header") for m in _PEM_SOURCE_TEMPLATE.finditer(text))
+    pem_spans = _pem_reference_spans(text)
     findings = []
     for kind, pattern in _TEXT_PATTERNS:
         matches = pattern.finditer(text)
@@ -205,9 +207,10 @@ def _source_reference_spans(text: str) -> tuple[tuple[int, int], ...]:
     arbitrary calls/names are not exemptions. Only the RHS is exempted from the
     assignment heuristic; independent credential signatures still inspect it.
     No imports, environment reads, parsing execution or filesystem access occur.
-    The keyword and Path forms intentionally cover only the documented examples.
+    The AST helper adds bounded getter/reference and boolean-option forms;
+    individual RHS values, never entire statements, receive the exemption.
     """
-    return tuple(
+    return source_value_spans(text) + tuple(
         match.span(name)
         for match in _SOURCE_REFERENCE.finditer(text)
         if match.end() - match.start() <= 4096
@@ -221,10 +224,10 @@ def _assignment_is_secret(match: re.Match[str]) -> bool:
 
     Detection and replacement share these rules. Exact documentation placeholders
     carry no credential value. Only unquoted colon labels with bounded glossary
-    syntax or existing academic, employment and no-auth wording qualify as prose. Passwords,
+    or narrative syntax qualify as prose. Passwords,
     short real secrets, equals assignments and quoted values remain sensitive;
     independent known-token/private-key signatures still scan the whole text.
-    Whole braced environment references and exact your_password/ellipsis
+    Whole braced environment references and complete your_*/ellipsis
     placeholders are syntax only, never resolved. The
     assignment matcher consumes adjacent scalar fragments together so a valid
     reference cannot exempt an attached literal, expansion operator or suffix.
@@ -232,7 +235,27 @@ def _assignment_is_secret(match: re.Match[str]) -> bool:
     value = match["value"]
     if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
         value = value[1:-1]
+    if any(
+        pattern.search(value)
+        for kind, pattern in _TEXT_PATTERNS
+        if kind != "credential_assignment"
+    ):
+        return True
     if _BRACED_ENV_REFERENCE.fullmatch(value):
+        return False
+    if _placeholder_value(value):
+        return False
+    if value == "`" and re.search(r"`--[A-Za-z_-]*$", match.string[: match.start()]):
+        return False
+    if re.fullmatch(
+        r"(?i)(?:[a-z0-9_]+_)?private_key[\"']?[ \t]*=\s*", match["label"]
+    ) and re.fullmatch(r"[A-Za-z0-9_.-]+\.pem", value):
+        return False
+    if value in {"{", "["}:
+        return False
+    if "\n" in match["label"] and (
+        value == "-" or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*:", value)
+    ):
         return False
     if value in {"", REDACTED, "your_password", "..."} or re.fullmatch(
         r"(?:<[A-Za-z][A-Za-z0-9_-]*>|\$[A-Z_][A-Z0-9_]*|YOUR_[A-Z_]+|sk-[.…]+)`?",
@@ -242,8 +265,92 @@ def _assignment_is_secret(match: re.Match[str]) -> bool:
     return not _assignment_is_prose(match)
 
 
+def _placeholder_value(value: str) -> bool:
+    """Recognize complete documentation markers, never literal-bearing suffixes.
+
+    Used only for text RHS classification; structured credential fields retain
+    their strict data semantics. An optional trailing backtick closes an inline
+    example. Known-token signatures still scan independently, so markers cannot
+    hide adjacent keys or credential assignments.
+    """
+    return (
+        re.fullmatch(
+            r"(?i)(?:your_[a-z][a-z0-9_]*|<[A-Za-z][A-Za-z0-9 _-]{0,127}>|"
+            r"(?:[a-z]{2,12}[_-])?(?:\.{3}|…))`?",
+            value,
+        )
+        is not None
+    )
+
+
+def _contextual_prose(match: re.Match[str]) -> bool:
+    """Distinguish embedded narrative labels from standalone credential slots.
+
+    Only unquoted colon labels with a sentence prefix and word-only continuation
+    qualify. Password slots and quoted/equal assignments stay strict. Dotted
+    diagnostic identifiers may end in password without being credential keys.
+    Explicit authorization state words are not HTTP authentication schemes.
+    Work is limited to the current <=4096-character line; no entropy inference.
+    """
+    label = match["label"].split(":", 1)[0].casefold()
+    prefix = match.string[: match.start()].rsplit("\n", 1)[-1]
+    tail = match.string[match.start("value") :].splitlines()[0]
+    if len(prefix) + len(tail) > 4096 or match["value"].startswith(("'", '"')):
+        return False
+    if label in {"auth", "authorization"} and re.fullmatch(
+        r"(?i)(?:granted|denied|permitted|authorized|prohibited)(?:\*\*)?[ \t]*", tail
+    ):
+        return "=" not in match["label"]
+    if "=" in match["label"]:
+        return (
+            label.startswith("token")
+            and prefix.rstrip().endswith('"')
+            and re.fullmatch(r"(?i)(?:a|an|the) [a-z /()-]+\"\*\*", tail) is not None
+        )
+    eligible = (
+        label in {"secret", "token", "cookie", "auth", "authorization"} or "." in label
+    )
+    if label in {"auth", "authorization"} and (
+        not tail[:1].islower() or len(re.findall(r"[A-Za-z]+", tail)) < 5
+    ):
+        return False
+    return (
+        eligible
+        and re.fullmatch(r"[A-Za-z \t*'/-]+|[A-Za-z ]+:[ \t]*", prefix) is not None
+        and len(re.findall(r"[A-Za-z]+", prefix)) >= 1
+        and re.fullmatch(
+            r"[A-Za-z][A-Za-z0-9 \t.,()'/-]*(?:\*\*)?"
+            if "." in label
+            else r"[A-Za-z][A-Za-z \t.,()'/-]*(?:\*\*)?",
+            tail,
+        )
+        is not None
+        and len(re.findall(r"[A-Za-z]+", tail)) >= 2
+    )
+
+
+def _pem_reference_spans(text: str) -> tuple[tuple[int, int], ...]:
+    """Preserve inline PEM marker documentation without exempting key bodies.
+
+    Only a complete backtick-delimited marker on a line is syntax. A base64
+    body between BEGIN/END (including escaped newlines) is never exempted.
+    Bare/incomplete PEM markers remain conservatively sensitive. The old closed
+    source template remains supported; no private material is parsed or stored.
+    """
+    spans = [m.span("header") for m in _PEM_SOURCE_TEMPLATE.finditer(text)]
+    for match in re.finditer(r"`(?P<header>-----BEGIN [A-Z ]*PRIVATE KEY-----)`", text):
+        tail = text[match.end() : match.end() + 4096].partition("\n")[0]
+        if re.match(
+            r"[ \t]*(?:\.\.\.|…)[ \t]*`-----END [A-Z ]*PRIVATE KEY-----`", tail
+        ):
+            spans.append(match.span("header"))
+    return tuple(spans)
+
+
 def _assignment_is_prose(match: re.Match[str]) -> bool:
     """Share bounded glossary/legacy prose recognition without exempting tails."""
+    if _contextual_prose(match):
+        return True
     if "=" in match["label"] or match["value"].startswith(("'", '"')):
         return False
     if _glossary_prose(match):
@@ -336,6 +443,19 @@ def _authorization_value_is_safe(value: str) -> bool:
     )
 
 
+def _source_header_end(match: re.Match[str]) -> int | None:
+    """Check only the bounded current source line for a header reference RHS."""
+    line_start = match.string.rfind("\n", 0, match.start()) + 1
+    line_end = match.string.find("\n", match.start())
+    if line_end < 0:
+        line_end = len(match.string)
+    if line_end - line_start <= 4096:
+        for start, end in _source_reference_spans(match.string[line_start:line_end]):
+            if start + line_start == match.start("value"):
+                return end + line_start
+    return None
+
+
 def _safe_authorization_end(match: re.Match[str]) -> int | None:
     """Return the end of a proven safe header, leaving surrounding text untrusted.
 
@@ -346,6 +466,8 @@ def _safe_authorization_end(match: re.Match[str]) -> int | None:
     arbitrary suffixes and incomplete delimiters fail closed.
     """
     value = match["value"]
+    if (source_end := _source_header_end(match)) is not None:
+        return source_end
     prefix = match.string[: match.start()]
     delimiter = prefix[-1:]
     if delimiter in {"'", '"', "`"}:
@@ -410,6 +532,12 @@ def _redact_authorization_headers(text: str) -> str:
     return "".join(pieces)
 
 
+def _redact_cookie_header(match: re.Match[str]) -> str:
+    """Preserve narrative cookie labels using the scanner's same prose decision."""
+    assignment = _ASSIGNMENT.match(match.string, match.start())
+    return match[0] if assignment and _assignment_is_prose(assignment) else REDACTED
+
+
 def _inside_spans(
     span: tuple[int, int], containers: tuple[tuple[int, int], ...]
 ) -> bool:
@@ -437,7 +565,7 @@ def redact_sensitive_text(text: str) -> str:
         None. Callers must recompute digests and mark changed Evidence partial;
         this function must not be applied indiscriminately to protocol IDs.
     """
-    pem_spans = tuple(m.span("header") for m in _PEM_SOURCE_TEMPLATE.finditer(text))
+    pem_spans = _pem_reference_spans(text)
     if any(
         not _inside_spans(m.span(), pem_spans)
         for m in _TEXT_PATTERNS[0][1].finditer(text)
@@ -464,7 +592,7 @@ def redact_sensitive_text(text: str) -> str:
         ),
         result,
     )
-    result = _COOKIE_HEADER.sub(REDACTED, result)
+    result = _COOKIE_HEADER.sub(_redact_cookie_header, result)
 
     safe_authorization_spans = _safe_authorization_spans(result)
 
@@ -523,7 +651,8 @@ def _credential_value(key: str, value: Any, *, containers: bool = False) -> bool
     Ordinary validation scans string values recursively, preserving previously
     supported schema property objects. Outbound Evidence redaction alone may
     conservatively replace whole credential-labelled containers via ``containers``.
-    Numeric usage and exact markers are never treated as credential payloads.
+    Numeric token usage stays metadata, but numeric/boolean password and secret
+    fields remain credential values rather than blanket type exemptions.
     Complete braced environment-reference scalars are also syntax-only markers;
     no environment access or interpolation occurs. Prefix/suffix/encoded forms
     and container values retain the existing sensitive-value behavior.
@@ -533,6 +662,11 @@ def _credential_value(key: str, value: Any, *, containers: bool = False) -> bool
     )
     return bool(_CREDENTIAL_KEY.fullmatch(normalized)) and (
         (containers and isinstance(value, (dict, list)))
+        or (
+            isinstance(value, (int, float))
+            and re.fullmatch(r"(?:.*_)?(?:password|passwd|secret)", normalized)
+            is not None
+        )
         or (
             isinstance(value, str)
             and value not in {"", REDACTED}

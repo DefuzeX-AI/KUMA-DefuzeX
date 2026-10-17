@@ -189,6 +189,37 @@ Custom providers, local observation and loaded Case content are unchanged.
 Non-default levels require a service supporting the difficulty field; unsupported
 requests are not silently retried at D1.
 
+### Alternate official Case generator
+
+`high_difficulty` is a strict boolean, default `False`. Set it to `True` to
+request the service-managed alternate Case generator:
+
+```python
+from kuma import create_run
+
+run = create_run(
+    repo_path=".",
+    agent_profile_path="agent-profile.md",
+    high_difficulty=True,
+    difficulty="D1",
+)
+```
+
+Direct provider usage is `OfficialCaseProvider(client, high_difficulty=True)`;
+call `.generate_case(context)` with the usual validated context.
+This choice is independent of `difficulty`: both booleans work with D0, D1 and
+D2. It does not force D2, add steps, or change Judge behavior. Custom providers
+and saved Cases are unchanged.
+
+Omitted or explicit `False` preserves historical request bytes and recovery
+identity. `True` changes the request identity; retry with the same choice to
+resume the same operation (GET-only once its operation ID is known). Changing
+the choice is a different request, not a way to resume the original.
+Non-booleans, including `None`, `0`, `1` and `"true"`, fail locally with
+`ConfigurationError(code="config_invalid")` before I/O. The service must support
+this option; errors are surfaced without retrying on the default generator.
+The SDK sends only this boolean, never provider model settings or credentials.
+
 ### API key
 
 Official Case or Judge Providers require a KUMA API key beginning with `dfx_`. Keep it in the process environment or user credential store; never place it in source, Notebook output, logs, or Git.
@@ -370,17 +401,29 @@ If `SensitiveDataError` is raised, that input remains delivered: remove the secr
 and call `submit()` again. No new history entry or Judge POST was created by that
 rejected submission. Arbitrary custom Judge providers retain their local policy.
 
-The scanner preserves a small, closed set of non-executed source references:
+The scanner preserves bounded, non-executed source references, including:
 `db_password = os.environ.get("PGPASSWORD", "")` (also without the empty default),
 the keyword fragment `password=db_password,`, and
 `private_key = Path(tmpdir) / "private.pem"`. Environment names must be uppercase
 identifiers; defaults must be absent or empty. Exact `your_password` and `...`
 assignment placeholders are supported, as is a body-free PEM construction using
 escaped newlines and `"\\n".join(lines)`. These are syntax recognition rules, not
-permission to execute source. Arbitrary function calls/identifiers, nonempty
-defaults, concatenations, real/incomplete PEM data, adjacent secrets and JSON
+permission to execute source. Additional recognized forms are credential getter
+calls with name/attribute arguments, credential references joined by `or`,
+`use_*` boolean keyword options, and an Authorization scheme concatenated with
+a recognized reference (for example, `"Bearer " + get_api_key()`).
+Source lines are limited to 4096 characters and 256 AST nodes; only individual
+reference spans are exempted, never the entire statement. The parser executes
+nothing. Arbitrary calls, literal getter arguments, nonempty defaults,
+secret-bearing concatenations, real/incomplete PEM data, adjacent secrets and JSON
 credential-field values remain sensitive. Recognized source in an ordinary JSON
 output field is preserved; a credential field is not treated as source code.
+Whole `your_*`, ellipsis and truncated-prefix markers such as `hf_...` are
+recognized in text assignments. Complete inline PEM marker pairs separated only
+by an ellipsis describe syntax, not key material. Real PEM bodies still fail.
+Numeric password/secret values remain sensitive, including structured fields;
+`password=123456` is not a harmless numeric option. Known provider key shapes
+(including Stripe underscore keys) remain detected anywhere beside safe source.
 
 Encoded JSON containers are inspected through at most eight nested decoding
 layers. A remaining object/array-shaped string at that budget is not considered
@@ -413,6 +456,13 @@ tests additionally retain whole `${ENV_NAME}` assignment/JSON behavior; adjacent
 literal suffixes remain sensitive. Neither check reads environment credentials or
 calls a hosted service.
 
+Embedded narrative labels such as `the secret: patience improves the result`,
+`per token: query, key, value`, and compound payment/consent authorization
+headings are distinguished from standalone credential slots. Bounded word-only
+sentence continuations and explicit authorization states (GRANTED/DENIED) are
+preserved; arbitrary HTTP schemes and quoted credential values are not.
+Diagnostic dotted rule identifiers ending in a credential word are not treated
+as a secret slot when followed by explanatory prose.
 Token glossary definitions and compound consent/authorization headings are prose,
 not automatically credentials. The SDK recognizes a bounded English explanatory
 form: an unquoted colon label, a value starting with `a`, `an`, or `the`, at least
@@ -422,7 +472,8 @@ line. For `authorization`, the heading must join another term with `and` or `or`
 strict. This is a conservative syntax rule, not a general natural-language or
 secret detector. Other formats may still need rewriting as ordinary prose.
 
-Quoted values, equals assignments and structured credential fields such as
+Outside the reference/placeholder forms above, quoted values, equals assignments
+and structured credential fields such as
 `{"token": "..."}` remain sensitive. Real key signatures, private-key material,
 and additional credential assignments are scanned independently even alongside
 a safe definition. Recognized prose is preserved without a redaction-loss flag;
@@ -623,3 +674,61 @@ assign global causes to steps. See [examples and interpretation limits](judge-as
 - [Single Agent template](../examples/single_agent_template/README.md)
 - [Full-stack user-flow example](../examples/full_stack/USER_GUIDE.md)
 - [Architecture and security boundaries](architecture.md)
+
+## Final Judge input budget
+
+Use `KumaClient().judge_config().get("judge_input_limit")` to inspect the optional
+service limit. When present it is exactly
+`{"max_input_bytes": 2097152, "measurement": "final_judge_message_utf8"}`
+(the number is illustrative; use the returned value). This measures final system
+plus serialized user-message UTF-8 bytes, not uploaded file bytes or tokens.
+Private service overhead also counts, so the SDK cannot guarantee that an upload
+fits by summing local Evidence sizes. An absent field means an older server did
+not advertise this information; existing upload checks remain unchanged.
+
+HTTP 413 `payload_too_large` may expose the same two safe fields through
+`LimitExceededError.details`. The SDK never truncates Evidence, retries the paid
+operation automatically, or increases a limit. Reduce the Evidence for a new
+intentional request; preserve the original request identity when recovering it.
+
+## One identity per logical Case generation
+
+`create_run(..., case_request_id=...)` accepts `kreq_` followed by exactly 32
+lowercase hexadecimal digits. Persist one ID per intended generation **before**
+calling the SDK; reuse that ID and the same inputs after interruption or success.
+For example, create `slot_id = "kreq_" + uuid.uuid4().hex` once in your job setup,
+save it in your job record, then use:
+
+```python
+from kuma import create_run
+
+# Load the previously saved ID for this logical job; do not regenerate on retry.
+slot_id = "kreq_0123456789abcdef0123456789abcdef"
+run = create_run(
+    repo_path=".", agent_profile_path="agent-profile.md",
+    case_request_id=slot_id, judge=False,
+)
+try:
+    first_input = run.get_input(full=True)
+finally:
+    run.cancel()
+```
+
+The same ID reuses the original idempotency key. Once an operation ID is known,
+generation recovery only polls that operation, including after a successful or
+failed result; it never silently buys a replacement. A **different** ID denotes
+a separate intentional generation even with identical inputs. Malformed IDs and
+custom/reloaded Case combinations fail before I/O. Changed request, Backend or
+credential bindings fail before POST; `create_run` may still need bounded
+read-only catalog/config discovery to build the canonical payload. Ledger reads
+are necessary to verify bindings. Keep the original repository/storage root.
+
+Direct `OfficialCaseProvider` users pass the same optional field through
+`CaseGenerationContext`. Omitting it preserves legacy payload-based recovery;
+legacy requests never adopt explicitly identified records. The local closed v1
+ledger adds only optional `case_request_identity: "explicit"` to Case records,
+not request bodies or public list/show fields. Show/resume preserve it. Older SDK
+closed readers may reject such records; downgrade recovery is not promised and
+must fail closed. No request content, credentials or signed Case rewriting is
+introduced. Existing callers must integrate this option explicitly; installing
+the SDK alone does not assign separate identities to their logical job slots.

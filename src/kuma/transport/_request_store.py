@@ -35,8 +35,10 @@ from ._request_files import (
     canonical_repo_root,
     locked_ledger,
     record_paths,
+    require_record_capacity,
     save_public_report,
 )
+from .backend import validate_client_request_id
 from .operations import PendingOperation
 
 
@@ -60,6 +62,7 @@ class RequestOperationStore:
         case_id: str | None = None,
         case_validation: Mapping[str, Any] | None = None,
         assessment_contract: str | None = None,
+        case_request_id: str | None = None,
     ) -> None:
         """Bind validated recovery identities without writing local state.
 
@@ -69,7 +72,17 @@ class RequestOperationStore:
         any network operation.
         assessment_contract seals the optional Judge schema before POST; None
         preserves legacy records exactly and never infers response negotiation.
+        case_request_id optionally selects an exact caller-owned Case identity,
+        including terminal records. Changed target/key/hash or a legacy collision
+        fails before POST. None never adopts an explicit record. No body is saved.
         """
+        if case_request_id is not None:
+            validate_client_request_id(case_request_id)
+            if request_type != "case_generation":
+                raise ProviderError(
+                    "Invalid Case request identity", code="request_state_invalid"
+                )
+        self.case_request_id = case_request_id
         self.root = canonical_repo_root(repo_path)
         if not isinstance(request_type, str) or request_type not in REQUEST_TYPES:
             raise ProviderError("Request type is invalid", code="request_state_invalid")
@@ -125,10 +138,11 @@ class RequestOperationStore:
         with self._locked(create=True):
             stored = self._find_matching()
             if stored is None:
+                require_record_capacity(self.directory)
                 now = time.time()
                 stored = StoredRequest(
                     public=RequestRecord(
-                        new_client_request_id(),
+                        self.case_request_id or new_client_request_id(),
                         self.request_type,
                         "prepared",
                         None,
@@ -144,6 +158,7 @@ class RequestOperationStore:
                     api_key_sha256=self.api_key_sha256,
                     case_validation=self.case_validation,
                     assessment_contract=self.assessment_contract,
+                    case_request_identity="explicit" if self.case_request_id else None,
                 )
                 self._write(stored)
             self._client_request_id = stored.public.client_request_id
@@ -313,6 +328,13 @@ class RequestOperationStore:
 
     def _selected(self) -> StoredRequest:
         """Read the selected record while the ledger lock is held."""
+        if self.case_request_id is not None:
+            stored = self._explicit_case_record()
+            if stored is None:
+                raise ProviderError(
+                    "Request record was not found", code="request_not_found"
+                )
+            return stored
         if self._client_request_id is None:
             stored = self._find_matching()
             if stored is None:
@@ -329,12 +351,17 @@ class RequestOperationStore:
         Called under the ledger lock by load/load_or_create. A successful Judge
         is immutable for its Run, Backend and credential: changed request bytes
         fail before POST; identical bytes select the original operation for GET.
-        Case generation and failed-request behavior remain unchanged. No request
+        Explicit Case handles retain every state through exact-ID selection;
+        legacy Case generation and failed-request behavior remain unchanged. No request
         body or credentials are persisted, only their existing canonical hashes.
         """
+        if self.case_request_id is not None:
+            return self._explicit_case_record()
         matches = []
         for path in record_paths(self.directory):
             stored = read_record(path)
+            if stored.case_request_identity is not None:
+                continue
             if not (
                 stored.public.request_type == self.request_type
                 and stored.backend_sha256 == self.backend_sha256
@@ -357,6 +384,35 @@ class RequestOperationStore:
                 code="operation_state_conflict",
             )
         return matches[0] if matches else None
+
+    def _explicit_case_record(self) -> StoredRequest | None:
+        """Select only the exact caller handle under the existing ledger lock.
+
+        Return any lifecycle state without allocating a new payment identity.
+        A different owner, payload or legacy record raises safe conflict before
+        network or state mutation. Filesystem reads use the same bounded safe
+        descriptor checks as ordinary recovery; absent records permit creation.
+        """
+        try:
+            stored = read_record(self.directory / f"{self.case_request_id}.json")
+        except ProviderError as error:
+            if error.code == "request_not_found":
+                return None
+            raise
+        if (
+            stored.case_request_identity != "explicit"
+            or stored.public.client_request_id != self.case_request_id
+            or stored.public.request_type != "case_generation"
+            or stored.backend_sha256 != self.backend_sha256
+            or stored.api_key_sha256 != self.api_key_sha256
+            or stored.request_sha256 != self.request_sha256
+            or stored.case_validation != self.case_validation
+        ):
+            raise ProviderError(
+                "Case request identity is already bound to different request context",
+                code="operation_state_conflict",
+            )
+        return stored
 
     def _retained_judgment(self, stored: StoredRequest) -> bool:
         """Identify a successful owner-bound Judge for this exact non-null Run.

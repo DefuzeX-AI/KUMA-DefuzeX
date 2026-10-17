@@ -27,6 +27,7 @@ from ..evidence.runtime_contract import (
 from ..evidence.runtime_files import FILE_OBSERVATION_CAPABILITY, summary_for_projection
 from ..repository.privacy import enforce_sensitive_policy, scan_sensitive_json
 from ..transport.backend import UploadPart
+from ..transport.judge_limits import validate_judge_input_limit
 from ._evidence_projection import project_run_evidence
 from ._official_wire import history_evidence, plain_json
 from .base import JudgeContext
@@ -92,6 +93,8 @@ class JudgeUploadConfig:
             correlation requires support and never silently downgrades.
         supported_assessment_contracts: Explicit detailed Judge result contracts.
             Missing/empty permits legacy auto fallback; explicit requests fail.
+        judge_input_limit: Optional final system plus serialized user-message
+            UTF-8 budget. Informational, not an upload ceiling or fit guarantee.
     """
 
     max_files: int
@@ -104,6 +107,7 @@ class JudgeUploadConfig:
     trace_content_schemas: tuple[str, ...] = ()
     supported_run_context_schemas: tuple[str, ...] = ()
     supported_assessment_contracts: tuple[str, ...] = ()
+    judge_input_limit: Mapping[str, Any] | None = None
 
 
 def judge_upload_config(response: Mapping[str, Any]) -> JudgeUploadConfig:
@@ -188,6 +192,11 @@ def judge_upload_config(response: Mapping[str, Any]) -> JudgeUploadConfig:
         trace_content_schemas=tuple(trace_schemas),
         supported_run_context_schemas=tuple(context_schemas),
         supported_assessment_contracts=tuple(assessment_schemas),
+        judge_input_limit=(
+            validate_judge_input_limit(response["judge_input_limit"])
+            if "judge_input_limit" in response
+            else None
+        ),
     )
 
 

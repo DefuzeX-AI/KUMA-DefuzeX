@@ -51,7 +51,11 @@ from .run import Run
 from .runtime import RuntimeSession
 from .storage import resolve_storage_path
 from .timeline import elapsed_ms
-from .transport.backend import DEFAULT_BASE_URL, BackendClient
+from .transport.backend import (
+    DEFAULT_BASE_URL,
+    BackendClient,
+    validate_client_request_id,
+)
 from .transport.catalog_cache import read_strategy_catalog
 
 
@@ -400,6 +404,7 @@ def _adapted_providers(
             operation_wait_timeout=config.operation_wait_timeout,
             max_steps=config.max_steps,
             difficulty=config.difficulty,
+            high_difficulty=config.high_difficulty,
             state_root=storage_root,
         )
         if entitlements is not None:
@@ -544,6 +549,24 @@ def _prepare_case_source(
     )
 
 
+def _validate_case_request_id(
+    value: str | None, case_provider: Any, case_path: Any
+) -> None:
+    """Reject malformed/unsupported explicit generation handles before any I/O.
+
+    create_run invokes this after pure option checks, before profile parsing,
+    repository access or provider discovery. None preserves legacy selection;
+    explicit IDs require default official generation, never custom/reloaded Cases.
+    Raises ValidationError for syntax or ConfigurationError for unsupported use.
+    """
+    if value is not None:
+        validate_client_request_id(value)
+        if case_provider is not None or case_path is not None:
+            raise ConfigurationError(
+                "case_request_id requires default official Case generation"
+            )
+
+
 def create_run(
     *,
     repo_path: str | os.PathLike[str] = ".",
@@ -555,6 +578,7 @@ def create_run(
     strategy: str = "auto",
     max_steps: int | None = None,
     difficulty: str = "D1",
+    high_difficulty: bool = False,
     judge: bool = True,
     on_failure: str = "continue",
     allow_local: bool = False,
@@ -569,10 +593,16 @@ def create_run(
     trace_evidence: TraceEvidenceCapture | None = None,
     scan_strategy_group: bool = False,
     external_run_id: str | None = None,
+    case_request_id: str | None = None,
 ) -> Run:
     """Create one complete Case and return its synchronous strict-handshake Run.
 
     Args:
+        case_request_id: Optional kreq_ plus 32 lowercase hex digits, persisted
+            by the caller per logical official generation before this call.
+            Reuse the same ID and inputs on retry, including after success;
+            distinct IDs intentionally request independent generations. None
+            retains legacy recovery. Unsupported with custom or reloaded Cases.
         repo_path: Repository root visible to the Agent. Defaults to the current
             directory. Symlink roots, filesystem roots, and missing directories
             are rejected before runtime creation.
@@ -639,6 +669,12 @@ def create_run(
             stronger recognition, recovery and verification. Necessary inputs
             and solvability must be preserved, with max_steps unchanged as an
             upper bound. No measured failure rate is promised.
+        high_difficulty: Strict boolean, default ``False``. ``True`` requests
+            the service-managed alternate official Case generator, independently
+            of D0/D1/D2; it does not change max_steps or Judge. False is omitted
+            from the request and recovery identity. Invalid types fail before
+            I/O. Custom providers and loaded Cases are unchanged. Service errors
+            propagate without retrying with the default generator.
         judge: Whether to request a final Judgment after the last Submission.
         on_failure: ``"continue"`` advances after a non-completed Submission;
             ``"stop"`` closes the Run immediately.
@@ -715,6 +751,7 @@ def create_run(
             "strategy": strategy,
             "max_steps": max_steps,
             "difficulty": difficulty,
+            "high_difficulty": high_difficulty,
             "judge": judge,
             "on_failure": on_failure,
             "allow_local": allow_local,
@@ -731,6 +768,7 @@ def create_run(
     if config.upload_diff and not config.track_files:
         raise ConfigurationError("upload_diff requires track_files=True")
     external_run_id = external_identifier(external_run_id)
+    _validate_case_request_id(case_request_id, case_provider, case_path)
     storage_root = (
         None
         if storage_path is None
@@ -787,6 +825,7 @@ def create_run(
             {} if loaded is not None else collect_repo_meta(resolved_repo).to_dict()
         )
         context = CaseGenerationContext(
+            case_request_id=case_request_id,
             repo_path=resolved_repo,
             repo_meta=repo_meta,
             agent_profile=None if agent_profile is None else agent_profile.content,

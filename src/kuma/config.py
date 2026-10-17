@@ -43,6 +43,25 @@ def validate_difficulty(value: str) -> str:
     return value
 
 
+def validate_high_difficulty(value: bool) -> bool:
+    """Validate the official Case generator opt-in before external effects.
+
+    Args:
+        value: Strict boolean. False retains the default generator; True requests
+            the service-managed alternate independently of D0/D1/D2.
+
+    Returns:
+        The unchanged boolean for Run configuration and public wire projection.
+
+    Raises:
+        ConfigurationError: For non-booleans, without echoing the supplied value.
+            Direct providers and create_run share this pre-I/O guard.
+    """
+    if type(value) is not bool:
+        raise ConfigurationError("high_difficulty must be a boolean")
+    return value
+
+
 def _validate_strategy_scan(enabled: bool) -> None:
     """Reject the disabled strategy matcher before any input or network I/O.
 
@@ -136,6 +155,9 @@ class CreateRunConfig:
             stronger recognition, recovery and verification. Necessary inputs
             and solvability must be preserved. max_steps remains an upper bound,
             and no measured failure rate is promised.
+        high_difficulty: Strict boolean, default False. True requests the
+            service-managed alternate Case generator without changing difficulty,
+            max_steps or Judge. False is omitted from official requests.
         judge: Whether the Run automatically requests a final report after its
             last submission.
         on_failure: ``"continue"`` delivers the next input after a failed,
@@ -181,6 +203,7 @@ class CreateRunConfig:
     max_retries: int = 2
     scan_strategy_group: bool = False
     difficulty: str = "D1"
+    high_difficulty: bool = False
 
     def __post_init__(self) -> None:
         """Reject invalid Run options before filesystem or network effects.
@@ -202,6 +225,7 @@ class CreateRunConfig:
             create runtime directories, or perform network requests.
         """
         validate_difficulty(self.difficulty)
+        validate_high_difficulty(self.high_difficulty)
         if not isinstance(self.strategy, str) or not self.strategy.strip():
             raise ConfigurationError("strategy must be a non-empty string")
         if self.max_steps is not None and (

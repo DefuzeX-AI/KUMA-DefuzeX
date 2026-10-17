@@ -67,6 +67,14 @@ fail with `ConfigurationError(config_invalid)` before I/O. No Case response fiel
 or local custom-provider contract is added; injection is service-owned. The
 synchronous Python API starts/polls the existing v2 asynchronous operation.
 
+Official Case requests also accept optional `high_difficulty: bool`. The SDK
+omits False (including explicit False), preserving historical canonical request
+bytes, hashes and replay identity. True is serialized as JSON `true` and therefore
+changes that identity. It selects the service-managed alternate Case generator
+independently of D0/D1/D2, without changing steps, Judge or the response schema.
+The SDK rejects non-booleans before I/O and never retries with False after an
+alternate-generator failure. Model configuration and credentials stay server-side.
+
 `GET /sdk/entitlements/`
 
 Official Case `max_steps` is an upper bound, not an exact count. Without a pending

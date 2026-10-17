@@ -135,6 +135,21 @@ def record_paths(directory: Path) -> tuple[Path, ...]:
     return paths
 
 
+def require_record_capacity(directory: Path) -> None:
+    """Permit one new record only while the caller holds the ledger lock.
+
+    RequestOperationStore calls this after no matching record was found, before
+    key generation or writes. Existing recovery never invokes this scan. At the
+    exact ceiling raise client_resource_limit without modifying records; the
+    enclosing process/OS lock prevents concurrent over-admission.
+    """
+    if len(record_paths(directory)) >= MAX_RECORDS:
+        raise LimitExceededError(
+            "The request ledger has reached its local record limit",
+            code="client_resource_limit",
+        )
+
+
 def atomic_write(
     root: Path, destination: Path, encoded: bytes, *, message: str
 ) -> None:

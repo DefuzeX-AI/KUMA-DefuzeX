@@ -29,6 +29,7 @@ from .transport.backend import (
     _validate_timeout,
 )
 from .transport.catalog_cache import read_strategy_catalog
+from .transport.judge_limits import validate_judge_input_limit
 
 Transport = WireTransport
 
@@ -356,17 +357,30 @@ class KumaClient:
 
         Returns:
             Backend configuration mapping used to bound official Evidence upload.
+            Optional judge_input_limit describes final system plus serialized
+            user-message UTF-8 bytes, not upload bytes or tokens. Hidden service
+            overhead means it cannot guarantee a particular upload fits.
 
         Raises:
             KumaAuthenticationError: No usable key or rejected authentication.
             KumaPermissionError: Key cannot read Judge configuration.
             KumaRateLimitError: Account quota prevents the read.
 
+            ProviderError: A present judge_input_limit is malformed.
+
         Side Effects:
             Performs one public Backend GET request.
         """
 
-        return self._read("/sdk/judge/config/")
+        response = self._read("/sdk/judge/config/")
+        if "judge_input_limit" in response:
+            return {
+                **response,
+                "judge_input_limit": validate_judge_input_limit(
+                    response["judge_input_limit"]
+                ),
+            }
+        return response
 
 
 __all__ = ["DEFAULT_BASE_URL", "KumaClient", "Transport"]

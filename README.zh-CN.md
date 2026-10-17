@@ -26,6 +26,8 @@ Judgment。KUMA 不负责运行被测 Agent，也不公开私有评测逻辑。
 
 ## 安装
 
+本地 0.3.8 候选新增显式 `high_difficulty`、`case_request_id` 请求恢复、隐私误报修复和可选 Judge 输入预算查询。详见[发布说明](docs/releases.md)；候选源码不代表包已发布或服务端已上线。
+
 需要 Python 3.10 或更高版本：
 
 ```bash

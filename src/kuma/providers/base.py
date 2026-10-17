@@ -10,6 +10,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from ..contracts import Case, HistoryItem
 from ..errors import ConfigurationError, KumaError, ProviderError
+from ..transport.backend import validate_client_request_id
 
 
 def _immutable_mapping(value: Mapping[str, Any] | None) -> Mapping[str, Any]:
@@ -64,6 +65,10 @@ class CaseGenerationContext:
             object, or ``None`` for custom Provider behavior. This coordinate is
             authoritative for the testing capability, domain, and method. Agent
             Profile prose must not override it.
+        case_request_id: Optional caller-persisted kreq_ plus 32 lowercase hex
+            digits identifying one logical official generation. Reuse on retry;
+            a distinct value intentionally creates a separate paid identity.
+            None preserves legacy payload-based recovery. Never sent in the body.
 
     Security/Privacy:
         This context never contains a private rubric, hidden answer, provider
@@ -82,6 +87,7 @@ class CaseGenerationContext:
     agent_profile_sections: Mapping[str, str] = field(default_factory=dict)
     tool_capabilities: Mapping[str, Any] | None = None
     strategy_group_selection: Mapping[str, Any] | None = None
+    case_request_id: str | None = None
 
     def __post_init__(self) -> None:
         """Resolve and freeze provider inputs before the provider is invoked.
@@ -101,6 +107,8 @@ class CaseGenerationContext:
             Resolves the path lexically/filesystem-wise through ``Path.resolve``;
             performs no network request and writes no files.
         """
+        if self.case_request_id is not None:
+            validate_client_request_id(self.case_request_id)
         path_failed = False
         try:
             resolved_repo = self.repo_path.resolve()

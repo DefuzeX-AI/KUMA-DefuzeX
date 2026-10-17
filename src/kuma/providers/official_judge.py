@@ -446,8 +446,10 @@ class OfficialJudgeProvider:
             Original safe content, or a detached sanitized projection and True
             only after the existing redaction capability is explicitly advertised.
         Raises:
-            SensitiveDataError: Residual secrets or unsupported loss negotiation;
-                Run keeps the input delivered. allow_sensitive never bypasses this.
+            SensitiveDataError: Secrets remain after redaction; allow_sensitive
+                never bypasses this check.
+            ProviderError: Redaction was required but its capability was not
+                negotiated. Run keeps the input delivered without committing.
             KumaError: Discovery fails before commit; no operation is started.
         Side Effects:
             Redacted content without cached discovery triggers the existing
@@ -465,12 +467,9 @@ class OfficialJudgeProvider:
                 RUNTIME_EVIDENCE_CAPABILITIES_SCHEMA not in config.evidence_types
                 or "redaction" not in config.runtime_evidence_capabilities
             ):
-                enforce_sensitive_policy(
-                    scan_sensitive_json(output, location="output"),
-                    allow_sensitive=False,
-                )
                 raise ProviderError(
-                    "Agent output redaction is unsupported",
+                    "Agent output requires negotiated runtime Evidence redaction; "
+                    "the Judge configuration does not advertise support.",
                     code="runtime_evidence_unsupported",
                 )
         return safe, changed

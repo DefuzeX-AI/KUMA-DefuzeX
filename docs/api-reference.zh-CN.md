@@ -108,6 +108,7 @@ run = create_run(
 | `strategy` | `str` | `"auto"` | `auto` uses the catalog's exact default unless a Profile group is explicit. `safety-baseline` uniformly samples one of seven validated Basic Safety groups for one Case; an explicit Profile group wins. Custom providers receive the value unchanged. Other strategy ID validation is unchanged. See [selection and recovery boundaries](strategy-groups.md#sample-one-basic-safety-group). |
 | `max_steps` | `int \| None` | `None` | Limits how many test steps this Run may contain. For example, `3` allows one, two, or three steps—it does not force exactly three. `None` uses the official service limit; custom Case Providers require an explicit positive value. An explicit official value above the advertised limit fails before Case generation, and KUMA never truncates a returned Case. |
 | `difficulty` | `str` | `"D1"` | Official generation challenge level: `"D0"` injects zero problems; `"D1"` injects one obvious, low-intensity problem; `"D2"` injects two subtler or composed problems requiring stronger recognition, recovery and verification. `max_steps` remains an upper bound, not an extra-step allowance. Necessary inputs and solvability must be preserved. No measured failure rate or Judge-severity change is promised. Other values including `None` raise `ConfigurationError(code="config_invalid")` before I/O. Default/explicit D1 omit the wire field; D0/D2 are included in request identity. Custom providers and loaded Cases are unchanged. |
+| `high_difficulty` | `bool` | `False` | Explicit official high-challenge generation intent requiring service support and permission. False preserves ordinary difficulty behavior and wire omission; True participates in request identity without changing Judge scoring. Custom and loaded Cases do not generate or receive this flag. |
 | `judge` | `bool` | `True` | Controls whether KUMA evaluates the Run after the last Input. Keep `True` to receive a `TestReport`; use `False` when you only want to execute and record the Case, in which case `run.report` remains `None`. |
 | `on_failure` | `str` | `"continue"` | Decides what happens after you submit a step as `failed`, `timeout`, or `aborted`. `"continue"` delivers the next Input; `"stop"` ends the Run immediately. |
 | `allow_local` | `bool` | `False` | Allows the Run to start outside Docker for trusted local development. It only bypasses the Docker execution constraint: it does not sandbox the Agent, expand file access, or weaken validation and privacy checks. |
@@ -122,6 +123,7 @@ run = create_run(
 | `trace_evidence` | `TraceEvidenceCapture \| None` | `None` | Supplies a specific in-process OTel capture and its limits for this Run. Pass the object returned by `configure_trace_evidence()` when you need explicit control. With `None`, KUMA safely reuses a compatible global Provider when available; otherwise the Run continues without Trace Evidence and records a warning. |
 | `scan_strategy_group` | `bool` | `False` | Disabled automatic matching flag: keep `False`. `True` raises `ConfigurationError(config_invalid)` before file or network I/O, including with an explicit group or custom provider. Privacy scanning and Evidence capability validation remain enabled. |
 | `external_run_id` | `str \| None` | `None` | Optional non-secret caller execution label: 1–128 ASCII characters, starting with a letter or digit, then letters, digits, dot, underscore, colon or hyphen. Enables negotiated Official Judge correlation; unsupported services reject before Judge POST instead of dropping it. Omission preserves existing wire unless a Submission supplies an invocation label. |
+| `case_request_id` | `str \| None` | `None` | Persist one `kreq_` plus 32 lowercase hex digits per logical official generation. Reuse on recovery; distinct IDs intentionally create independent requests. None preserves legacy matching. Unsupported with custom/reloaded Cases. Binding conflicts prevent POST; read-only discovery can precede payload comparison. Older readers may reject explicit ledger records. |
 
 <!-- api-parameters:create_run:end -->
 
@@ -151,6 +153,21 @@ service failures raise a concrete `KumaError` subclass with stable `code`,
 metadata, may create `.kuma/`, and may call only the public Backend for official
 Providers. It never contacts MCP, a model, or a database directly. Custom
 Providers run in the caller's process with that process's permissions.
+
+### Official generator selection
+
+`create_run(..., high_difficulty=False)` accepts only a boolean. The default or
+explicit `False` retains the default service generator and is omitted from the
+wire/hash. `True` requests the service-managed alternate generator and participates
+in request/recovery identity. It is independent of D0/D1/D2 and does not change
+`max_steps`, Judge, custom providers or loaded Cases. Non-booleans fail before I/O
+with `ConfigurationError(code="config_invalid")`. Service failures never cause
+fallback to the default generator.
+
+Direct callers use `OfficialCaseProvider(client, high_difficulty=True)` and
+then `.generate_case(context)`. Retry with the same flag to recover the original
+operation; changing it creates a different request identity. The SDK accepts no
+model credentials or provider configuration through this option.
 
 ## Agent Profile parsing
 

@@ -68,6 +68,7 @@ _PUBLIC_ERROR_DETAIL_CODES = frozenset(
         "strategy_capability_mismatch",
         "model_invalid_response",
         "model_invalid_result",
+        "payload_too_large",
     }
 )
 WireTransport = Callable[
@@ -608,16 +609,23 @@ def _public_error_details(code: str, envelope: Mapping[str, Any]) -> Mapping[str
     Returns:
         A fresh mapping: Case integer limit, unique D0-D4 difficulty list in
         server order, canonical ordered missing Evidence capabilities, static
-        input-field constraints, or one closed generated-result reason.
+        input-field constraints, a closed final Judge message budget, or one
+        closed generated-result reason. The budget is informational, not a
+        client-side fit guarantee or permission to truncate Evidence.
 
     Raises:
         ProviderError: Present supported-code details have extra keys, invalid
             types, duplicates, unknown values, or invalid bounds/order.
 
     Security/Privacy:
-        No I/O or arbitrary strings survive. Async parsing restricts allowed
+        No I/O or arbitrary strings survive. HTTP and async failed operations
+        share the same optional final-message budget. Async parsing restricts allowed
         codes before calling this shared validator; pending state is not modified.
     """
+    if code == "payload_too_large" and "details" in envelope:
+        from .judge_limits import validate_judge_input_limit
+
+        return validate_judge_input_limit(envelope["details"])
     if code == "case_step_limit_exceeded":
         return _case_step_limit_details(code, envelope)
     if code not in _PUBLIC_ERROR_DETAIL_CODES or "details" not in envelope:
@@ -935,6 +943,12 @@ def _public_error_message(
         leaking through an otherwise valid error object.
     """
 
+    if code == "payload_too_large" and details:
+        return (
+            "The final Judge message exceeds the service input limit of "
+            f"{details['max_input_bytes']} UTF-8 bytes. Reduce the submitted "
+            "Evidence; private service overhead also counts toward this limit."
+        )
     if code == "case_step_limit_exceeded" and details:
         return (
             "max_steps exceeds the Case service limit; maximum allowed is "

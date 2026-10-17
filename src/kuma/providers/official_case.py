@@ -8,7 +8,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from ..config import DEFAULT_CASE_MAX_STEPS, validate_difficulty
+from ..config import (
+    DEFAULT_CASE_MAX_STEPS,
+    validate_difficulty,
+    validate_high_difficulty,
+)
 from ..errors import (
     ConfigurationError,
     LimitExceededError,
@@ -516,6 +520,7 @@ def _safe_case_payload(
     evidence_capabilities: tuple[str, ...],
     max_steps: int | None,
     difficulty: str = "D1",
+    high_difficulty: bool = False,
 ) -> tuple[dict[str, Any], str]:
     """Build and privacy-scan the exact public Case-generation request payload.
 
@@ -536,14 +541,17 @@ def _safe_case_payload(
         difficulty: D0/D1/D2 injection level; D1 (default) is omitted even when
             explicit, preserving existing canonical bytes and recovery identity.
             D0 and D2 are transmitted unchanged. Core owns actual injection.
+        high_difficulty: Strict boolean selecting the service-managed alternate
+            generator when True. False is omitted to preserve historical wire
+            bytes and recovery identity; True participates in both.
 
     Returns:
         Detached public JSON payload and the canonical repository fingerprint
         used later to validate the returned Case.
 
     Raises:
-        ConfigurationError: If difficulty is invalid or official generation
-            cannot represent the Input.
+        ConfigurationError: If difficulty/high_difficulty is invalid or official
+            generation cannot represent the Input.
         ValidationError: If required behavior sections are malformed, or with
             ``tool_capabilities_invalid`` if the declared document is invalid.
         LimitExceededError: If public text or metadata exceeds a size bound.
@@ -559,6 +567,7 @@ def _safe_case_payload(
         None. This helper does not perform entitlement or Case network requests.
     """
     difficulty = validate_difficulty(difficulty)
+    high_difficulty = validate_high_difficulty(high_difficulty)
     if context.input_type != "text":
         raise ConfigurationError(
             "The official Case service currently supports text Inputs only"
@@ -590,6 +599,8 @@ def _safe_case_payload(
         payload["max_steps"] = max_steps
     if difficulty != "D1":
         payload["difficulty"] = difficulty
+    if high_difficulty:
+        payload["high_difficulty"] = True
     if evidence_capabilities:
         payload["evidence_capabilities"] = list(evidence_capabilities)
     return payload, repo_meta["repo_fingerprint"]
@@ -608,10 +619,17 @@ def _case_operation_store(
     state_root overrides only the persistence parent; context.repo_path and its
     fingerprint remain the generation source. create_run validates that parent
     before provider discovery. Direct providers must authorize their own root.
+    Explicit context.case_request_id requires a durable ledger and selects only
+    that tagged identity, including success/failure; None uses legacy matching.
     """
     if not isinstance(context, CaseGenerationContext):
         raise ProviderError("Case context is invalid", code="request_state_invalid")
     if not context.repo_path.is_dir():
+        if context.case_request_id is not None:
+            raise ProviderError(
+                "Explicit Case request identity requires a repository ledger",
+                code="request_state_invalid",
+            )
         return PendingOperationStore(
             None,
             operation_type="case_generation",
@@ -623,6 +641,7 @@ def _case_operation_store(
         request_sha256=canonical_request_sha256(payload),
         base_url=base_url,
         api_key_sha256=api_key_sha256,
+        case_request_id=context.case_request_id,
         case_validation={
             "repo_fingerprint": payload["repo_meta"]["repo_fingerprint"],
             "max_steps": context.max_steps,
@@ -756,6 +775,7 @@ class OfficialCaseProvider:
         operation_wait_timeout: float = 600.0,
         max_steps: int | None = None,
         difficulty: str = "D1",
+        high_difficulty: bool = False,
         state_root: Path | None = None,
     ) -> None:
         """Configure public Case transport, privacy policy, and wait deadline.
@@ -781,6 +801,11 @@ class OfficialCaseProvider:
                 requiring stronger recognition, recovery and verification.
                 Necessary inputs and solvability must be preserved. max_steps
                 remains an upper bound, with no measured failure-rate promise.
+            high_difficulty: Strict boolean, default False. True requests the
+                service-managed alternate Case generator, not a D level or extra
+                steps. False is omitted; True changes request/recovery identity.
+                No model credentials are accepted. Errors propagate without
+                falling back to the default generator; Judge is unchanged.
             state_root: Optional existing directory for local recovery records;
                 None uses context.repo_path. This never enters the wire payload
                 or request hash. create_run supplies its validated storage root.
@@ -795,8 +820,10 @@ class OfficialCaseProvider:
 
         Raises:
             ConfigurationError: If ``max_steps`` is not a positive integer or
-                ``None``, or difficulty is not D0/D1/D2. No network occurs.
+                ``None``, difficulty is not D0/D1/D2, or high_difficulty is not
+                a boolean. No network occurs.
         """
+        self.high_difficulty = validate_high_difficulty(high_difficulty)
         self.difficulty = validate_difficulty(difficulty)
         self.state_root = state_root
         if max_steps is not None and (
@@ -929,6 +956,7 @@ class OfficialCaseProvider:
             evidence_capabilities=self._evidence_capabilities,
             max_steps=wire_max_steps,
             difficulty=self.difficulty,
+            high_difficulty=self.high_difficulty,
         )
         return self._run_operation(
             context,

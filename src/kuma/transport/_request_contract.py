@@ -122,6 +122,8 @@ class StoredRequest:
         error_retryable: Retry flag paired with a terminal error code.
         assessment_contract: Optional negotiated Judge result schema, retained
             across process restart without storing Evidence or assessment bodies.
+        case_request_identity: Optional exact 'explicit' marker isolating caller
+            chosen Case handles from legacy payload-selected records.
     """
 
     public: RequestRecord
@@ -133,6 +135,7 @@ class StoredRequest:
     error_code: str | None = None
     error_retryable: bool | None = None
     assessment_contract: str | None = None
+    case_request_identity: str | None = None
 
 
 def validate_recovery_response(
@@ -171,6 +174,11 @@ def stored_payload(stored: StoredRequest) -> dict[str, Any]:
         "case_validation": stored.case_validation,
         "error_code": stored.error_code,
         "error_retryable": stored.error_retryable,
+        **(
+            {}
+            if stored.case_request_identity is None
+            else {"case_request_identity": stored.case_request_identity}
+        ),
         **(
             {}
             if stored.assessment_contract is None
@@ -250,6 +258,8 @@ def validate_stored(raw: Any) -> StoredRequest:
     }
     if isinstance(raw, Mapping) and "assessment_contract" in raw:
         fields.add("assessment_contract")
+    if isinstance(raw, Mapping) and "case_request_identity" in raw:
+        fields.add("case_request_identity")
     if not isinstance(raw, Mapping) or set(raw) != fields:
         raise ProviderError("Request record is invalid", code="request_state_invalid")
     try:
@@ -266,7 +276,14 @@ def validate_stored(raw: Any) -> StoredRequest:
     error_code = raw["error_code"]
     error_retryable = raw["error_retryable"]
     valid = (
-        raw["schema_version"] == REQUEST_RECORD_SCHEMA
+        (
+            "case_request_identity" not in raw
+            or (
+                raw["case_request_identity"] == "explicit"
+                and request_type == "case_generation"
+            )
+        )
+        and raw["schema_version"] == REQUEST_RECORD_SCHEMA
         and isinstance(request_type, str)
         and request_type in REQUEST_TYPES
         and isinstance(status, str)
@@ -315,6 +332,7 @@ def validate_stored(raw: Any) -> StoredRequest:
         error_code=error_code,
         error_retryable=error_retryable,
         assessment_contract=raw.get("assessment_contract"),
+        case_request_identity=raw.get("case_request_identity"),
     )
 
 

@@ -108,6 +108,11 @@ def store_for_existing(
         case_id=stored.public.case_id,
         case_validation=stored.case_validation,
         assessment_contract=stored.assessment_contract,
+        case_request_id=(
+            stored.public.client_request_id
+            if stored.case_request_identity == "explicit"
+            else None
+        ),
     )
     store._client_request_id = stored.public.client_request_id
     return store
