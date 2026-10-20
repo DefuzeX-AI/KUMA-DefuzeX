@@ -42,7 +42,9 @@ class ReleaseChecks(unittest.TestCase):
             value = "**Payment authorization:** " + sentence
             for wrapped in (value, {"answer": value}):
                 self.assertFalse(scan_sensitive_json(wrapped, location="output"))
-                self.assertEqual(privacy.redact_sensitive_json(wrapped), (wrapped, False))
+                self.assertEqual(
+                    privacy.redact_sensitive_json(wrapped), (wrapped, False)
+                )
         for value in (
             "Authorization: verify the payment method.",
             "**Payment authorization:** bearer a secret.",
