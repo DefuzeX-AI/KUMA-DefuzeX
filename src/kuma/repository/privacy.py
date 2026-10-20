@@ -318,6 +318,10 @@ def _contextual_prose(match: re.Match[str]) -> bool:
     qualify. Password slots and quoted/equal assignments stay strict. Dotted
     diagnostic identifiers may end in password without being credential keys.
     Explicit authorization state words are not HTTP authentication schemes.
+    Short authorization instructions require an imperative verification verb,
+    an article-led object and sentence
+    punctuation as well as the existing contextual heading; bare headers never
+    gain this exemption. Longer prose retains the existing five-word rule.
     Work is limited to the current <=4096-character line; no entropy inference.
     """
     label = match["label"].split(":", 1)[0].casefold()
@@ -339,7 +343,16 @@ def _contextual_prose(match: re.Match[str]) -> bool:
         label in {"secret", "token", "cookie", "auth", "authorization"} or "." in label
     )
     if label in {"auth", "authorization"} and (
-        not tail[:1].islower() or len(re.findall(r"[A-Za-z]+", tail)) < 5
+        not tail[:1].islower()
+        or (
+            len(re.findall(r"[A-Za-z]+", tail)) < 5
+            and re.fullmatch(
+                r"(?:verify|check|confirm|validate|request|obtain|require) "
+                r"(?:a|an|the) [a-z]+(?: [a-z]+)?\.",
+                tail,
+            )
+            is None
+        )
     ):
         return False
     return (

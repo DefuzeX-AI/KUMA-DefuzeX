@@ -37,6 +37,36 @@ def store(root, handle=HANDLE, **changes):
 
 
 class ReleaseChecks(unittest.TestCase):
+    def test_short_authorization_instruction_boundary(self):
+        for sentence in ("verify the payment method.", "check the account."):
+            value = "**Payment authorization:** " + sentence
+            for wrapped in (value, {"answer": value}):
+                self.assertFalse(scan_sensitive_json(wrapped, location="output"))
+                self.assertEqual(privacy.redact_sensitive_json(wrapped), (wrapped, False))
+        for value in (
+            "Authorization: verify the payment method.",
+            "**Payment authorization:** bearer a secret.",
+            "**Payment authorization:** basic the password.",
+            "**Payment authorization:** custom a credential.",
+            {"authorization": "check the account."},
+            "**Payment authorization:** check the account.\npassword=x",
+        ):
+            self.assertTrue(scan_sensitive_json(value, location="output"))
+
+    def test_conditional_reference_boundary(self):
+        header = "if self.trust_env and not auth and not self.auth:\n    "
+        safe = header + "auth = get_netrc_auth(request.url)"
+        for wrapped in (safe, {"answer": safe}):
+            self.assertFalse(scan_sensitive_json(wrapped, location="output"))
+            self.assertEqual(privacy.redact_sensitive_json(wrapped), (wrapped, False))
+        for value in (
+            header + 'auth = "short-secret"',
+            header + "auth = get_netrc_auth(request.url); password=x",
+            "if (self.auth:\n    auth = get_netrc_auth(request.url)",
+            "EXFIL_SECRET=1",
+        ):
+            self.assertTrue(scan_sensitive_json(value, location="output"))
+
     def test_multiline_privacy_context_and_index_cost(self):
         class LocalSlices(str):
             def __getitem__(self, key):

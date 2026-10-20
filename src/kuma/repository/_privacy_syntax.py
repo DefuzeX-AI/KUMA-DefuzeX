@@ -77,6 +77,7 @@ def source_value_spans(text: str) -> tuple[tuple[int, int], ...]:
     """
     spans = []
     offset = 0
+    previous = ""
     for raw in text.splitlines(keepends=True):
         line = raw.strip()
         leading = len(raw) - len(raw.lstrip())
@@ -93,8 +94,66 @@ def source_value_spans(text: str) -> tuple[tuple[int, int], ...]:
                             _span(line, value, offset + leading)
                             for value in _reference_values(node)
                         )
+                    spans.extend(
+                        _span(line, target, offset + leading)
+                        for target in _conditional_reference_targets(previous, tree)
+                    )
+        previous = line
         offset += len(raw)
     return tuple(spans)
+
+
+def _conditional_reference_targets(
+    previous: str, tree: ast.Module
+) -> tuple[ast.AST, ...]:
+    """Recognize a reference assignment immediately after a bounded if header.
+
+    The text credential matcher may consume a condition's trailing colon and
+    the following assignment target as its value. Exempt only that target when
+    the previous line is a name/attribute boolean condition and the sole current
+    assignment already has a safe reference RHS. Literal RHS, calls in the
+    condition, malformed or oversized source receive no exemption. This helper
+    never executes source; independent signatures still scan the full text.
+    """
+    if (
+        len(previous) > 4096
+        or not previous.startswith("if ")
+        or not previous.endswith(":")
+    ):
+        return ()
+    try:
+        header = ast.parse(previous + "\n pass")
+    except (SyntaxError, ValueError, RecursionError, UnicodeError):
+        return ()
+    # The caller supplies one stripped physical line. Successful parsing of its
+    # "if ...:" prefix plus the appended suite guarantees one ast.If statement.
+    condition = header.body[0]
+    nodes = list(ast.walk(condition.test))
+    if len(nodes) > 256 or any(
+        not isinstance(
+            node,
+            (
+                ast.Name,
+                ast.Attribute,
+                ast.BoolOp,
+                ast.UnaryOp,
+                ast.And,
+                ast.Or,
+                ast.Not,
+                ast.Load,
+            ),
+        )
+        for node in nodes
+    ):
+        return ()
+    if len(tree.body) != 1 or not isinstance(tree.body[0], ast.Assign):
+        return ()
+    assignment = tree.body[0]
+    if not _reference(assignment.value):
+        return ()
+    return tuple(
+        target for target in assignment.targets if isinstance(target, ast.Name)
+    )
 
 
 def _reference_values(node: ast.AST) -> tuple[ast.AST, ...]:
