@@ -220,6 +220,7 @@ class EvidenceCollector:
         log_tracker: LogTracker | None = None,
         run_id: str | None = None,
         case_id: str | None = None,
+        total_steps: int | None = None,
         trace_evidence: TraceEvidenceCapture | None = None,
     ) -> None:
         """Configure all Evidence sources for one Run.
@@ -243,6 +244,9 @@ class EvidenceCollector:
             log_tracker: Optional incremental log tracker for tests/embedding.
             run_id: Owning Run identifier required for Trace/runtime Evidence.
             case_id: Owning Case identifier required for Trace correlation.
+            total_steps: Total normalized Case inputs used to reserve a fair
+                Trace budget share for each step, or ``None`` for legacy
+                first-come budgeting.
             trace_evidence: Optional in-process OTel capture.
 
         Preconditions:
@@ -292,6 +296,7 @@ class EvidenceCollector:
             raise ConfigurationError("Evidence log root must match the repository root")
         self.run_id = run_id
         self.case_id = case_id
+        self.total_steps = total_steps
         self.trace_evidence = trace_evidence
         self._input_id: str | None = None
         self._baseline: Snapshot | None = None
@@ -328,7 +333,11 @@ class EvidenceCollector:
         if self.trace_evidence is not None:
             try:
                 self.trace_evidence.begin_step(
-                    self.run_id or "", self.case_id or "", input_id
+                    self.run_id or "",
+                    self.case_id or "",
+                    input_id,
+                    step_index=self._step_index,
+                    total_steps=self.total_steps,
                 )
             except Exception:
                 self.runtime_warnings.append("trace_begin_failed")
