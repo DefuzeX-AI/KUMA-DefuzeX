@@ -117,6 +117,34 @@ class EvidenceCapacityTests(unittest.TestCase):
         self.assertLessEqual(sum(encoded_sizes), 8 * _MIB)
         capture.finish_run("run", "case")
 
+    def test_run_managed_trace_budget_reserves_later_steps(self) -> None:
+        total_bytes = 50_000
+        capture = TraceEvidenceCapture(TraceEvidenceLimits(max_total_bytes=total_bytes))
+        retained_counts: list[int] = []
+        encoded_sizes: list[int] = []
+
+        for step in range(4):
+            input_id = f"step-{step + 1}"
+            capture.begin_step(
+                "run-fair",
+                "case-fair",
+                input_id,
+                step_index=step,
+                total_steps=4,
+            )
+            for index in range(200):
+                capture.export_span(_span(step, index))
+            prepared = capture.prepare_step("run-fair", "case-fair", input_id)
+            self.assertIsNotNone(prepared.evidence)
+            retained_counts.append(len(prepared.evidence["spans"]))
+            encoded_sizes.append(json_size(prepared.evidence))
+            prepared.commit()
+
+        self.assertLess(retained_counts[0], 200)
+        self.assertTrue(all(count > 0 for count in retained_counts))
+        self.assertLessEqual(sum(encoded_sizes), total_bytes)
+        capture.finish_run("run-fair", "case-fair")
+
     def test_agent_output_accepts_four_mib_and_rejects_one_byte_more(self) -> None:
         exact = "x" * (RUNTIME_AGENT_OUTPUT_MAX_BYTES - 2)
         oversized = exact + "x"
