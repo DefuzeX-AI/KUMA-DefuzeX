@@ -1,6 +1,8 @@
 # Issue #155: offline SDK-boundary investigation
 
-Status: investigation contribution, **not a fix or live reproduction**.
+Status: SDK regression coverage and investigation contribution.
+The hosted behavior remains unresolved; these checks are **not a service fix
+or live reproduction**.
 
 Public report: <https://github.com/DefuzeX-AI/KUMA-DefuzeX/issues/155>.
 SDK source checked: upstream commit `40c41457bad68220974590b1b6dfd636eb7ab115`
@@ -9,13 +11,22 @@ establish the behavior of the currently deployed Case generator or Judge.
 
 ## Run the checks
 
-Use an environment with this source checkout installed, then run:
+From a clean checkout of the contribution branch, install the development
+dependencies in an isolated environment:
 
 ```bash
-python tools/investigate_issue_155.py
+python -m venv .venv
+# Activate .venv using the instructions in CONTRIBUTING.md.
+python -m pip install -e ".[dev,otel]"
 ```
 
-Expected result: four checks pass. No account, real API key, hosted evaluation,
+Then run:
+
+```bash
+python tools/verify_empty_workspace_context.py
+```
+
+Expected result: seven checks pass. No account, real API key, hosted evaluation,
 model call, or network connection is used. The dummy credential is constructed
 in memory and never printed. The injected transport returns a synthetic catalog,
 Case operation and checksummed public Case; it performs no semantic generation.
@@ -40,6 +51,27 @@ Case operation and checksummed public Case; it performs no semantic generation.
    response and its `medium` issue severity. It does not decide whether that
    verdict is justified. The report's separate `high` classification cannot
    be attributed to a particular component without its original raw response.
+5. Multiline Chinese scenario/limitation statements survive parsing and request
+   serialization unchanged, exercising the same boundary with non-ASCII input.
+6. Oversized environment constraints fail with `behavior_spec_too_large` before
+   any generation POST. The check does not permit silently truncating or dropping
+   the declared constraints.
+7. Altering a returned prompt after computing its checksum still raises a
+   Provider error. Synthetic fixtures do not bypass Case integrity validation.
+
+## PR acceptance scope
+
+| Check | Acceptance evidence |
+| --- | --- |
+| Empty-workspace Profile reaches the request | Exact text and Group assertions against the captured real SDK request |
+| Client preserves Case steps and Judge findings | Injected public wire fixtures and exact delivery/normalization assertions |
+| Context limits and integrity stay enforced | Oversized context is rejected before POST; tampered Case is rejected |
+| Repeatable verification without credits | Seven offline checks run in the Linux Python matrix and Windows/macOS CI |
+| Hosted defect remains visible | No client-side rescoring, semantic heuristics or automatic Case regeneration is added |
+
+A passing run accepts this SDK regression contribution only. Closing #155
+requires separate evidence that the actual service generates feasible ordinary
+tasks and judges the reported missing-input behavior appropriately.
 
 ## Source observations
 

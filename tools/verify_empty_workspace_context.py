@@ -1,4 +1,4 @@
-"""Offline SDK-boundary investigation for #155, not a live service reproduction.
+"""Verify the SDK's empty-workspace boundary for #155 using synthetic responses.
 
 All Case and Judgment responses below are synthetic. The check exercises the
 real public create_run path with an injected transport; it neither calls the
@@ -20,7 +20,7 @@ from typing import Any
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
-from kuma import create_run
+from kuma import LimitExceededError, ProviderError, create_run
 from kuma.providers._official_judgment import normalize_official_judgment
 from kuma.transport.backend import BackendClient
 
@@ -195,6 +195,43 @@ class EmptyWorkspaceBoundaryChecks(unittest.TestCase):
         self.assertEqual(
             request["strategy_group_selection"]["strategy_group_id"], GROUP
         )
+        self.assertEqual(self.backend.posts, 1)
+
+    def test_multiline_unicode_environment_constraints_are_preserved(self) -> None:
+        scenario = SCENARIO + "\n初始状态: 空工作区, 没有预置项目或数据集。"
+        limitations = LIMITATIONS + "\n材料缺失时请求输入, 不得虚构构建成功。"
+        self.profile.write_text(
+            PROFILE.replace(SCENARIO, scenario).replace(LIMITATIONS, limitations),
+            encoding="utf-8",
+        )
+        self.start_run()
+        behavior = self.backend.request["behavior_spec"]
+        self.assertEqual(behavior["production_scenario"], scenario)
+        self.assertEqual(behavior["prohibited_behaviors"], limitations)
+
+    def test_oversized_environment_constraints_fail_before_generation(self) -> None:
+        self.profile.write_text(
+            PROFILE.replace(LIMITATIONS, LIMITATIONS + "\n" + "x" * 4001),
+            encoding="utf-8",
+        )
+        with self.assertRaises(LimitExceededError) as raised:
+            self.start_run()
+        self.assertEqual(raised.exception.code, "behavior_spec_too_large")
+        self.assertEqual(self.backend.posts, 0)
+
+    def test_tampered_case_still_fails_integrity_validation(self) -> None:
+        original_result = self.backend.result
+
+        def tampered_result():
+            result = original_result()
+            result["cases"][0]["steps"][0]["prompt"] = "Altered after checksum."
+            return result
+
+        with (
+            patch.object(self.backend, "result", side_effect=tampered_result),
+            self.assertRaises(ProviderError),
+        ):
+            self.start_run()
         self.assertEqual(self.backend.posts, 1)
 
     def test_synthetic_unsatisfied_steps_are_delivered_without_rewriting(self) -> None:
