@@ -47,10 +47,12 @@ from .error_details import (
 from .http import (
     WireResponse,
     header_request_id,
+    header_retry_after,
     header_support_code,
     request_timeout,
     retry_delay,
     safe_request_id,
+    safe_retry_after,
     safe_support_code,
     validate_request,
     validated_response,
@@ -91,6 +93,7 @@ class _RemoteError(Exception):
         *,
         request_id: str | None = None,
         support_code: str | None = None,
+        retry_after: int | None = None,
     ) -> None:
         """Retain an HTTP failure for later conversion to a public SDK error.
 
@@ -101,6 +104,7 @@ class _RemoteError(Exception):
             request_id: Optional HTTP response correlation header. Invalid
                 spellings are discarded; JSON-body IDs are not trusted.
             support_code: Optional closed opaque response header; never body text.
+            retry_after: Optional bounded Retry-After seconds, never raw headers.
 
         Preconditions:
             ``status`` comes from the HTTP boundary; ``payload`` has already
@@ -120,6 +124,7 @@ class _RemoteError(Exception):
         self.status = status
         self.request_id = safe_request_id(request_id)
         self.support_code = safe_support_code(support_code)
+        self.retry_after = safe_retry_after(retry_after)
         self.payload = dict(payload or {})
         super().__init__(f"HTTP {status}")
 
@@ -324,7 +329,8 @@ def _wire_transport(
         origin. Configure the final Backend URL rather than a redirecting alias.
         HTTP error and decoded success responses carry only validated
         X-Request-ID and closed X-KUMA-Support-Code as separate metadata;
-        no other response headers are retained.
+        error responses also retain bounded Retry-After seconds for auth outages.
+        No other response headers are retained.
     """
     request = Request(url, data=body, headers=dict(headers), method=method)
     try:
@@ -351,6 +357,7 @@ def _wire_transport(
             payload,
             request_id=request_id,
             support_code=header_support_code(exc.headers),
+            retry_after=header_retry_after(exc.headers),
         ) from None
     except TimeoutError as exc:
         raise KumaTimeoutError(
@@ -1415,6 +1422,10 @@ class BackendClient:
             At most ``max_retries + 1`` attempts occur. Every retry uses identical
             method, URL, headers, body, and idempotency key. ``ServiceBusyError``
             is returned immediately to avoid amplifying server load.
+            Retryable HTTP 503 ``api_key_service_unavailable`` honors one valid
+            Retry-After delay (1..60 seconds), clipped to the original deadline.
+            Exhausted attempts retain only that numeric hint for GET polling;
+            unrelated failures keep their existing retry policy.
 
         Side Effects:
             Performs network I/O and sleeps for bounded transient backoff.
@@ -1444,6 +1455,7 @@ class BackendClient:
         attempts = 0
         while True:
             current_timeout = request_timeout(self.timeout, deadline)
+            retry_after = None
             try:
                 wire_response = self._transport(
                     method,
@@ -1455,6 +1467,12 @@ class BackendClient:
                 return validated_response(wire_response, expected_status)
             except _RemoteError as exc:
                 error = _mapped_remote_error(exc)
+                if (
+                    exc.status == 503
+                    and error.code == "api_key_service_unavailable"
+                    and error.retryable
+                ):
+                    retry_after = exc.retry_after
             except KumaError as exc:
                 error = exc
             if method == "POST" and path in {
@@ -1463,12 +1481,13 @@ class BackendClient:
                 "/sdk/judge/batch/",
             }:
                 error = _judge_error(error)
+            error._retry_after_seconds = retry_after
             if (
                 error.retryable
                 and not _automatic_retry_blocked(error)
                 and attempts < self.max_retries
             ):
-                delay = retry_delay(attempts, deadline)
+                delay = retry_delay(attempts, deadline, retry_after)
                 attempts += 1
                 time.sleep(delay)
                 continue

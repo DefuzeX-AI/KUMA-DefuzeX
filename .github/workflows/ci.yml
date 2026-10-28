@@ -36,6 +36,7 @@ jobs:
       - run: python tools/verify_transport_failures.py
       - run: python tools/verify_judge_busy.py
       - run: python tools/verify_operation_poll_backoff.py
+      - run: python tools/verify_auth_retry_after.py
       - run: python tools/verify_privacy_authorization.py
       - run: python tools/verify_safe_diagnostics.py
       - run: python tools/verify_release_038.py
@@ -66,6 +67,7 @@ jobs:
       - run: python tools/verify_transport_failures.py
       - run: python tools/verify_judge_busy.py
       - run: python tools/verify_operation_poll_backoff.py
+      - run: python tools/verify_auth_retry_after.py
       - run: python tools/verify_privacy_authorization.py
       - run: python tools/verify_safe_diagnostics.py
 

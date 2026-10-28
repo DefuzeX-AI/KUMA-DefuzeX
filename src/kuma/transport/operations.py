@@ -32,7 +32,12 @@ from .backend import (
     _public_error_details,
     mapped_error,
 )
-from .http import response_request_id, response_support_code
+from .http import (
+    response_request_id,
+    response_support_code,
+    retry_delay,
+    safe_retry_after,
+)
 
 _DEFAULT_RESUME_POLL_MS = 1_000
 _MIN_POLL_MS = 100
@@ -641,6 +646,9 @@ def await_operation(
         reserves at most 100 ms (half the remaining time if smaller) for one
         last poll. Its HTTP timeout still uses the original deadline; completion
         is not guaranteed if network latency or scheduling consumes that budget.
+        Retryable auth transport failures instead honor bounded Retry-After
+        seconds carried by BackendClient, without reserving an early final poll
+        inside that delay. The original operation deadline remains authoritative.
 
     Security/Privacy:
         The store contains no credential, request payload, Evidence, or response
@@ -689,8 +697,8 @@ def await_operation(
             if not exc.retryable or _automatic_retry_blocked(exc):
                 raise _operation_error(state, exc) from None
             _ensure_time_remaining(deadline)
-            poll_after_ms, final_poll = _sleep_then_grow(
-                poll_after_ms, deadline, final_poll=final_poll
+            poll_after_ms, final_poll = _sleep_after_transport_failure(
+                exc, poll_after_ms, deadline, final_poll=final_poll
             )
             continue
         _ensure_time_remaining(deadline)
@@ -742,6 +750,33 @@ def _sleep_bounded(poll_after_ms: int, deadline: float) -> None:
     if remaining <= 0:
         _ensure_time_remaining(deadline)
     time.sleep(min(poll_after_ms / 1_000, remaining))
+
+
+def _sleep_after_transport_failure(
+    error: KumaError, poll_after_ms: int, deadline: float, *, final_poll: bool
+) -> tuple[int, bool]:
+    """Wait within the original polling deadline after an eligible GET failure.
+
+    Args:
+        error: Retry-eligible transport error, checked by await_operation.
+        poll_after_ms: Existing local polling interval in milliseconds.
+        deadline: Original monotonic operation deadline; never extended here.
+        final_poll: Whether local backoff already reserved its final poll.
+
+    Returns:
+        Updated local interval/final-poll flag. A bounded auth hint preserves
+        both and consumes at most remaining time, without an early final poll.
+
+    Side Effects:
+        Sleeps only. BackendClient supplies sanitized numeric auth metadata;
+        other failures use the existing polling backoff. No POST or state write
+        occurs, and await_operation checks expiry before the next GET.
+    """
+    retry_after = safe_retry_after(getattr(error, "_retry_after_seconds", None))
+    if error.code == "api_key_service_unavailable" and retry_after is not None:
+        time.sleep(retry_delay(0, deadline, retry_after))
+        return poll_after_ms, final_poll
+    return _sleep_then_grow(poll_after_ms, deadline, final_poll=final_poll)
 
 
 def _sleep_then_grow(

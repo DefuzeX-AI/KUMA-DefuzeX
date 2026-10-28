@@ -14,6 +14,38 @@ _RETRY_BACKOFF_BASE_SECONDS = 0.1
 _RETRY_BACKOFF_MAX_SECONDS = 2.0
 
 
+def safe_retry_after(value: Any) -> int | None:
+    """Accept only integer delay-seconds in the frozen auth hint range 1..60.
+
+    Args:
+        value: Untrusted header text or internal integer metadata. Dates,
+            duplicates, whitespace, non-ASCII digits and oversized values fail.
+
+    Returns:
+        Bounded seconds, or None to retain local backoff. No raw text is kept.
+    """
+    if type(value) is str and re.fullmatch(r"[1-9][0-9]?", value):
+        value = int(value)
+    return value if type(value) is int and 1 <= value <= 60 else None
+
+
+def header_retry_after(headers: Any) -> int | None:
+    """Read one bounded Retry-After header for the auth transport retry owner.
+
+    Args:
+        headers: HTTP response headers, or None. Duplicate occurrences are
+            ambiguous and ignored, including comma-joined representations.
+
+    Returns:
+        Validated delay-seconds only; HTTP dates are outside this contract.
+        Parsing neither sleeps nor changes retry eligibility.
+    """
+    if headers is None:
+        return None
+    values = [value for name, value in headers.items() if name.lower() == "retry-after"]
+    return safe_retry_after(values[0]) if len(values) == 1 else None
+
+
 def safe_request_id(value: Any) -> str | None:
     """Accept only the Backend's default 32-lowercase-hex correlation spelling.
 
@@ -198,12 +230,28 @@ def request_timeout(default: float, deadline: float | None) -> float:
     return min(default, remaining)
 
 
-def retry_delay(attempts: int, deadline: float | None) -> float:
-    """Return bounded exponential backoff for a transient HTTP attempt."""
+def retry_delay(
+    attempts: int, deadline: float | None, retry_after: int | None = None
+) -> float:
+    """Bound an eligible retry by local backoff, an auth hint and its deadline.
+
+    Args:
+        attempts: Number of retries already used by the HTTP owner.
+        deadline: Original monotonic operation deadline, or None.
+        retry_after: Optional validated auth delay in seconds (1..60). Invalid
+            hints are ignored; a valid hint is a floor before deadline clipping.
+
+    Returns:
+        Nonnegative sleep seconds. This helper never extends attempt budgets or
+        deadlines; callers must check the deadline again before network I/O.
+    """
     delay = min(
         _RETRY_BACKOFF_BASE_SECONDS * (2**attempts),
         _RETRY_BACKOFF_MAX_SECONDS,
     )
+    hint = safe_retry_after(retry_after)
+    if hint is not None:
+        delay = max(delay, hint)
     if deadline is None:
         return delay
     return min(delay, max(0.0, deadline - time.monotonic()))
