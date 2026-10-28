@@ -6,9 +6,9 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
-## 0.3.9 release candidate
+## 0.3.9
 
-An optional patch update, not yet published. Authentication-service outages can
+An optional patch update. Authentication-service outages can
 now respect the service's bounded retry delay without changing request identity.
 
 - For retryable HTTP 503 `api_key_service_unavailable`, honor one `Retry-After`
