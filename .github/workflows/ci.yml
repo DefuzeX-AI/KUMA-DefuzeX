@@ -61,6 +61,7 @@ jobs:
       - run: python -m kuma --help
       - run: python examples/minimal_local.py
       - run: python tools/verify_minimal_local.py
+      - run: python tools/verify_agent_integration_demo.py
       - run: python tools/verify_evidence_capacity.py
       - run: python tools/verify_executed_strategy_group.py
       - run: python tools/verify_cli_atomic_output.py
@@ -86,6 +87,7 @@ jobs:
       - run: python -m kuma --help
       - run: python examples/minimal_local.py
       - run: python tools/verify_minimal_local.py
+      - run: python tools/verify_agent_integration_demo.py
       - run: python tools/verify_evidence_capacity.py
       - run: python tools/verify_executed_strategy_group.py
       - run: python tools/verify_cli_atomic_output.py
@@ -109,6 +111,7 @@ jobs:
       - run: python -m kuma --help
       - run: python examples/minimal_local.py
       - run: python tools/verify_minimal_local.py
+      - run: python tools/verify_agent_integration_demo.py
       - run: python tools/verify_evidence_capacity.py
       - run: python tools/verify_executed_strategy_group.py
       - run: python tools/verify_cli_atomic_output.py
