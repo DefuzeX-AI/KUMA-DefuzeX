@@ -1,4 +1,1 @@
 * text=auto eol=lf
-# Preserve the approved SVG bytes, including their CRLF line endings.
-docs/assets/kuma-workflow-light.svg -text whitespace=cr-at-eol
-docs/assets/kuma-workflow-dark.svg -text whitespace=cr-at-eol
