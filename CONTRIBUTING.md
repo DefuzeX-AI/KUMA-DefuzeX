@@ -49,6 +49,7 @@ python tools/verify_public_api_docs.py
 python tools/verify_agent_profile_migration.py
 python tools/verify_evidence_capacity.py
 python tools/verify_executed_strategy_group.py
+python tools/verify_empty_workspace_context.py
 python tools/verify_cli_atomic_output.py
 python tools/verify_transport_failures.py
 python tools/verify_judge_busy.py
@@ -76,6 +77,12 @@ Maintainers run those private checks before accepting a release.
 The execution-group regression check uses synthetic responses and temporary
 repositories. It needs no account or network and exercises Run metadata,
 invalid-response recovery without another Case POST, and saved Case reuse.
+
+The empty-workspace check (`tools/verify_empty_workspace_context.py`) uses synthetic
+responses with network access denied. It verifies Profile context preservation,
+unchanged Case/Judgment delivery and rejection of oversized context or tampered
+Case bytes. It does not reproduce hosted generation or validate semantic Case
+solvability; see [the investigation notes](docs/issue-155-sdk-investigation.md).
 
 The CLI cleanup check uses temporary files. Transport interruption checks use
 synthetic credentials and a local loopback HTTP server only; no hosted API,
