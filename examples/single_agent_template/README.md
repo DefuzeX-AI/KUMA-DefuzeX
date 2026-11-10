@@ -10,6 +10,7 @@ Template-owned code:
 - alternates `get_input()` and `submit()`;
 - validates Agent output as non-empty finite JSON;
 - truthfully submits timeout/failure status before returning a non-zero exit;
+- cancels an unfinished Run when `submit()` rejects a result or the Agent call is interrupted;
 - prints final Run state, History size, Submission status, and public report.
 
 User-owned code:
@@ -85,6 +86,8 @@ The template handles outcomes as follows:
 
 Exceptions remain chained inside the adapter boundary; the CLI returns a non-zero status without printing sensitive exception text. SDK failures use their stable `code`/`retryable` values and exit `2`.
 
+Invalid Agent output is recorded as a `failed` Submission and finishes the Run. A `submit()` rejected before commit or an interruption leaves the Run unfinished; the template cancels it before the exception propagates. Cancellation does not refund already-generated Cases.
+
 ## Official Case and Judge
 
 [`environment.example`](environment.example) lists every template environment variable but is not loaded automatically. Export values through your process/container secret mechanism; never commit a populated file.
@@ -111,4 +114,12 @@ These never contact an Agent or service:
 .venv-template\Scripts\python.exe examples/single_agent_template/app.py --smoke-failure timeout
 .venv-template\Scripts\python.exe examples/single_agent_template/app.py --smoke-failure empty
 .venv-template\Scripts\python.exe examples/single_agent_template/app.py --smoke-failure non-json
+```
+
+## Offline lifecycle checks
+
+[`tools/verify_single_agent_template.py`](../../tools/verify_single_agent_template.py) covers the success path, all four `--smoke-failure` modes, interruption and rejected-submission cleanup, and configuration errors without credentials or network access:
+
+```bash
+python tools/verify_single_agent_template.py
 ```
