@@ -50,7 +50,7 @@ def require_hosted_configuration() -> None:
         raise ConfigurationError("Hosted mode requires: " + ", ".join(missing))
 
 
-def run_demo(hosted: bool) -> None:
+def run_demo(hosted: bool) -> int:
     if hosted:
         require_hosted_configuration()
         repo = Path(os.environ["KUMA_REPO_PATH"])
@@ -109,25 +109,39 @@ Do not access the network or paths outside the temporary repository.
                 allow_local=True,
             )
 
-            _complete_run(run)
-            return
+            return _complete_run(run)
 
-    _complete_run(run)
+    return _complete_run(run)
 
 
-def _complete_run(run: Any) -> None:
-    test_input = run.get_input()
+def _complete_run(run: Any) -> int:
+    try:
+        test_input = run.get_input()
 
-    if test_input is None:
-        print("result=no_input")
-        return
+        if test_input is None:
+            print("result=no_input")
+            return 1
 
-    result = call_your_agent(test_input)
-    run.submit(result)
+        try:
+            result = call_your_agent(test_input)
+        except TimeoutError:
+            run.submit(status="timeout", error="Agent timed out")
+        except Exception:
+            # Agent exception messages can contain credentials or user data.
+            run.submit(status="failed", error="Agent failed")
+        else:
+            run.submit(result)
 
-    print(f"run_state={run.state}")
-    print(f"history_items={len(run.history)}")
-    print(f"result={result}")
+        submission = run.history[-1].submission
+        print(f"run_state={run.state}")
+        print(f"history_items={len(run.history)}")
+        print(f"submission_status={submission.status}")
+        print(f"result={submission.output}")
+        return 0 if submission.status == "completed" else 1
+    finally:
+        # Release unfinished Runs on invalid output or interruption as well.
+        if run.state in {"ready", "input_delivered"}:
+            run.cancel()
 
 
 def parse_args() -> argparse.Namespace:
@@ -143,7 +157,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        run_demo(hosted=args.hosted)
+        return run_demo(hosted=args.hosted)
     except ConfigurationError as exc:
         print(f"configuration_error={exc}", file=sys.stderr)
         return 2
@@ -153,8 +167,6 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
-
-    return 0
 
 
 if __name__ == "__main__":
