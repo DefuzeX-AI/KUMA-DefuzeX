@@ -172,6 +172,8 @@ class _Association:
     run_id: str
     case_id: str
     input_id: str
+    step_index: int | None = None
+    total_steps: int | None = None
     active: bool = True
 
 
@@ -370,7 +372,15 @@ class TraceEvidenceCapture:
         """Register the attached provider's flush callback for step finalization."""
         self._force_flush = callback
 
-    def begin_step(self, run_id: str, case_id: str, input_id: str) -> None:
+    def begin_step(
+        self,
+        run_id: str,
+        case_id: str,
+        input_id: str,
+        *,
+        step_index: int | None = None,
+        total_steps: int | None = None,
+    ) -> None:
         """Open the telemetry transaction for exactly one delivered Run input.
 
         Args:
@@ -383,6 +393,7 @@ class TraceEvidenceCapture:
                 envelope alone exceeds the Run byte budget.
             RuntimeError: If a prior step is still active. The conflicting prior
                 bucket is discarded to prevent cross-step leakage.
+            ConfigurationError: If the optional step-budget metadata is invalid.
 
         Preconditions:
             The previous step was committed, aborted, cancelled, or the Run was
@@ -407,7 +418,31 @@ class TraceEvidenceCapture:
             raise ConfigurationError(
                 "Trace Evidence identifiers exceed max_total_bytes before capture"
             )
-        association = _Association(run_id, case_id, input_id)
+        if step_index is not None and (
+            isinstance(step_index, bool)
+            or not isinstance(step_index, int)
+            or step_index < 0
+        ):
+            raise ConfigurationError("step_index must be a non-negative integer")
+        if total_steps is not None and (
+            isinstance(total_steps, bool)
+            or not isinstance(total_steps, int)
+            or total_steps < 1
+        ):
+            raise ConfigurationError("total_steps must be a positive integer")
+        if (
+            step_index is not None
+            and total_steps is not None
+            and step_index >= total_steps
+        ):
+            raise ConfigurationError("step_index must be smaller than total_steps")
+        association = _Association(
+            run_id,
+            case_id,
+            input_id,
+            step_index=step_index,
+            total_steps=total_steps,
+        )
         with self._lock:
             if self._active is not None and self._active.active:
                 self._discard_locked(self._active)
@@ -851,7 +886,8 @@ class TraceEvidenceCapture:
         bounded_reasons = set(reasons) & _CAPTURE_REASONS
         run_key = (association.run_id, association.case_id)
         with self._lock:
-            available = self.limits.max_total_bytes - self._run_bytes.get(run_key, 0)
+            committed = self._run_bytes.get(run_key, 0)
+        available = self._fair_step_budget(association, committed)
         if any("model_content" in span for span in ordered):
             available = min(available, RUNTIME_EVIDENCE_MAX_BYTES)
         omitted_bodies = 0
@@ -891,6 +927,23 @@ class TraceEvidenceCapture:
             bounded_reasons.add("trace_drop_count_saturated")
         dropped = min(dropped + 1, _MAX_DROPPED_COUNT)
         return None, tuple(sorted(bounded_reasons)), dropped, 0, omitted_bodies
+
+    def _fair_step_budget(self, association: _Association, committed: int) -> int:
+        """Reserve an equal share of the remaining Run budget for later steps.
+
+        A capture created by older callers has no Case cardinality metadata and
+        retains the historical first-come behavior. Run-managed captures pass
+        the normalized Case length and current zero-based step index, allowing a
+        large early step to consume only its fair share while unused bytes remain
+        available to later steps.
+        """
+        remaining = max(0, self.limits.max_total_bytes - committed)
+        if association.step_index is None or association.total_steps is None:
+            return remaining
+        remaining_steps = association.total_steps - association.step_index
+        if remaining_steps <= 0:
+            return remaining
+        return min(remaining, remaining // remaining_steps)
 
     @staticmethod
     def _build_evidence(

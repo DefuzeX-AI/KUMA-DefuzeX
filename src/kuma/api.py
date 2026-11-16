@@ -903,6 +903,7 @@ def create_run(
             persistent_path=runtime.workspace.persistent_path,
             run_id=run_id,
             case_id=case.case_id,
+            total_steps=len(case.inputs),
             trace_evidence=trace_evidence,
         )
         if trace_auto_warning is not None:

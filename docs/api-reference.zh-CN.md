@@ -472,7 +472,7 @@ allow arbitrary source/log bodies, credentials or private Rubrics. See
 | `max_attributes` | positive `int` | `32` | Keeps at most this many safe, allowlisted attributes on each span; additional attributes are dropped and counted. Sensitive attributes remain rejected regardless of this number. |
 | `max_events_per_span` | positive `int` | `20` | Keeps at most this many safe OTel events on each span; later events are dropped and reported. |
 | `max_text_length` | positive `int` | `256` characters | Bounds retained metadata strings. Tool arguments/results use a separate 4 MiB canonical JSON limit and are omitted whole, never truncated. See [Runtime Trace](runtime-trace.md). |
-| `max_total_bytes` | positive `int` | `8388608` bytes (8 MiB) | Caps the compact JSON size of all committed Trace envelopes in one Run. KUMA deterministically drops excess Trace data and reports the loss; the value must still fit the smallest valid envelope. |
+| `max_total_bytes` | positive `int` | `8388608` bytes (8 MiB) | Caps the compact JSON size of all committed Trace envelopes in one Run. Run-managed captures reserve an equal share for each remaining Case step so early steps cannot consume the entire budget; unused bytes remain available to later steps. KUMA deterministically drops excess Trace data and reports the loss; the value must still fit the smallest valid envelope. |
 | `max_log_records` | positive `int` | `200` | Keeps at most this many normalized OTel log records per step; excess records are dropped and reported. |
 | `max_log_bytes` | positive `int` | `128000` bytes | Caps structured OTel log artifacts committed across one Run; raw log bodies are not retained. |
 
