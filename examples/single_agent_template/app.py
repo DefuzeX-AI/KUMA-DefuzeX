@@ -202,6 +202,9 @@ def main(argv: list[str] | None = None) -> int:
             Path(__file__).with_name("agent-profile.md"),
         )
     )
+    # Validate the deadline before creating a Run so a typo cannot generate a
+    # Case (and, in official mode, a potentially billable operation).
+    timeout_seconds = _agent_timeout()
     with _repository(use_official) as repo:
         run = create_run(
             repo_path=repo,
@@ -218,12 +221,18 @@ def main(argv: list[str] | None = None) -> int:
             _run_inputs(
                 run,
                 agent=_smoke_agent(args.smoke_failure),
-                timeout_seconds=_agent_timeout(),
+                timeout_seconds=timeout_seconds,
             )
         except AgentResultError as exc:
             _print_result(run)
             print(f"template_error={exc.code}", file=sys.stderr)
             return 1
+        finally:
+            # Release the runtime lease left by a rejected submission or an
+            # interruption. Only these two cancellable states are left behind;
+            # cancel() also accepts completed Runs, which must stay completed.
+            if run.state in {"ready", "input_delivered"}:
+                run.cancel()
         _print_result(run)
         return 0
 
