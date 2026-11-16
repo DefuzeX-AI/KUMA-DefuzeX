@@ -6,6 +6,28 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
+## 0.3.9
+
+An optional patch update. Authentication-service outages can
+now respect the service's bounded retry delay without changing request identity.
+
+- For retryable HTTP 503 `api_key_service_unavailable`, honor one `Retry-After`
+  delay-seconds header in the range 1..60. Ignore missing, duplicate, malformed,
+  HTTP-date and out-of-range hints and retain the existing local backoff.
+- Keep HTTP retry counts and the original operation timeout unchanged. After
+  HTTP retries are exhausted, GET-only operation polling also honors the hint;
+  a delay never extends the original deadline or creates a replacement task.
+- Reuse the exact request body, idempotency key and client recovery ID. Other
+  errors, including `request_failed`, keep their existing retry policy.
+
+Existing SDK versions already accept first-party `dfx_` API keys as opaque bearer
+credentials; this patch is not required merely to use a newly issued key. Key
+ownership is unchanged: replacing a key does not grant access to tasks created
+with another key. This release does not issue keys or repair server-side task
+state; those are service responsibilities.
+
+Credential-free regression checks: `python tools/verify_auth_retry_after.py`.
+
 ## 0.3.8
 
 An optional patch update with clearer request recovery, privacy classification

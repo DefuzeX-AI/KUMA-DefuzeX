@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="790" viewBox="0 0 1440 790" role="img" aria-labelledby="title desc">
+<title id="title">KUMA workflow</title>
+<desc id="desc">Generate a Case from an Agent Profile, strategy and difficulty. For each Input, run your own Agent while KUMA captures available evidence, then submit output plus evidence. Continue with the next Input while more remain. After all Inputs complete, Judge evaluates the full run against a private Rubric and produces a report. Observe-only mode captures instrumented traces from an existing task into a local timeline without a Case or Judge. Illustrations are schematic, not product screenshots.</desc>
+<defs>
+ <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#66CFFF"/><stop offset="1" stop-color="#B69AFF"/></linearGradient>
+ <linearGradient id="execution" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#111F33"/><stop offset="1" stop-color="#172C46"/></linearGradient>
+ <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="12" cy="12" r=".8" fill="#7291B4" opacity=".18"/></pattern>
+ <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#000000" flood-opacity=".06"/></filter>
+ <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 8 5 1 9" fill="none" stroke="#7291B4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
+</defs>
+<rect width="1440" height="790" rx="26" fill="#091321"/>
+<rect x="28" y="105" width="1384" height="518" fill="url(#dots)"/>
+<g font-family="Segoe UI, Arial, sans-serif">
+<rect x="56" y="40" width="42" height="42" rx="11" fill="none" stroke="#EFF5FF" stroke-width="2.4"/>
+<path d="M69 50 V72 M69 61 L86 50 M69 61 L86 72" fill="none" stroke="url(#brand)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+<g transform="translate(114 44) scale(.24)" fill="none" stroke="#EFF5FF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"><path d="M0 0 V138 M0 70 L88 0 M0 70 L92 138" stroke="url(#brand)"/><path d="M142 0 V94 C142 126 162 142 192 142 S242 126 242 94 V0"/><path d="M300 138 V0 L360 82 L420 0 V138"/><path d="M478 138 L536 0 L594 138 M501 86 H571"/></g>
+<path d="M310 61 H1392" fill="none" stroke="#293D58" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="48" y="142" width="292" height="450" rx="22" fill="#111F33" stroke="#293D58" filter="url(#shadow)"/>
+<rect x="70" y="160" width="32" height="32" rx="10" fill="#172C46" />
+<text x="86" y="182" font-size="16" fill="#B69AFF" font-weight="650" text-anchor="middle" >01</text>
+<text x="114" y="183" font-size="25" fill="#EFF5FF" font-weight="650" text-anchor="start" letter-spacing="-.4">Generate case</text>
+<path d="M70 207 H318" fill="none" stroke="#293D58" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="372" y="142" width="650" height="450" rx="22" fill="url(#execution)" stroke="#293D58" filter="url(#shadow)"/>
+<rect x="394" y="160" width="32" height="32" rx="10" fill="#172C46" />
+<text x="410" y="182" font-size="16" fill="#66CFFF" font-weight="650" text-anchor="middle" >02</text>
+<text x="438" y="183" font-size="25" fill="#EFF5FF" font-weight="650" text-anchor="start" letter-spacing="-.4">Run &amp; capture</text>
+<path d="M394 207 H1000" fill="none" stroke="#293D58" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="1054" y="142" width="338" height="450" rx="22" fill="#111F33" stroke="#293D58" filter="url(#shadow)"/>
+<rect x="1076" y="160" width="32" height="32" rx="10" fill="#172C46" />
+<text x="1092" y="182" font-size="16" fill="#B69AFF" font-weight="650" text-anchor="middle" >03</text>
+<text x="1120" y="183" font-size="25" fill="#EFF5FF" font-weight="650" text-anchor="start" letter-spacing="-.4">Judge &amp; report</text>
+<path d="M1076 207 H1370" fill="none" stroke="#293D58" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="888" y="161" width="110" height="30" rx="9" fill="#172C46" />
+<text x="943.0" y="182" font-size="17" fill="#66CFFF" font-weight="600" text-anchor="middle" >Per input</text>
+<path d="M79 231 h16 M79 239 h16 M79 247 h16" fill="none" stroke="#B69AFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="84" cy="231" r="3" fill="#111F33" stroke="#B69AFF" stroke-width="1.7"/>
+<circle cx="91" cy="239" r="3" fill="#111F33" stroke="#B69AFF" stroke-width="1.7"/>
+<circle cx="84" cy="247" r="3" fill="#111F33" stroke="#B69AFF" stroke-width="1.7"/>
+<text x="110" y="245" font-size="19" fill="#A2B3CC" font-weight="400" text-anchor="start" >Profile + strategy</text>
+<rect x="78" y="267" width="62" height="30" rx="9" fill="#172C46" />
+<text x="109.0" y="288" font-size="16" fill="#B69AFF" font-weight="600" text-anchor="middle" >Easy</text>
+<rect x="148" y="267" width="92" height="30" rx="9" fill="#172C46" />
+<text x="194.0" y="288" font-size="16" fill="#B69AFF" font-weight="600" text-anchor="middle" >Standard</text>
+<rect x="248" y="267" width="64" height="30" rx="9" fill="#172C46" />
+<text x="280.0" y="288" font-size="16" fill="#B69AFF" font-weight="600" text-anchor="middle" >Hard</text>
+<path d="M194 304 V314" fill="none" stroke="#7291B4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="92" y="338" width="220" height="216" rx="14" fill="#172C46" stroke="#293D58" />
+<rect x="84" y="330" width="228" height="216" rx="14" fill="#111F33" stroke="#293D58" />
+<rect x="76" y="322" width="236" height="216" rx="14" fill="#111F33" stroke="#293D58" filter="url(#shadow)"/>
+<path d="M96 341 h17 l7 7 v22 h-24 z M113 341 v7 h7 M102 355 h12 M102 361 h9" fill="none" stroke="#B69AFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+<text x="134" y="365" font-size="25" fill="#EFF5FF" font-weight="650" text-anchor="start" >Case</text>
+<rect x="94" y="385" width="200" height="34" rx="8" fill="#172C46" />
+<circle cx="109" cy="402" r="3" fill="#B69AFF" />
+<text x="124" y="408" font-size="18" fill="#A2B3CC" font-weight="500" text-anchor="start" >Input 01</text>
+<rect x="94" y="429" width="200" height="34" rx="8" fill="#172C46" />
+<circle cx="109" cy="446" r="3" fill="#B69AFF" />
+<text x="124" y="452" font-size="18" fill="#A2B3CC" font-weight="500" text-anchor="start" >Input 02</text>
+<rect x="94" y="473" width="200" height="34" rx="8" fill="#172C46" />
+<circle cx="109" cy="490" r="3" fill="#B69AFF" />
+<text x="124" y="496" font-size="18" fill="#A2B3CC" font-weight="500" text-anchor="start" >…</text>
+<rect x="396" y="242" width="112" height="188" rx="15" fill="#111F33" stroke="#293D58" filter="url(#shadow)"/>
+<rect x="542" y="242" width="218" height="188" rx="15" fill="#111F33" stroke="#293D58" filter="url(#shadow)"/>
+<rect x="794" y="242" width="204" height="188" rx="15" fill="#111F33" stroke="#293D58" filter="url(#shadow)"/>
+<text x="452" y="280" font-size="20" fill="#EFF5FF" font-weight="650" text-anchor="middle" >Get input</text>
+<path d="M440 310 h17 l7 7 v22 h-24 z M457 310 v7 h7 M446 324 h12 M446 330 h9" fill="none" stroke="#66CFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+<path d="M429 359 h46 M429 371 h31" fill="none" stroke="#293D58" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+<text x="651" y="278" font-size="25" fill="#EFF5FF" font-weight="650" text-anchor="middle" >Your agent</text>
+<rect x="562" y="298" width="178" height="61" rx="9" fill="#091321" />
+<circle cx="575" cy="309" r="1.9" fill="#80D8FF" opacity=".6"/>
+<circle cx="583" cy="309" r="1.9" fill="#80D8FF" opacity=".6"/>
+<circle cx="591" cy="309" r="1.9" fill="#80D8FF" opacity=".6"/>
+<path d="M576 323 l7 6 -7 6 M592 335 h14" fill="none" stroke="#80D8FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+<path d="M618 327 h90 M618 337 h62" fill="none" stroke="#80D8FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".35"/>
+<path d="M651 359 V370 M594 370 H708 M594 370 V378 M651 370 V378 M708 370 V378" fill="none" stroke="#7291B4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="584" y="378" width="20" height="19" rx="5" fill="#172C46" stroke="#293D58" />
+<path d="M591 387 h6" fill="none" stroke="#66CFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="641" y="378" width="20" height="19" rx="5" fill="#172C46" stroke="#293D58" />
+<path d="M648 387 h6" fill="none" stroke="#66CFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="698" y="378" width="20" height="19" rx="5" fill="#172C46" stroke="#293D58" />
+<path d="M705 387 h6" fill="none" stroke="#66CFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<text x="651" y="418" font-size="16" fill="#A2B3CC" font-weight="400" text-anchor="middle" >Tools</text>
+<path d="M872 268 h48 M896 268 v22 M884 280 l12 12 12 -12" fill="none" stroke="#66CFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+<text x="896" y="329" font-size="25" fill="#EFF5FF" font-weight="650" text-anchor="middle" >Output</text>
+<text x="896" y="365" font-size="18" fill="#A2B3CC" font-weight="400" text-anchor="middle" >Result + evidence</text>
+<path d="M842 391 h108" fill="none" stroke="#293D58" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+<path d="M842 402 h76" fill="none" stroke="#293D58" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+<path d="M516 330 H534" fill="none" stroke="#7291B4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M768 330 H786" fill="none" stroke="#7291B4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M651 431 V451" fill="none" stroke="#63DCC0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 4"/>
+<rect x="408" y="452" width="578" height="66" rx="12" fill="#102F30" stroke="#28504D" />
+<circle cx="434" cy="475" r="4" fill="#63DCC0" />
+<text x="450" y="482" font-size="20" fill="#63DCC0" font-weight="600" text-anchor="start" >Available evidence</text>
+<text x="450" y="506" font-size="17" fill="#A2B3CC" font-weight="400" text-anchor="start" >Messages · Traces · Files</text>
+<rect x="770" y="467" width="130" height="6" rx="3" fill="#63DCC0" opacity="0.35"/>
+<rect x="790" y="480" width="90" height="6" rx="3" fill="#63DCC0" opacity="0.53"/>
+<rect x="813" y="493" width="115" height="6" rx="3" fill="#63DCC0" opacity="0.71"/>
+<path d="M974 452 V438" fill="none" stroke="#7291B4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M998 382 H1010 V536 Q1010 552 994 552 H402 Q386 552 386 536 V366 H394" fill="none" stroke="#7291B4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="633" y="537" width="128" height="29" rx="7" fill="#172C46" />
+<text x="697" y="558" font-size="17" fill="#A2B3CC" font-weight="500" text-anchor="middle" >More inputs</text>
+<path d="M340 330 H388" fill="none" stroke="#7291B4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1006 330 H1046" fill="none" stroke="#7291B4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="1038" y="313" font-size="14" fill="#A2B3CC" font-weight="400" text-anchor="middle" >Done</text>
+<rect x="1078" y="242" width="290" height="110" rx="14" fill="#172C46" />
+<path d="M1102 266 l14 -5 14 5 v14 q0 12 -14 19 q-14 -7 -14 -19 z M1109 279 l5 5 8 -10" fill="none" stroke="#B69AFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+<text x="1146" y="284" font-size="26" fill="#EFF5FF" font-weight="650" text-anchor="start" >Judge</text>
+<text x="1102" y="327" font-size="17" fill="#A2B3CC" font-weight="400" text-anchor="start" >Run history + private rubric</text>
+<path d="M1223 360 V384" fill="none" stroke="#7291B4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="1093" y="403" width="274" height="156" rx="12" fill="#172C46" stroke="#293D58" />
+<rect x="1086" y="396" width="274" height="156" rx="12" fill="#111F33" stroke="#293D58" filter="url(#shadow)"/>
+<text x="1106" y="433" font-size="23" fill="#EFF5FF" font-weight="650" text-anchor="start" >Behavior report</text>
+<path d="M1106 447 H1340" fill="none" stroke="#293D58" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="1115" cy="471" r="9" fill="#172C46" />
+<path d="M1112 471 h6 M1115 468 v6" fill="none" stroke="#B69AFF" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+<text x="1134" y="477" font-size="18" fill="#A2B3CC" font-weight="500" text-anchor="start" >Findings</text>
+<path d="M1252 468 h73 M1252 478 h47" fill="none" stroke="#293D58" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="1115" cy="511" r="9" fill="#172C46" />
+<path d="M1112 511 h6 M1115 508 v6" fill="none" stroke="#63DCC0" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+<text x="1134" y="517" font-size="18" fill="#A2B3CC" font-weight="500" text-anchor="start" >Evidence</text>
+<path d="M1252 508 h73 M1252 518 h47" fill="none" stroke="#293D58" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="48" y="636" width="1344" height="106" rx="20" fill="#102F30" stroke="#28504D" />
+<path d="M76 674 q13 -15 26 0 q-13 15 -26 0" fill="none" stroke="#63DCC0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="89" cy="674" r="3" fill="#63DCC0" />
+<text x="76" y="716" font-size="24" fill="#EFF5FF" font-weight="650" text-anchor="start" >Observe only</text>
+<path d="M308 657 V721" fill="none" stroke="#28504D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="447" y="659" width="34" height="25" rx="6" fill="#111F33" stroke="#28504D" />
+<path d="M454 666 l5 5 -5 5 M465 676 h8" fill="none" stroke="#63DCC0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="793" y="658" width="41" height="5" rx="2" fill="#63DCC0" opacity="0.4"/>
+<rect x="805" y="668" width="35" height="5" rx="2" fill="#63DCC0" opacity="0.6000000000000001"/>
+<rect x="818" y="678" width="30" height="5" rx="2" fill="#63DCC0" opacity="0.8"/>
+<path d="M1189 671 H1235" fill="none" stroke="#63DCC0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="1191" cy="671" r="4" fill="#111F33" stroke="#63DCC0" stroke-width="1.5"/>
+<circle cx="1212" cy="671" r="4" fill="#111F33" stroke="#63DCC0" stroke-width="1.5"/>
+<circle cx="1233" cy="671" r="4" fill="#111F33" stroke="#63DCC0" stroke-width="1.5"/>
+<text x="464" y="716" font-size="22" fill="#EFF5FF" font-weight="600" text-anchor="middle" >Existing task</text>
+<text x="823" y="716" font-size="22" fill="#EFF5FF" font-weight="600" text-anchor="middle" >Instrumented traces</text>
+<text x="1212" y="716" font-size="22" fill="#EFF5FF" font-weight="600" text-anchor="middle" >Local timeline</text>
+<path d="M614 689 H646" fill="none" stroke="#7291B4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1004 689 H1036" fill="none" stroke="#7291B4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+</g></svg>
