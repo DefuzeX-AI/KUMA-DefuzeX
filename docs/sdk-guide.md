@@ -625,6 +625,14 @@ this SDK diagnostic does not refund it or claim to prevent that earlier charge.
 
 `timeout` bounds one public HTTP attempt. `operation_wait_timeout` bounds the complete official single-Case or Judge operation. POST retries reuse a stable idempotency key; only server-declared transient failures are retried within `max_retries`, and `ServiceBusyError` is not retried automatically.
 
+For retryable HTTP 503 `api_key_service_unavailable`, the SDK honors a single
+`Retry-After` delay-seconds header from 1 through 60 seconds. Missing, duplicate,
+malformed, HTTP-date or out-of-range hints use the existing local backoff. A valid
+hint never shortens local backoff or extends the original operation deadline.
+After HTTP retries are exhausted, operation polling honors the same bounded hint
+before its next GET. Request bodies, idempotency keys and recovery IDs are reused;
+this does not create a new task. Other error codes keep their existing retry policy.
+
 `exc.request_id` is the actual response's `X-Request-ID`, retained only when it is exactly 32 lowercase hexadecimal characters. It may be `None`: the header is optional, invalid or duplicate headers are ignored, and no ID is invented. It is not proof that the server generated the ID, since the server can echo an incoming ID. For an asynchronous failed operation it identifies the failing poll response, not the original start request. JSON-body IDs, private Core IDs, and the local `kreq_…` client recovery ID are never substituted; use `kuma requests list/show` for that separate local identity. Error class, code, and retry decisions are unchanged.
 
 HTTP JSON responses must be objects containing finite JSON values with at most 256 nested

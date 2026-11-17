@@ -18,6 +18,11 @@ test Case as step-by-step Inputs, captures bounded Evidence, and produces a
 Judgment through official or custom Providers. KUMA does not run your Agent or
 expose private evaluation logic.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/kuma-workflow-dark.svg">
+  <img src="docs/assets/kuma-workflow-light.svg" width="1440" alt="KUMA workflow: generate a Case, run your Agent for each Input while capturing evidence, then evaluate the full run with Judge. Optional local observation does not use Case or Judge.">
+</picture>
+
 ## What you can do
 
 - Run repeatable Case-to-Judgment evaluations.

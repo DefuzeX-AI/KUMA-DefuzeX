@@ -19,6 +19,7 @@ Expected output includes:
     cost=free_local_no_api_call
     run_state=completed
     history_items=1
+    submission_status=completed
     result={...}
 
 Mock mode does not contact the KUMA backend or consume hosted evaluation credits.
@@ -28,6 +29,17 @@ Mock mode does not contact the KUMA backend or consume hosted evaluation credits
 The example creates a KUMA Run, gets an input with run.get_input(), passes it to call_your_agent(), submits the result with run.submit(), and prints the final state and history.
 
 Replace call_your_agent() with the Agent framework or client you want to use. Keep the returned result JSON-compatible.
+
+Agent exceptions are submitted with `status="failed"`; `TimeoutError` is
+submitted with `status="timeout"`. Only fixed summaries are recorded, so raw
+exception messages are not included in Evidence or console output. The demo
+returns exit code `1` for those Agent failures and `2` for configuration or SDK
+errors. The adapter must enforce its own timeout; this example does not impose
+a deadline on the Agent call.
+
+Invalid output and interruptions cancel an unfinished Run before propagating.
+Cancellation does not refund already-generated Cases. A completed Run means
+the protocol finished, not that a Judge passed the Agent; mock mode has no Judge.
 
 ## Hosted mode
 
@@ -59,5 +71,10 @@ Free local verification:
     .\.venv\Scripts\python.exe examples/agent_integration_demo/app.py
 
 The local path should complete without credentials or network access.
+
+Offline lifecycle regression checks (success, failure, timeout, invalid output,
+interruption, and missing hosted configuration):
+
+    python tools/verify_agent_integration_demo.py
 
 This example does not claim that cancelling a run refunds already-generated Cases.

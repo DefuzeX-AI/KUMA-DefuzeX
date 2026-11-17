@@ -17,6 +17,11 @@ KUMA 是一个不绑定框架的 Python SDK，用于评测 AI Agent。它将测�
 按步骤交付为 Input，采集有界 Evidence，并通过官方或自定义 Provider 生成
 Judgment。KUMA 不负责运行被测 Agent，也不公开私有评测逻辑。
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/kuma-workflow-dark.svg">
+  <img src="docs/assets/kuma-workflow-light.svg" width="1440" alt="KUMA 工作流：生成 Case，逐个 Input 执行 Agent 并采集证据，最后由 Judge 评估完整运行。可选的本地观察不使用 Case 或 Judge。">
+</picture>
+
 ## 可以做什么
 
 - 运行可重复的 Case-to-Judgment 评测。
