@@ -1,5 +1,7 @@
 # 为 KUMA Python SDK 贡献代码
 
+[English](CONTRIBUTING.md)
+
 感谢你帮助改进这个开源 SDK。请将改动限制在客户端的职责范围内：
 公共协议模型、传输行为、Run 生命周期、Evidence 构建，以及 Provider 接口。
 后端、私有 Core MCP、模型执行、凭证、提示词和数据库不属于本仓库范畴。
@@ -59,6 +61,7 @@ python -m compileall -q src examples tools
 kuma quickstart
 python examples/minimal_local.py
 python tools/verify_minimal_local.py
+python tools/verify_single_agent_template.py
 python -m build
 python -m twine check dist/*
 ```
