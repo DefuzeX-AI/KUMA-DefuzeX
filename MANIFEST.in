@@ -1,0 +1,3 @@
+recursive-include examples/java_agent *.md *.py *.xml *.java
+prune examples/java_agent/target
+include tools/verify_java_agent.py

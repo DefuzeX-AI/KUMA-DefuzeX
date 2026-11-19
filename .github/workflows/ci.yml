@@ -143,6 +143,30 @@ jobs:
           "opentelemetry-sdk==${{ matrix.otel-version }}"
       - run: python tools/verify_otel_compat.py
 
+  java:
+    name: Java OTLP (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: examples/java_agent/pom.xml
+      - run: python -m pip install ".[otlp]"
+      - run: python -W error::ResourceWarning -m unittest discover -s tests -p test_otlp_receiver.py
+      - run: mvn -B -q -f examples/java_agent/pom.xml package dependency:build-classpath "-Dmdep.outputFile=target/classpath.txt"
+      - run: python tools/verify_java_agent.py
+
   package:
     name: Package
     runs-on: ubuntu-latest

@@ -9,6 +9,7 @@ dist/
 .venv/
 .coverage
 htmlcov/
+examples/java_agent/target/
 .env
 .env.*
 !.env.example

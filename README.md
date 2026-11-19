@@ -34,10 +34,9 @@ expose private evaluation logic.
 
 ## Install
 
-Version 0.3.8 adds opt-in high-difficulty generation, explicit
-`case_request_id` recovery, privacy classification fixes and optional Judge input
-budget discovery. Server features depend on service support and account
-permissions. See [release notes](docs/releases.md).
+Version 0.3.10 adds optional Java/external-process Trace capture over local OTLP,
+with a free two-input Java example. Existing Run and Judge workflows are
+unchanged. See [release notes](docs/releases.md).
 
 Requires Python 3.10 or newer:
 
@@ -82,6 +81,8 @@ reparse points, reporting incomplete capture. An explicitly configured external
 - [Run an official evaluation](docs/sdk-guide.md) with the full Case and Judge workflow.
 - [Observe an Agent locally](docs/observation.md) without a Case, Judge, or
   automatic upload.
+- [Connect a Java Agent](examples/java_agent/README.md) and capture observed model
+  and tool calls with the official Java OpenTelemetry exporter.
 - [Try the full-stack example](examples/full_stack/README.md) with KUMA and
   mini-SWE-agent in Docker. It may use service credit and model budget.
 

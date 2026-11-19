@@ -516,7 +516,7 @@ class TraceEvidenceCapture:
     def export_span(
         self, span: Any, *, association: _Association | None = None
     ) -> None:
-        """Map an ended span into the currently active same-process Run step."""
+        """Map an ended span into its bound capture window using shared privacy limits."""
         if association is None:
             with self._lock:
                 association = self._active

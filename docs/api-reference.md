@@ -435,6 +435,37 @@ See [Agent tool capabilities](agent-tool-capabilities.md) for bounds and compati
 
 ## OpenTelemetry
 
+### External OTLP Trace receiver
+
+`from kuma.otlp import OtlpTraceReceiver` requires the `otlp` optional extra.
+
+<!-- api-parameters:OtlpTraceReceiver:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `capture` | `TraceEvidenceCapture \| None` | `None` | Reuse the capture passed to the Run, or create one with default limits. Available as `receiver.capture`. |
+| `port` | `int` | `0` | IPv4 loopback port from 0 through 65535. Zero selects a free port. |
+| `max_request_bytes` | `int` | `8388608` | Compressed and decoded request-body ceiling, 1 through 16777216 bytes. Capture limits independently bound retained Evidence. |
+
+<!-- api-parameters:OtlpTraceReceiver:end -->
+
+**Returns:** a receiver context manager. Entry starts a loopback listener; exit
+revokes its active lease, closes the socket, and joins its request thread.
+Invalid configuration or a missing optional dependency raises `ConfigurationError`.
+Socket binding errors propagate as `OSError`. Keep the receiver inside the trusted
+local harness and supply `receiver.capture` to `create_run`.
+
+`receiver.step()` returns a context manager yielding a dictionary with
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`, and
+`OTEL_EXPORTER_OTLP_TRACES_HEADERS`. It takes no arguments. Call it after
+`Run.get_input()` and flush the external exporter before exit, then call `submit`.
+Overlapping leases or an inactive Input/receiver raise `ConfigurationError`.
+The headers contain an ephemeral bearer for that Input. Exit revokes it and waits
+for in-flight ingestion; it has no Agent execution or Run transition side effects.
+The receiver accepts up to 1000 spans per batch using HTTP Protobuf, with optional
+bounded gzip. Existing Trace body/privacy contracts apply. See the
+[complete Java example](../examples/java_agent/README.md).
+
 Install `kuma-defuzex[otel]` before importing `kuma.otel`.
 
 <!-- api-parameters:configure_trace_evidence:start -->

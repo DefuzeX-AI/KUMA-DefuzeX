@@ -703,7 +703,8 @@ def create_run(
             ``KUMA_API_KEY`` and then the local credential file when an official
             provider needs authentication.
         trace_evidence: Capture created by
-            :func:`kuma.otel.configure_trace_evidence`. ``None`` attempts to
+            :func:`kuma.otel.configure_trace_evidence` or the ``capture`` property
+            of :class:`kuma.otlp.OtlpTraceReceiver`. ``None`` attempts to
             reuse a compatible configured global OTel provider; unavailable OTel
             becomes a non-blocking ``runtime_warnings`` entry.
         scan_strategy_group: Keep ``False`` (default). Automatic group matching

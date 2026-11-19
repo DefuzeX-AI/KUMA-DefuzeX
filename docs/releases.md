@@ -6,6 +6,28 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
+## 0.3.10
+
+This optional update adds external-process Trace capture without changing the
+default Run workflow or Judge wire. Check the matching GitHub Release and PyPI
+version to confirm publication.
+
+- Receive Java and other external Agent spans through an explicit loopback
+  OTLP/HTTP Protobuf receiver, installed with `kuma-defuzex[otlp]`.
+- Bind each invocation to one Input with an ephemeral bearer. Reuse existing
+  privacy filtering, sampling, capture limits and model/tool Evidence semantics.
+- Run a free Java 17 example that keeps one JVM alive across two Inputs and
+  records observed model-adapter and executed-tool bodies. Real export failures
+  stop the example; executed tool errors retain their actual status.
+- Follow the [Java integration guide](../examples/java_agent/README.md) for
+  Maven setup, existing-Agent instrumentation, lifecycle and troubleshooting.
+- Include the previously merged fair per-step Trace budget and example lifecycle
+  fixes from community contributions, plus the translated contribution guide.
+
+The model adapter in the example is a deterministic local fixture. This release
+does not automatically instrument arbitrary Java frameworks, execute hosted
+models, or guarantee complete capture. Java and Python must share loopback.
+
 ## 0.3.9
 
 An optional patch update. Authentication-service outages can
