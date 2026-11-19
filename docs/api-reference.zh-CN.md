@@ -466,6 +466,9 @@ The receiver accepts up to 1000 spans per batch using HTTP Protobuf, with option
 bounded gzip. Existing Trace body/privacy contracts apply. See the
 [complete Java example](../examples/java_agent/README.md).
 
+HTTP header/body reads have a two-second total deadline per accepted connection;
+partial traffic does not reset the deadline or indefinitely delay context exit.
+
 Install `kuma-defuzex[otel]` before importing `kuma.otel`.
 
 <!-- api-parameters:configure_trace_evidence:start -->

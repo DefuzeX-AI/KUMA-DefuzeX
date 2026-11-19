@@ -31,6 +31,10 @@ framing, invalid Protobuf, and body limits are rejected with bounded errors;
 authenticated rejected batches mark capture loss. Exporter failures and unsent
 spans must also be checked by the Java harness before sealing the Input.
 
+Each accepted connection has a two-second total deadline for reading HTTP
+headers and the body. Sending occasional bytes does not extend it; slow clients
+cannot indefinitely block Input lease revocation or receiver shutdown.
+
 ## What is captured
 
 An actual span with `gen_ai.operation.name="execute_tool"` may carry

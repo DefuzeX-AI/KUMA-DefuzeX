@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hmac
 import secrets
+import socket
 import threading
+import time
 import zlib
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -39,14 +41,35 @@ def _inflate(body: bytes, ceiling: int) -> bytes:
     return decoded
 
 
+class _DeadlineSocket(socket.socket):
+    """Bound a request's total read time even when a client keeps sending bytes."""
+
+    def __init__(self, connection: socket.socket) -> None:
+        """Take ownership of the accepted connection and fix its absolute deadline."""
+        super().__init__(
+            connection.family,
+            connection.type,
+            connection.proto,
+            fileno=connection.detach(),
+        )
+        self._deadline = time.monotonic() + _REQUEST_TIMEOUT
+
+    def recv_into(self, buffer: Any, nbytes: int = 0, flags: int = 0) -> int:
+        """Limit each SocketIO read to the time remaining in the original request."""
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("OTLP request read deadline exceeded")
+        self.settimeout(remaining)
+        return super().recv_into(buffer, nbytes, flags)
+
+
 class _ReceiverServer(HTTPServer):
     """Serve requests serially with bounded reads and no request-body diagnostics."""
 
     def get_request(self) -> Any:
         """Set a read deadline before the HTTP parser reads headers or the body."""
         connection, address = super().get_request()
-        connection.settimeout(_REQUEST_TIMEOUT)
-        return connection, address
+        return _DeadlineSocket(connection), address
 
     def handle_error(self, request: Any, client_address: Any) -> None:
         """Suppress external payload and credential details in unexpected server failures."""

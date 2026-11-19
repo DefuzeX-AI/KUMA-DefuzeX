@@ -5,6 +5,8 @@ import http.client
 import json
 import socket
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -17,7 +19,7 @@ from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
 
 from kuma.errors import ConfigurationError
 from kuma.evidence.trace import TraceEvidenceCapture, TraceEvidenceLimits
-from kuma.otlp import OtlpTraceReceiver
+from kuma.otlp import OtlpTraceReceiver, _DeadlineSocket
 
 
 def batch():
@@ -89,12 +91,127 @@ def evidence(capture, input_id="step-1"):
     return capture.prepare_step("run", "case", input_id)
 
 
+def observe_reads(receiver, phase):
+    """Expose the actual socket-accept/body-read boundary to concurrent exit tests."""
+    reading = threading.Event()
+    original_accept, original_read = receiver._server.get_request, receiver._read
+
+    def accept():
+        connection = original_accept()
+        if phase == "header":
+            reading.set()
+        return connection
+
+    def read(handler):
+        reading.set()
+        return original_read(handler)
+
+    receiver._server.get_request, receiver._read = accept, read
+    return reading
+
+
+def drip_bytes(client, stopped):
+    """Send bytes often enough to defeat an ordinary idle socket timeout."""
+    while not stopped.wait(0.02):
+        try:
+            client.sendall(b"x")
+        except OSError:
+            return
+
+
+def close_during_read(receiver, lease, target, finished, errors):
+    """Report concurrent shutdown completion and errors without hiding thread failures."""
+    try:
+        if target == "receiver":
+            receiver.__exit__()
+        else:
+            lease.__exit__(None, None, None)
+    except Exception as error:
+        errors.append(error)
+    finally:
+        finished.set()
+
+
+def join_started(thread):
+    """Join a started test worker even when setup failed before the other worker began."""
+    if thread.ident is not None:
+        thread.join(timeout=2)
+
+
 class OtlpReceiverTests(unittest.TestCase):
     def setUp(self):
         """Isolate local Run workspaces for each protocol regression."""
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.tmp_path = Path(directory.name)
+
+    def test_expired_read_deadline_fails_before_reading(self):
+        with _DeadlineSocket(socket.socket()) as connection:
+            connection._deadline = time.monotonic() - 1
+            with self.assertRaises(TimeoutError):
+                connection.recv_into(bytearray(1))
+
+    def test_dripping_header_and_body_cannot_block_step_or_receiver_exit(self):
+        for phase, exit_target in [
+            ("header", "receiver"),
+            ("body", "receiver"),
+            ("body", "step"),
+        ]:
+            with self.subTest(phase=phase, exit_target=exit_target):
+                self._check_dripping_request_exit(phase, exit_target)
+
+    def _check_dripping_request_exit(self, phase, exit_target):
+        """Keep bytes flowing past an idle timeout while checking a fixed exit bound."""
+        with patch("kuma.otlp._REQUEST_TIMEOUT", 0.4):
+            receiver = OtlpTraceReceiver().__enter__()
+            server_thread = receiver._thread
+            receiver.capture.begin_step("run", "case", "step-1")
+            lease = receiver.step()
+            settings = lease.__enter__()
+            url = urlsplit(settings["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"])
+            reading = observe_reads(receiver, phase)
+            stopped = threading.Event()
+            finished = threading.Event()
+            errors = []
+            client = socket.create_connection((url.hostname, url.port), timeout=2)
+            dripper = threading.Thread(
+                target=drip_bytes, args=(client, stopped), daemon=True
+            )
+            closer = threading.Thread(
+                target=close_during_read,
+                args=(receiver, lease, exit_target, finished, errors),
+                daemon=True,
+            )
+            try:
+                if phase == "header":
+                    request = "POST /v1/traces HTTP/1.0\r\nX-Drip: "
+                else:
+                    bearer = settings["OTEL_EXPORTER_OTLP_TRACES_HEADERS"].split(
+                        "=", 1
+                    )[1]
+                    request = f"POST /v1/traces HTTP/1.0\r\nAuthorization: {bearer}\r\nContent-Type: application/x-protobuf\r\nContent-Length: 4096\r\n\r\nx"
+                client.sendall(request.encode("ascii"))
+                self.assertTrue(reading.wait(2), "Receiver never began reading")
+                dripper.start()
+                closer.start()
+                self.assertTrue(finished.wait(2), "Dripping bytes prolonged shutdown")
+                self.assertEqual(errors, [])
+                if phase == "body":
+                    prepared = evidence(receiver.capture)
+                    self.assertIn("trace_export_failed", prepared.evidence["reasons"])
+                    self.assertEqual(prepared.evidence["spans"], [])
+            finally:
+                stopped.set()
+                client.close()
+                join_started(dripper)
+                join_started(closer)
+                lease.__exit__(None, None, None)
+                receiver.__exit__()
+            self.assertFalse(server_thread.is_alive())
+            self.assertFalse(dripper.is_alive())
+            self.assertFalse(closer.is_alive())
+            with socket.socket() as probe:
+                self.assertNotEqual(probe.connect_ex((url.hostname, url.port)), 0)
 
     def test_real_protobuf_retains_model_tool_parent_and_resource(self):
         with OtlpTraceReceiver() as receiver:
