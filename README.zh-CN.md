@@ -31,7 +31,7 @@ Judgment。KUMA 不负责运行被测 Agent，也不公开私有评测逻辑。
 
 ## 安装
 
-0.3.8 版本新增显式 `high_difficulty`、`case_request_id` 请求恢复、隐私误报修复和可选 Judge 输入预算查询。服务端功能取决于服务支持和账号权限。详见[发布说明](docs/releases.md)。
+0.3.10 版本新增可选的 Java／外部进程 Trace 采集，通过本地 OTLP 接入，并提供免费的两轮 Java 示例。原有 Run 和 Judge 流程保持兼容。详见[发布说明](docs/releases.md)。
 
 需要 Python 3.10 或更高版本：
 
@@ -66,6 +66,8 @@ Reason: Output exactly matched the published rule.
 
 - [运行官方评测](docs/sdk-guide.md)，完成完整的 Case 与 Judge 流程。
 - [在本地观察 Agent](docs/observation.md)，无需 Case、Judge 或自动上传。
+- [接入 Java Agent](examples/java_agent/README.md)，使用官方 Java OpenTelemetry
+  导出器采集实际模型和工具调用。
 - [运行全栈示例](examples/full_stack/README.zh-CN.md)，在 Docker 中组合 KUMA
   与 mini-SWE-agent；该流程可能消耗服务 Credit 和模型预算。
 

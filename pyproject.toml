@@ -32,6 +32,10 @@ Homepage = "https://github.com/DefuzeX-AI/KUMA-DefuzeX"
 Repository = "https://github.com/DefuzeX-AI/KUMA-DefuzeX"
 
 [project.optional-dependencies]
+otlp = [
+    "opentelemetry-proto>=1.30,<2",
+]
+
 otel = [
     "opentelemetry-api>=1.30,<2",
     "opentelemetry-sdk>=1.30,<2",

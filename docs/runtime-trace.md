@@ -11,6 +11,30 @@ the server advertises `runtime_trace`; there is no second hidden upload switch.
 A server without this capability causes `runtime_evidence_unsupported` before
 Judge POST. Runs without Trace capture retain existing compatibility.
 
+## Java and other external processes
+
+Install `kuma-defuzex[otlp]` and use `kuma.otlp.OtlpTraceReceiver` to receive
+standard OTLP/HTTP Protobuf spans from an external process. Java can use the
+official `OtlpHttpSpanExporter`. See the [runnable Java example](../examples/java_agent/README.md)
+for the Maven build, two-step session, semantic attributes, and verification.
+
+Pass `receiver.capture` to `create_run(trace_evidence=...)`. After each
+`get_input`, enter `receiver.step()` around the actual Java invocation, configure
+its exporter from the returned environment variables, and flush its spans before
+exiting the context. Submit the Agent result afterward. Each lease authenticates
+one Input; delayed exports with an old bearer are rejected. Accepted spans use
+the existing sanitization, sampling, Evidence and Judge serialization paths.
+
+The listener binds to `127.0.0.1` and uses an ephemeral port by default. Java and
+Python must share that network namespace. Only traces are accepted. Unsupported
+framing, invalid Protobuf, and body limits are rejected with bounded errors;
+authenticated rejected batches mark capture loss. Exporter failures and unsent
+spans must also be checked by the Java harness before sealing the Input.
+
+Each accepted connection has a two-second total deadline for reading HTTP
+headers and the body. Sending occasional bytes does not extend it; slow clients
+cannot indefinitely block Input lease revocation or receiver shutdown.
+
 ## What is captured
 
 An actual span with `gen_ai.operation.name="execute_tool"` may carry

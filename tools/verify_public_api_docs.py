@@ -37,6 +37,7 @@ class PublicApi:
 
 
 PUBLIC_APIS = (
+    PublicApi("OtlpTraceReceiver", "src/kuma/otlp.py", "OtlpTraceReceiver.__init__"),
     PublicApi("configure", "src/kuma/api.py", "configure"),
     PublicApi("create_run", "src/kuma/api.py", "create_run"),
     PublicApi(

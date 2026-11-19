@@ -481,7 +481,7 @@ actual credentials still follow negotiated redaction or pre-upload rejection.
 
 ## OpenTelemetry
 
-OpenTelemetry (OTel) is the standard observability API used by Agent frameworks and instrumentation to emit spans. KUMA maps spans that were **actually emitted in the same process** into bounded Evidence. It does not invent Agent activity and is not an OTel Collector, backend, or trace UI.
+OpenTelemetry (OTel) is the standard observability API used by Agent frameworks and instrumentation to emit spans. KUMA maps observed in-process spans or explicit local OTLP exports into bounded Evidence. See the [Java example](../examples/java_agent/README.md) for the external-process workflow.
 
 Install OTel support only when trace capture is needed; the core package does not require it:
 
@@ -549,8 +549,8 @@ bounded redacted projections, not unrestricted prompt/log collection. Credential
 and private evaluation content are not admitted. Explicit submit(output) remains
 the portable fallback; omission requires supported Agent/Workflow final output.
 Native OTel logs retain safe metadata/hashes; explicit file logs retain their
-separate Submission contract. KUMA provides no OTLP receiver, cross-process Trace
-capture, Trace UI or storage server. See [OpenInference](openinference.md) and
+separate Submission contract. The optional `[otlp]` extra provides a local
+Trace receiver with per-Input export leases. See [OpenInference](openinference.md) and
 [explicit cloud observations](cloud-observations.md).
 
 ## Docker and runtime security
