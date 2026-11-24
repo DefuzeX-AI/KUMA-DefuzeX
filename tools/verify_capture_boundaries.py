@@ -113,12 +113,16 @@ class CaptureBoundaryTests(unittest.TestCase):
         cancelled = asyncio.CancelledError("original cancellation")
 
         async def run():
-            async with recorded:
-                raise cancelled
+            try:
+                async with recorded:
+                    raise cancelled
+            except asyncio.CancelledError as error:
+                self.assertIs(error, cancelled)
+                raise
 
-        with self.assertRaises(asyncio.CancelledError) as error:
+        # A runner can reconstruct cancellation; identity is the SDK context's contract.
+        with self.assertRaises(asyncio.CancelledError):
             asyncio.run(run())
-        self.assertIs(error.exception, cancelled)
         self.assertEqual(
             recorded.export()["observation"]["execution_status"], "aborted"
         )
@@ -136,8 +140,12 @@ class CaptureBoundaryTests(unittest.TestCase):
             failed = capture("Inspect.", tracer_provider=object(), **self.options)
 
             async def saving_cancel():
-                async with failed:
-                    raise cancelled
+                try:
+                    async with failed:
+                        raise cancelled
+                except asyncio.CancelledError as error:
+                    self.assertIs(error, cancelled)
+                    raise
 
             with self.assertRaises(asyncio.CancelledError):
                 asyncio.run(saving_cancel())
