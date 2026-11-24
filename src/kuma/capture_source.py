@@ -122,7 +122,7 @@ def validate_source(
     Omission preserves old packages. Call once for shape, then with envelope
     reasons for mapping checks. A conflict permits retained native identity;
     without a native-present bit it cannot prove execution or identify its source.
-    Vendor kind is descriptive at admission, not a requirement for extra reasons
+    Vendor kind is descriptive at admission and does not demand extra reasons
     when a known callback already agrees with the recorded wire operation.
     Raises value-free ValueError on malformed fields or an unexplained mismatch.
     """
