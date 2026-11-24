@@ -47,7 +47,8 @@ class CaptureBoundaryTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # Internal store helpers take canonical paths; public conformance retains raw aliases.
+        self.root = Path(self.temporary.name).resolve()
         self.repo, self.store = self.root / "repo", self.root / "store"
         self.repo.mkdir()
         self.store.mkdir()
@@ -131,7 +132,7 @@ class CaptureBoundaryTests(unittest.TestCase):
             return session
 
         self.assertEqual(asyncio.run(normal()).persistence_status, "saved")
-        with patch("kuma.capture.save_capture", side_effect=OSError("private")):
+        with patch.object(core, "save_capture", side_effect=OSError("private")):
             failed = capture("Inspect.", tracer_provider=object(), **self.options)
 
             async def saving_cancel():
@@ -466,7 +467,7 @@ class CaptureBoundaryTests(unittest.TestCase):
                 **self.options,
             )
             self.assertEqual(reviewed["review_status"], "completed")
-            with patch("kuma.capture.KumaClient", return_value=client):
+            with patch.object(core, "KumaClient", return_value=client):
                 self.assertEqual(
                     judge_capture(result["capture_id"], **self.options)[
                         "review_status"

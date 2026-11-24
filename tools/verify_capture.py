@@ -24,6 +24,7 @@ from kuma.capture_store import load_capture
 from kuma.errors import ConfigurationError, ValidationError
 from kuma.trajectory_requirements import requirements_fingerprint
 
+CAPTURE_MODULE = importlib.import_module("kuma.capture")
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -193,7 +194,7 @@ assert session.persistence_status=='saved'
             self.assertEqual(rows[0]["operation_counts"], {})
             with (
                 self.assertRaises(ValidationError),
-                patch("kuma.capture.KumaClient") as factory,
+                patch.object(CAPTURE_MODULE, "KumaClient") as factory,
             ):
                 judge_capture(recorded.capture_id, repo_path=repo, storage_path=store)
             factory.assert_not_called()
@@ -238,8 +239,9 @@ assert session.persistence_status=='saved'
             )
             with (
                 self.assertRaises(RuntimeError) as raised,
-                patch(
-                    "kuma.capture.save_capture",
+                patch.object(
+                    CAPTURE_MODULE,
+                    "save_capture",
                     side_effect=OSError("private OS detail"),
                 ),
                 recorded,
@@ -252,8 +254,9 @@ assert session.persistence_status=='saved'
             )
             with (
                 self.assertRaises(ConfigurationError) as error,
-                patch(
-                    "kuma.capture.save_capture",
+                patch.object(
+                    CAPTURE_MODULE,
+                    "save_capture",
                     side_effect=OSError("private OS detail"),
                 ),
                 capture(
@@ -561,7 +564,7 @@ for sampler in [ALWAYS_ON,ALWAYS_OFF]:
             self.assertIn("trace_topology_partial", observation["reasons"])
             with (
                 self.assertRaises(ValidationError),
-                patch("kuma.capture.KumaClient") as factory,
+                patch.object(CAPTURE_MODULE, "KumaClient") as factory,
             ):
                 judge_capture(recorded.capture_id, repo_path=repo, storage_path=store)
             factory.assert_not_called()
