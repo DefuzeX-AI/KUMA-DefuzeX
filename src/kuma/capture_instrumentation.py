@@ -13,6 +13,19 @@ _OWNED: dict[str, tuple[Any, Any]] = {}
 _SUPPORTED = {"existing", "openai", "langchain", "langgraph"}
 
 
+def _prepare_owned_source(key: str, instrumentor: Any) -> None:
+    """Attach or retry provenance only for an installed KUMA-owned LangChain hook.
+
+    The caller caches ownership before this fallible boundary. Attachment is
+    idempotent; failure propagates to the stable configuration error and never
+    converts the owned hook to external success. Other integrations are untouched.
+    """
+    if key == "langchain":
+        from .capture_source import attach_langchain_source
+
+        attach_langchain_source(instrumentor)
+
+
 def validate_framework(framework: str) -> None:
     """Reject unsupported integration names before storage or instrumentation side effects."""
     if not isinstance(framework, str) or framework not in _SUPPORTED:
@@ -60,6 +73,7 @@ def prepare_instrumentation(
             if instrumentor.is_instrumented_by_opentelemetry and owned is not None:
                 if provider is not None and provider is not owned[0]:
                     raise ValueError("different provider")
+                _prepare_owned_source(key, instrumentor)
                 return owned[0], {"framework": framework, "status": "kuma_reused"}
             from opentelemetry.trace import get_tracer_provider
 
@@ -79,7 +93,10 @@ def prepare_instrumentation(
             instrumentor.instrument(tracer_provider=chosen)
             if not instrumentor.is_instrumented_by_opentelemetry:
                 raise ValueError("instrumentation not installed")
+            # Own the installed hook even if source attachment fails. A retry
+            # must repair/reject our hook, never relabel it as external success.
             _OWNED[key] = (chosen, instrumentor)
+            _prepare_owned_source(key, instrumentor)
             return chosen, {"framework": framework, "status": "kuma_enabled"}
     except Exception:
         pass  # Translate outside the handler so native dependency errors are not chained.

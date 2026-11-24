@@ -1,0 +1,12 @@
+{
+  "requested": {
+    "utf8": "{\"task\":\"requested document\",\"nano\":1789783050660927701}",
+    "sha256": "f78ab68d26d4ee476f5646f945696099cb215f2d5107867fa734d520f159ad4e",
+    "gzip_base64": "H4sIAAAAAAACCqtWKkkszlayUipKLSxNLS5JTVFIyU8uzU3NK1HSUcpLzMtXsjI0t7A0tzA2MDUwMzOwNDI3NzCsBQAOTrDTOAAAAA=="
+  },
+  "other": {
+    "utf8": "{\"task\":\"different document\"}",
+    "sha256": "eee98c63f14b9e8abf00feecd48b6a9271c547a37ac6092dd0e57d686e36d9c3",
+    "gzip_base64": "H4sIAAAAAAACCqtWKkkszlayUkrJTEtLLUrNK1FIyU8uzQUylGoB9SQghh0AAAA="
+  }
+}

@@ -64,7 +64,9 @@ All content passes the existing finite JSON and sensitive-content normalization 
 depth 32 and a complete bundle limit of 4 MiB. Unsupported graphs, NaN, cycles and oversized data
 raise `kuma.ValidationError` without echoing source values. Content is not silently truncated.
 `content_status` is `present` or `redacted`; the latter remains visible after re-encoding.
-Recognized credential values may be replaced or removed. This does not certify all private data
+Recognized credential values, email addresses, IPv4 spellings and user-home paths
+may be replaced or removed in this review-specific projection. Original inputs
+and non-sensitive source references are unchanged. This does not certify all private data
 has been detected. Inspect the prepared contents before sharing them.
 
 `encode_review(bundle)` accepts exactly the returned fields, revalidates and reapplies redaction,

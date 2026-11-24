@@ -1,0 +1,270 @@
+{
+  "purpose": "Shared synthetic operation-source validation vectors; not a complete Trace envelope",
+  "new_reasons": [
+    "trace_operation_type_conflict",
+    "trace_operation_type_unknown"
+  ],
+  "source_fields": [
+    "source",
+    "run_type",
+    "openinference_kind"
+  ],
+  "source": "langchain_callback",
+  "fixture_convention": "operation_source:null represents an absent optional field, not JSON null on wire; native is test input only and is not a new serialized field",
+  "admission_rule": "Known callback mapping mismatch without trace_operation_type_conflict is rejected; with conflict preserve the recorded operation, including unknown native strings. No execution authenticity is inferred. unknown/retriever require unknown; any retained operation also requires conflict. null operation in vectors means absent attribute. Vendor kind is descriptive only at admission: known callback plus matching wire operation accepts without vendor-conflict/unknown reasons. Producers still report observed vendor gaps.",
+  "run_types": [
+    "llm",
+    "tool",
+    "chain",
+    "retriever",
+    "unknown"
+  ],
+  "openinference_kinds": [
+    "LLM",
+    "TOOL",
+    "CHAIN",
+    "AGENT",
+    "RETRIEVER",
+    "unknown"
+  ],
+  "callback_mapping_without_native": {
+    "llm": "chat",
+    "tool": "execute_tool",
+    "chain": "invoke_workflow",
+    "retriever": null,
+    "unknown": null
+  },
+  "vectors": [
+    {
+      "name": "old-object",
+      "operation": "chat",
+      "operation_source": null,
+      "expected": "accept"
+    },
+    {
+      "name": "agent-named-model",
+      "native": null,
+      "operation": "chat",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "llm",
+        "openinference_kind": "AGENT"
+      },
+      "reasons": [
+        "trace_operation_type_conflict"
+      ],
+      "expected": "accept"
+    },
+    {
+      "name": "agent-chain-root",
+      "native": null,
+      "operation": "invoke_workflow",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "chain",
+        "openinference_kind": "AGENT"
+      },
+      "reasons": [
+        "trace_operation_type_conflict"
+      ],
+      "expected": "accept"
+    },
+    {
+      "name": "native-wins",
+      "native": "invoke_agent",
+      "operation": "invoke_agent",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "llm",
+        "openinference_kind": "AGENT"
+      },
+      "reasons": [
+        "trace_operation_type_conflict"
+      ],
+      "expected": "accept"
+    },
+    {
+      "name": "native-unknown-wins",
+      "native": "synthetic_unknown_operation",
+      "operation": "synthetic_unknown_operation",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "llm",
+        "openinference_kind": "LLM"
+      },
+      "reasons": [
+        "trace_operation_type_conflict"
+      ],
+      "expected": "accept"
+    },
+    {
+      "name": "unknown",
+      "native": null,
+      "operation": null,
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "unknown",
+        "openinference_kind": "unknown"
+      },
+      "reasons": [
+        "trace_operation_type_unknown"
+      ],
+      "expected": "accept"
+    },
+    {
+      "name": "bad-enum",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "agent",
+        "openinference_kind": "AGENT"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "extra-field",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "llm",
+        "openinference_kind": "LLM",
+        "name": "synthetic"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "wrong-mapping",
+      "native": null,
+      "operation": "execute_tool",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "llm",
+        "openinference_kind": "LLM"
+      },
+      "reasons": [],
+      "expected": "reject"
+    },
+    {
+      "name": "unknown-no-reason",
+      "operation": null,
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "unknown",
+        "openinference_kind": "unknown"
+      },
+      "reasons": [],
+      "expected": "reject"
+    },
+    {
+      "name": "unknown-chat-no-conflict",
+      "operation": "chat",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "unknown",
+        "openinference_kind": "unknown"
+      },
+      "reasons": [
+        "trace_operation_type_unknown"
+      ],
+      "expected": "reject"
+    },
+    {
+      "name": "unknown-omitted-operation",
+      "operation": null,
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "unknown",
+        "openinference_kind": "unknown"
+      },
+      "reasons": [
+        "trace_operation_type_unknown"
+      ],
+      "expected": "accept"
+    },
+    {
+      "name": "unknown-native-operation",
+      "operation": "synthetic_unknown_operation",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "unknown",
+        "openinference_kind": "unknown"
+      },
+      "reasons": [
+        "trace_operation_type_unknown",
+        "trace_operation_type_conflict"
+      ],
+      "expected": "accept"
+    },
+    {
+      "name": "retriever-no-reason",
+      "operation": null,
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "retriever",
+        "openinference_kind": "unknown"
+      },
+      "reasons": [],
+      "expected": "reject"
+    },
+    {
+      "name": "retriever-chat-no-conflict",
+      "operation": "chat",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "retriever",
+        "openinference_kind": "unknown"
+      },
+      "reasons": [
+        "trace_operation_type_unknown"
+      ],
+      "expected": "reject"
+    },
+    {
+      "name": "retriever-omitted-operation",
+      "operation": null,
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "retriever",
+        "openinference_kind": "unknown"
+      },
+      "reasons": [
+        "trace_operation_type_unknown"
+      ],
+      "expected": "accept"
+    },
+    {
+      "name": "retriever-native-operation",
+      "operation": "synthetic_unknown_operation",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "retriever",
+        "openinference_kind": "unknown"
+      },
+      "reasons": [
+        "trace_operation_type_unknown",
+        "trace_operation_type_conflict"
+      ],
+      "expected": "accept"
+    },
+    {
+      "name": "server-admissible-known-callback-AGENT",
+      "operation": "chat",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "llm",
+        "openinference_kind": "AGENT"
+      },
+      "reasons": [],
+      "expected": "accept"
+    },
+    {
+      "name": "server-admissible-known-callback-unknown",
+      "operation": "chat",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "llm",
+        "openinference_kind": "unknown"
+      },
+      "reasons": [],
+      "expected": "accept"
+    }
+  ]
+}

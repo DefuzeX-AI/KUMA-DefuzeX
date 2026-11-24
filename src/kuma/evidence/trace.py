@@ -60,6 +60,8 @@ _CAPTURE_REASONS = frozenset(
         "trace_model_content_size_limit",
         "trace_model_content_invalid",
         "trace_model_content_redacted",
+        "trace_operation_type_conflict",
+        "trace_operation_type_unknown",
     }
 )
 _MAX_DROPPED_COUNT = 999_999_999
@@ -387,6 +389,16 @@ class TraceEvidenceCapture:
             run_id: Non-empty owning Run identifier.
             case_id: Non-empty owning Case identifier.
             input_id: Non-empty current input/step identifier.
+            step_index: Zero-based integer index of this delivered input, excluding
+                bool; at least zero and smaller than total_steps when both are given.
+                None (default) preserves first-come budgeting without a reserved share.
+            total_steps: Positive integer normalized Case input count, excluding bool.
+                With step_index, reserve remaining bytes across remaining steps; this
+                is not a guaranteed span count. None (default), or a missing step_index,
+                keeps historical first-come budgeting. Run supplies both automatically.
+
+        Returns:
+            None; the active in-memory association is ready for observed telemetry.
 
         Raises:
             ConfigurationError: If identifiers are invalid or their minimal
@@ -405,6 +417,10 @@ class TraceEvidenceCapture:
 
         Side Effects:
             Changes only in-memory association state.
+
+        Security/Privacy:
+            Does not read files, execute an Agent, upload data or alter privacy filters.
+            Budget reservations do not fabricate spans or hide omission reasons.
         """
         if any(
             not isinstance(value, str) or not value

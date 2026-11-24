@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .capture_instrumentation import prepare_instrumentation, validate_framework
+from .capture_privacy import redact_capture_json
 from .capture_store import (
     capture_directory,
     encoded,
@@ -24,18 +25,22 @@ from .client import KumaClient
 from .errors import ConfigurationError, ProviderError, ValidationError
 from .evidence.trace import TraceEvidenceLimits
 from .observation import observe
-from .repository.privacy import redact_sensitive_json
 from .trajectory_capture import prepare_observation
 from .trajectory_requirements import requirements_template, validate_requirements
 
 
 def _profile(task: str, tools: Any, requirements: dict | None) -> dict:
-    """Bind only the actual task and declared rules; do not infer tools, results or an oracle."""
+    """Bind the recorded task and declared rules without inventing evaluation facts.
+
+    Capture-specific credential/known-PII projection changes only the saved
+    profile, never the Agent's original input. Advanced requirements remain
+    authoritative and must match the projected task; a mismatch fails locally.
+    """
     if not isinstance(task, str) or not task.strip() or len(task) > 12000:
         raise ValidationError(
             "Capture task must be nonblank text of at most 12000 characters"
         )
-    safe, redacted = redact_sensitive_json(task)
+    safe, redacted = redact_capture_json(task)
     if requirements is not None:
         profile = validate_requirements(requirements)
         if tools is not None or profile["objective"] != safe:

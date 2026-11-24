@@ -644,6 +644,13 @@ def map_span(
     span_attributes, attribute_field_reasons = _optional_span_field(
         span, "attributes", "trace_attribute_invalid"
     )
+    from ..capture_source import project_source
+
+    span_attributes, operation_source, source_reasons = project_source(
+        span, span_attributes
+    )
+    if operation_source is not None:
+        mapped["operation_source"] = operation_source
     tool_status = None
     operation = observed_operation(span_attributes)
     if operation == "execute_tool":
@@ -657,7 +664,7 @@ def map_span(
         tool_content_status=tool_status,
         managed_keys=model_keys,
     )
-    if model_keys:
+    if model_keys is not None:
         content, model_drops, model_reasons = map_model_content(span_attributes)
         mapped["model_content"] = content
         dropped += model_drops
@@ -684,6 +691,7 @@ def map_span(
     )
     scope, scope_truncated, scope_reasons = _map_scope(span, limits)
     reasons.update(core_reasons)
+    reasons.update(source_reasons)
     reasons.update(attribute_field_reasons)
     reasons.update(event_field_reasons)
     reasons.update(event_reasons)

@@ -33,6 +33,24 @@ def _receipt(value: dict, kind: str) -> None:
     )
 
 
+def export_digest(identity: Any, kind: str) -> str:
+    """Return the digest of a validated immutable export coordinate.
+
+    The client uses this before transport and the response validator reuses it
+    before accepting an export. Only the requested category and exact lowercase
+    owner/digest format are admitted; ownership authorization remains server-side.
+    Invalid input raises ValueError without echoing the coordinate. No I/O occurs.
+    """
+    _require(
+        isinstance(identity, str)
+        and re.fullmatch(
+            r"[0-9a-f]{64}\." + re.escape(kind) + r"\.[0-9a-f]{64}", identity
+        )
+        is not None
+    )
+    return identity.rsplit(".", 1)[1]
+
+
 def _page(result: dict, kind: str, data: dict) -> None:
     """Validate metadata-only bounded pages, including empty pages with a continuation cursor."""
     _require(
@@ -177,7 +195,7 @@ def _result(result: dict, action: str, data: dict) -> None:
         )
         _require(
             isinstance(result["content"], str)
-            and re.fullmatch(r"[0-9a-f]{64}", str(result["sha256"])) is not None
+            and result["sha256"] == export_digest(data["id"], kind)
         )
         return
     if operation == "compare":

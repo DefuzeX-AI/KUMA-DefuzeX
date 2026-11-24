@@ -6,6 +6,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from .capture_privacy import redact_capture_json
 from .errors import ValidationError
 from .evidence.trace_tool_content import normalize_tool_content
 
@@ -50,6 +51,8 @@ def prepare_review(
         Reuses KUMA's existing finite-JSON and Evidence redaction/scanning boundary,
         capped at 4 MiB and depth 32. There is no allow-sensitive override.
         Detection covers recognized patterns, not all possible private information.
+        Review-specific projection also redacts known email, IPv4 and user-home
+        spellings without changing general Case/Run Evidence privacy policy.
         Review prepared contents before sharing them outside your environment.
     """
     _text(task, 12_000)
@@ -77,6 +80,9 @@ def prepare_review(
     )
     if status not in {"present", "redacted"}:
         raise ValidationError("Trajectory content could not be safely prepared")
+    payload, pii_changed = redact_capture_json(payload)
+    if pii_changed:
+        status = "redacted"
     bundle = {"schema_version": SCHEMA_VERSION, "content_status": status, **payload}
     _canonical(bundle)
     return bundle

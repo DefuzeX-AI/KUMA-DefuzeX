@@ -880,9 +880,9 @@ Retrieve an exact canonical JSON artifact without changing large integers or sou
 
 <!-- api-parameters:TrajectoryClient.export:end -->
 
-**Returns:** Hash-verified UTF-8 JSON bytes, at most 6 MiB uncompressed. The caller owns saving them.
+**Returns:** UTF-8 JSON bytes bound to the requested ID digest, at most 6 MiB uncompressed. Response identity, category, declared digest and decoded-byte hash must agree. The caller owns saving the bytes.
 
-**Raises:** ValidationError: Unsupported category; standard request errors also apply. ProviderError: Bad encoding, expansion limit or mismatched content hash.
+**Raises:** ValidationError: Unsupported category or malformed/category-mismatched ID; rejected before HTTP. Standard request errors also apply. ProviderError: Bad encoding, expansion limit or mismatched content hash.
 
 **Side Effects:** One read-only POST; no local file, model, credit or automatic retry.
 
@@ -1170,6 +1170,31 @@ Return SHA-256 of canonical validated requirements; edits produce a different re
 **Raises:** ValidationError: The same invalid/sensitive/size conditions as validation.
 
 **Side Effects:** None; does not register or persist a revision.
+
+## Run-managed Trace step budgets
+
+`TraceEvidenceCapture.begin_step` is the lower-level in-process lifecycle method
+used by Run. Normal applications let Run supply the input index and Case length.
+
+<!-- api-parameters:TraceEvidenceCapture.begin_step:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `run_id` | str | Required | Nonempty owning Run identifier used to bind observed spans. |
+| `case_id` | str | Required | Nonempty owning Case identifier used for the shared byte budget. |
+| `input_id` | str | Required | Nonempty identifier of the current delivered input/step. |
+| `step_index` | int \| None | `None` | Zero-based index, excluding bool; must be at least zero and less than total_steps when both are supplied. None preserves first-come budgeting. |
+| `total_steps` | int \| None | `None` | Positive normalized Case input count, excluding bool. With step_index, reserves a share of remaining bytes for each remaining step; not a promised span count. If either is None, historical first-come behavior applies. |
+
+<!-- api-parameters:TraceEvidenceCapture.begin_step:end -->
+
+Returns None and installs one empty active bucket. A previous step must already be
+committed, aborted, cancelled or finished. Invalid identifiers/metadata or an
+oversized minimal envelope raise ConfigurationError; overlapping active steps
+raise RuntimeError and discard the conflicting bucket to avoid cross-step leakage.
+Only in-memory state changes: no file reads, Agent execution or network. Privacy
+filters and truthful loss reasons remain unchanged. Unused bytes remain available
+to later steps; tight budgets can still cause explicit loss.
 
 ## Error fields
 

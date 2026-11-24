@@ -16,7 +16,7 @@ from .errors import AuthenticationError, KumaError, ProviderError, ValidationErr
 from .evidence.trace_tool_content import normalize_tool_content
 from .trajectory_capture import prepare_submission
 from .trajectory_requirements import validate_requirements
-from .trajectory_wire import validate_response
+from .trajectory_wire import export_digest, validate_response
 from .transport.backend import _validate_timeout
 
 READ_ACTIONS = frozenset(
@@ -224,13 +224,22 @@ class TrajectoryClient:
             kind: requirements, traces, reviews, datasets, experiments or feedback.
             identity: Owned document ID returned by the workspace.
         Returns:
-            Hash-verified UTF-8 JSON bytes, at most 6 MiB uncompressed. The caller owns saving them.
+            UTF-8 JSON bytes bound to the requested ID digest, at most 6 MiB uncompressed.
+            Response identity, category, declared digest and decoded-byte hash must agree.
+            The caller owns saving the bytes.
         Raises:
-            ValidationError: Unsupported category; standard request errors also apply.
+            ValidationError: Unsupported category or malformed/category-mismatched ID;
+                rejected before HTTP. Standard request errors also apply.
             ProviderError: Bad encoding, expansion limit or mismatched content hash.
         Side Effects:
             One read-only POST; no local file, model, credit or automatic retry.
         """
+        if not isinstance(kind, str) or kind + ".export" not in READ_ACTIONS:
+            raise ValidationError("Invalid trajectory export category")
+        try:
+            expected_digest = export_digest(identity, kind)
+        except ValueError:
+            raise ValidationError("Invalid trajectory export identity") from None
         result = self.request(kind + ".export", {"id": identity})
         failed, raw = False, b""
         try:
@@ -242,6 +251,7 @@ class TrajectoryClient:
                 raw = stream.read(6 * 1024 * 1024 + 1)
             if (
                 len(raw) > 6 * 1024 * 1024
+                or result["sha256"] != expected_digest
                 or hashlib.sha256(raw).hexdigest() != result["sha256"]
             ):
                 raise ValueError("Invalid artifact size or hash")
