@@ -1,0 +1,1008 @@
+{
+  "report": {
+    "schema_version": "kuma.quality_agent_report.v4",
+    "annotation_review": {
+      "annotations": [
+        {
+          "assessment_index": 0,
+          "finding_index": 0,
+          "report_group": "information",
+          "group_reason": "Model-proposed scope; interpretation is not independently certified",
+          "confirmation_scope": "Interpretation, evidence gap or information only",
+          "locations": [
+            {
+              "source_file": "trajectory-bundle.json",
+              "event_index": 0,
+              "turn_number": 1,
+              "turn_id": "first",
+              "index_base": 0,
+              "source_sha256": "29c6cb7e972e95d67f92695b59e84090968b1df477e508957b4b850746c14189",
+              "evidence_id": "event-0"
+            }
+          ],
+          "location_status": "located",
+          "incidents": [],
+          "recovery_status": "not_applicable",
+          "process_review": {
+            "classification": "useful_action",
+            "proposed_classification": "useful_action",
+            "support_reason": "Observed sequence; goal relevance and quality judgment remain model interpretations",
+            "rationale": "An explicit positive inspection result was recorded.",
+            "uncertainty": "The intended final task outcome is not captured.",
+            "locations": [
+              {
+                "source_file": "trajectory-bundle.json",
+                "event_index": 0,
+                "turn_number": 1,
+                "turn_id": "first",
+                "index_base": 0,
+                "source_sha256": "29c6cb7e972e95d67f92695b59e84090968b1df477e508957b4b850746c14189",
+                "evidence_id": "event-0"
+              }
+            ],
+            "code_changed": null,
+            "automatic_score_deduction": false,
+            "recovery_certified": false,
+            "scope": "Reasonable retry and verified recovery are separate; purpose is declared intent"
+          },
+          "segment_id": 0,
+          "segment_finding_index": 0
+        }
+      ],
+      "confirmed_incident_count": 0,
+      "groups": {
+        "confirmed_anomaly": 0,
+        "unverified_risk": 0,
+        "evidence_gap": 0,
+        "information": 1
+      },
+      "process_groups": {
+        "confirmed_call_issue": 0,
+        "improvement_opportunity": 0,
+        "normal_retry": 0,
+        "useful_action": 1,
+        "unknown": 0
+      }
+    },
+    "review_standard": "execution_process.v1",
+    "scoring_policy": "atomic.v2",
+    "sample": "Inspect dimensions",
+    "review_status": "completed",
+    "review_model": {
+      "attempts": [
+        {
+          "provider": "deepseek",
+          "model": "deepseek-v4-pro",
+          "usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "total_tokens": 15
+          },
+          "latency_ms": 7,
+          "attempts": 1
+        }
+      ],
+      "driver": "core_partitioned_process.v1"
+    },
+    "prompt_version": "atomic.v2",
+    "score_metric": "caller_approved_predicate_pass_fraction_rounded_to_0_to_4",
+    "outcome_scope": "declared_task_fulfillment_checks_only",
+    "packet_sha256": "88cb9be074b6274785ff6ba4e45eb1e78e341fb4448efc6feca5912cf23f9892",
+    "source_hashes": {
+      "trajectory-bundle.json": "29c6cb7e972e95d67f92695b59e84090968b1df477e508957b4b850746c14189",
+      "requirements.json": "ef85629410bba61b7ad1b35f5394b2d359b2a99afdafcf7d275b881bc4938a7e"
+    },
+    "metrics": {
+      "observed_events": 1,
+      "tool_catalog_supplied": false,
+      "tool_catalog_complete": false,
+      "shortened_events": 0,
+      "content_status": "present",
+      "ingress_redacted": false,
+      "requirements_sha256": "ef85629410bba61b7ad1b35f5394b2d359b2a99afdafcf7d275b881bc4938a7e",
+      "requirements_version": "1",
+      "task_type": "inspection"
+    },
+    "assessment": {
+      "schema_version": "kuma.process_assessment.v1",
+      "outcome": "unknown",
+      "summary": "Process review completed across supplied source segments; judgments remain unscored interpretations.",
+      "checks": [
+        {
+          "requirement": "[process_quality] Inspect the recorded dimensions before reporting / Criterion: Inspect the recorded dimensions before reporting",
+          "basis": "task_inferred",
+          "status": "unknown",
+          "explanation": "Captured fact only; model-chosen criteria have no caller-approved scoring authority",
+          "citations": [
+            {
+              "evidence_id": "event-0",
+              "quote": "\"ok\": true"
+            }
+          ]
+        }
+      ],
+      "dimensions": [
+        {
+          "name": "completion",
+          "status": "unknown",
+          "score": null,
+          "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+          "citations": []
+        },
+        {
+          "name": "correctness",
+          "status": "unknown",
+          "score": null,
+          "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+          "citations": []
+        },
+        {
+          "name": "efficiency",
+          "status": "unknown",
+          "score": null,
+          "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+          "citations": []
+        },
+        {
+          "name": "instruction_following",
+          "status": "unknown",
+          "score": null,
+          "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+          "citations": []
+        },
+        {
+          "name": "tool_use",
+          "status": "unknown",
+          "score": null,
+          "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+          "citations": []
+        },
+        {
+          "name": "verification",
+          "status": "unknown",
+          "score": null,
+          "explanation": "Declared captured predicates: 0 met, 0 unmet, 1 unknown out of 1 applicable. This is not a calibrated Agent ability rating.",
+          "citations": []
+        }
+      ],
+      "findings": [
+        {
+          "category": "optimization",
+          "severity": "observation",
+          "step": "turn-1",
+          "title": "Inspection provides useful context",
+          "explanation": "An explicit positive inspection result was recorded.",
+          "impact": "The width is available for the next decision.",
+          "recommendation": "Use the recorded dimensions before changing the object.",
+          "evidence_strength": "inferred",
+          "responsibility": "unknown",
+          "citations": [
+            {
+              "evidence_id": "event-0",
+              "quote": "\"ok\": true"
+            }
+          ]
+        }
+      ],
+      "limitations": [
+        "Only one inspection event was supplied.",
+        "Numeric scores require caller-owned formal predicates; model-chosen facts stay unscored. No general ability score or held-out reliability rate has been established.",
+        "Model hypotheses, requested behavior and verified task failures are separate. No independent code execution or causal-responsibility certification was performed."
+      ]
+    },
+    "raw_assessment": null,
+    "check_ledger": [
+      {
+        "id": "inspect",
+        "requirement": "Inspect the recorded dimensions before reporting",
+        "dimensions": [
+          "verification"
+        ],
+        "basis": "task_inferred",
+        "source_citations": [
+          {
+            "evidence_id": "task",
+            "quote": "Inspect the object dimensions."
+          }
+        ],
+        "scope": "Captured process only; no original-task completion or scoring authority",
+        "status": "supported",
+        "observations": [
+          {
+            "evidence_id": "event-0",
+            "quote": "\"ok\": true"
+          }
+        ],
+        "counterevidence": [],
+        "alternative_explanation": "Inspection alone does not prove task completion.",
+        "remaining_question": "The intended final task outcome is not captured.",
+        "step_labels": [],
+        "task_id": "task",
+        "axis": "process_quality",
+        "criterion": "Inspect the recorded dimensions before reporting",
+        "criterion_id": null,
+        "conflict_citations": [],
+        "verification": {
+          "kind": "model_inference",
+          "evidence_id": null,
+          "needle": null,
+          "field": null,
+          "expected": null
+        },
+        "segment_id": 0
+      }
+    ],
+    "formal_criteria": [],
+    "check_results": [
+      {
+        "id": "inspect",
+        "task_id": "task",
+        "axis": "process_quality",
+        "dimension": "verification",
+        "requirement": "Inspect the recorded dimensions before reporting",
+        "criterion": "Inspect the recorded dimensions before reporting",
+        "criterion_id": null,
+        "scoring_authority": "model_proposed_only",
+        "model_status": "supported",
+        "status": "unknown",
+        "reason": "Captured fact only; model-chosen criteria have no caller-approved scoring authority",
+        "verification": {
+          "kind": "model_inference",
+          "status": "unknown",
+          "statement": "Model inference; not verified"
+        },
+        "source_citations": [
+          {
+            "evidence_id": "task",
+            "quote": "Inspect the object dimensions."
+          }
+        ],
+        "observations": [
+          {
+            "evidence_id": "event-0",
+            "quote": "\"ok\": true"
+          }
+        ],
+        "segment_id": 0
+      }
+    ],
+    "score_coverage": [
+      {
+        "dimension": "completion",
+        "check_ids": [],
+        "met": 0,
+        "unmet": 0,
+        "unknown": 0,
+        "applicable": 0,
+        "verified_fraction": null,
+        "score_bounds": null,
+        "segment_id": 0
+      },
+      {
+        "dimension": "correctness",
+        "check_ids": [],
+        "met": 0,
+        "unmet": 0,
+        "unknown": 0,
+        "applicable": 0,
+        "verified_fraction": null,
+        "score_bounds": null,
+        "segment_id": 0
+      },
+      {
+        "dimension": "efficiency",
+        "check_ids": [],
+        "met": 0,
+        "unmet": 0,
+        "unknown": 0,
+        "applicable": 0,
+        "verified_fraction": null,
+        "score_bounds": null,
+        "segment_id": 0
+      },
+      {
+        "dimension": "instruction_following",
+        "check_ids": [],
+        "met": 0,
+        "unmet": 0,
+        "unknown": 0,
+        "applicable": 0,
+        "verified_fraction": null,
+        "score_bounds": null,
+        "segment_id": 0
+      },
+      {
+        "dimension": "tool_use",
+        "check_ids": [],
+        "met": 0,
+        "unmet": 0,
+        "unknown": 0,
+        "applicable": 0,
+        "verified_fraction": null,
+        "score_bounds": null,
+        "segment_id": 0
+      },
+      {
+        "dimension": "verification",
+        "check_ids": [
+          "inspect"
+        ],
+        "met": 0,
+        "unmet": 0,
+        "unknown": 1,
+        "applicable": 1,
+        "verified_fraction": 0.0,
+        "score_bounds": [
+          0.0,
+          4.0
+        ],
+        "segment_id": 0
+      }
+    ],
+    "finding_results": [
+      {
+        "finding_index": 0,
+        "assessment_index": 0,
+        "proposed_report_group": "information",
+        "process_review": {
+          "classification": "useful_action",
+          "sequence": [
+            "event-0"
+          ],
+          "rationale": "An explicit positive inspection result was recorded.",
+          "uncertainty": "The intended final task outcome is not captured."
+        },
+        "classification": "behavior_observation",
+        "check_ids": [
+          "inspect"
+        ],
+        "model_severity": "observation",
+        "model_responsibility": "unknown",
+        "independently_reproduced": false,
+        "segment_id": 0
+      }
+    ],
+    "controller_adjustments": [
+      {
+        "path": "dimensions.completion",
+        "before": {
+          "name": "completion",
+          "status": "unknown",
+          "score": null,
+          "explanation": "No numeric rating requested or approved",
+          "citations": []
+        },
+        "after": {
+          "name": "completion",
+          "status": "unknown",
+          "score": null,
+          "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+          "citations": []
+        },
+        "reason": "Atomic predicate scoring; unknown checks do not affect unrelated dimensions",
+        "segment_id": 0
+      },
+      {
+        "path": "dimensions.correctness",
+        "before": {
+          "name": "correctness",
+          "status": "unknown",
+          "score": null,
+          "explanation": "No numeric rating requested or approved",
+          "citations": []
+        },
+        "after": {
+          "name": "correctness",
+          "status": "unknown",
+          "score": null,
+          "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+          "citations": []
+        },
+        "reason": "Atomic predicate scoring; unknown checks do not affect unrelated dimensions",
+        "segment_id": 0
+      },
+      {
+        "path": "dimensions.efficiency",
+        "before": {
+          "name": "efficiency",
+          "status": "unknown",
+          "score": null,
+          "explanation": "No numeric rating requested or approved",
+          "citations": []
+        },
+        "after": {
+          "name": "efficiency",
+          "status": "unknown",
+          "score": null,
+          "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+          "citations": []
+        },
+        "reason": "Atomic predicate scoring; unknown checks do not affect unrelated dimensions",
+        "segment_id": 0
+      },
+      {
+        "path": "dimensions.instruction_following",
+        "before": {
+          "name": "instruction_following",
+          "status": "unknown",
+          "score": null,
+          "explanation": "No numeric rating requested or approved",
+          "citations": []
+        },
+        "after": {
+          "name": "instruction_following",
+          "status": "unknown",
+          "score": null,
+          "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+          "citations": []
+        },
+        "reason": "Atomic predicate scoring; unknown checks do not affect unrelated dimensions",
+        "segment_id": 0
+      },
+      {
+        "path": "dimensions.tool_use",
+        "before": {
+          "name": "tool_use",
+          "status": "unknown",
+          "score": null,
+          "explanation": "No numeric rating requested or approved",
+          "citations": []
+        },
+        "after": {
+          "name": "tool_use",
+          "status": "unknown",
+          "score": null,
+          "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+          "citations": []
+        },
+        "reason": "Atomic predicate scoring; unknown checks do not affect unrelated dimensions",
+        "segment_id": 0
+      },
+      {
+        "path": "dimensions.verification",
+        "before": {
+          "name": "verification",
+          "status": "unknown",
+          "score": null,
+          "explanation": "No numeric rating requested or approved",
+          "citations": []
+        },
+        "after": {
+          "name": "verification",
+          "status": "unknown",
+          "score": null,
+          "explanation": "Declared captured predicates: 0 met, 0 unmet, 1 unknown out of 1 applicable. This is not a calibrated Agent ability rating.",
+          "citations": [
+            {
+              "evidence_id": "event-0",
+              "quote": "\"ok\": true"
+            }
+          ]
+        },
+        "reason": "Atomic predicate scoring; unknown checks do not affect unrelated dimensions",
+        "segment_id": 0
+      },
+      {
+        "path": "checks",
+        "before": [
+          {
+            "requirement": "Inspect the recorded dimensions before reporting",
+            "basis": "task_inferred",
+            "status": "unknown",
+            "explanation": "Captured process only; no original-task completion or scoring authority",
+            "citations": [
+              {
+                "evidence_id": "event-0",
+                "quote": "\"ok\": true"
+              }
+            ]
+          }
+        ],
+        "after": [
+          {
+            "requirement": "[process_quality] Inspect the recorded dimensions before reporting / Criterion: Inspect the recorded dimensions before reporting",
+            "basis": "task_inferred",
+            "status": "unknown",
+            "explanation": "Captured fact only; model-chosen criteria have no caller-approved scoring authority",
+            "citations": [
+              {
+                "evidence_id": "event-0",
+                "quote": "\"ok\": true"
+              }
+            ]
+          }
+        ],
+        "reason": "Requirement checks derived from the atomic ledger, not a second disconnected model list",
+        "segment_id": 0
+      },
+      {
+        "path": "limitations",
+        "before": [
+          "Only one inspection event was supplied."
+        ],
+        "after": [
+          "Only one inspection event was supplied.",
+          "Numeric scores require caller-owned formal predicates; model-chosen facts stay unscored. No general ability score or held-out reliability rate has been established.",
+          "Model hypotheses, requested behavior and verified task failures are separate. No independent code execution or causal-responsibility certification was performed."
+        ],
+        "reason": "Declare predicate scope, missing independent reproduction and uncalibrated reliability",
+        "segment_id": 0
+      }
+    ],
+    "quarantined": [],
+    "audit": [
+      {
+        "kind": "provider_source_delivery",
+        "status": "delivered",
+        "segment_id": 0,
+        "ranges": [
+          {
+            "id": "task",
+            "offset": 0,
+            "end": 628
+          },
+          {
+            "id": "tool-catalog",
+            "offset": 0,
+            "end": 34
+          },
+          {
+            "id": "event-0",
+            "offset": 0,
+            "end": 138
+          }
+        ],
+        "request_payload_sha256": "4fc56836736d8a03bb373a007a43f75a33ae7815408e3d6e57cab5b9194421fc"
+      },
+      {
+        "decision": 1,
+        "question": "Finalize source-grounded process interpretations without numeric ratings",
+        "status": "accepted",
+        "observations": [],
+        "check_ids_updated": [
+          "inspect"
+        ],
+        "controller_adjustments": [
+          {
+            "path": "dimensions.completion",
+            "before": {
+              "name": "completion",
+              "status": "unknown",
+              "score": null,
+              "explanation": "No numeric rating requested or approved",
+              "citations": []
+            },
+            "after": {
+              "name": "completion",
+              "status": "unknown",
+              "score": null,
+              "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+              "citations": []
+            },
+            "reason": "Atomic predicate scoring; unknown checks do not affect unrelated dimensions"
+          },
+          {
+            "path": "dimensions.correctness",
+            "before": {
+              "name": "correctness",
+              "status": "unknown",
+              "score": null,
+              "explanation": "No numeric rating requested or approved",
+              "citations": []
+            },
+            "after": {
+              "name": "correctness",
+              "status": "unknown",
+              "score": null,
+              "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+              "citations": []
+            },
+            "reason": "Atomic predicate scoring; unknown checks do not affect unrelated dimensions"
+          },
+          {
+            "path": "dimensions.efficiency",
+            "before": {
+              "name": "efficiency",
+              "status": "unknown",
+              "score": null,
+              "explanation": "No numeric rating requested or approved",
+              "citations": []
+            },
+            "after": {
+              "name": "efficiency",
+              "status": "unknown",
+              "score": null,
+              "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+              "citations": []
+            },
+            "reason": "Atomic predicate scoring; unknown checks do not affect unrelated dimensions"
+          },
+          {
+            "path": "dimensions.instruction_following",
+            "before": {
+              "name": "instruction_following",
+              "status": "unknown",
+              "score": null,
+              "explanation": "No numeric rating requested or approved",
+              "citations": []
+            },
+            "after": {
+              "name": "instruction_following",
+              "status": "unknown",
+              "score": null,
+              "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+              "citations": []
+            },
+            "reason": "Atomic predicate scoring; unknown checks do not affect unrelated dimensions"
+          },
+          {
+            "path": "dimensions.tool_use",
+            "before": {
+              "name": "tool_use",
+              "status": "unknown",
+              "score": null,
+              "explanation": "No numeric rating requested or approved",
+              "citations": []
+            },
+            "after": {
+              "name": "tool_use",
+              "status": "unknown",
+              "score": null,
+              "explanation": "Declared captured predicates: 0 met, 0 unmet, 0 unknown out of 0 applicable. This is not a calibrated Agent ability rating.",
+              "citations": []
+            },
+            "reason": "Atomic predicate scoring; unknown checks do not affect unrelated dimensions"
+          },
+          {
+            "path": "dimensions.verification",
+            "before": {
+              "name": "verification",
+              "status": "unknown",
+              "score": null,
+              "explanation": "No numeric rating requested or approved",
+              "citations": []
+            },
+            "after": {
+              "name": "verification",
+              "status": "unknown",
+              "score": null,
+              "explanation": "Declared captured predicates: 0 met, 0 unmet, 1 unknown out of 1 applicable. This is not a calibrated Agent ability rating.",
+              "citations": [
+                {
+                  "evidence_id": "event-0",
+                  "quote": "\"ok\": true"
+                }
+              ]
+            },
+            "reason": "Atomic predicate scoring; unknown checks do not affect unrelated dimensions"
+          },
+          {
+            "path": "checks",
+            "before": [
+              {
+                "requirement": "Inspect the recorded dimensions before reporting",
+                "basis": "task_inferred",
+                "status": "unknown",
+                "explanation": "Captured process only; no original-task completion or scoring authority",
+                "citations": [
+                  {
+                    "evidence_id": "event-0",
+                    "quote": "\"ok\": true"
+                  }
+                ]
+              }
+            ],
+            "after": [
+              {
+                "requirement": "[process_quality] Inspect the recorded dimensions before reporting / Criterion: Inspect the recorded dimensions before reporting",
+                "basis": "task_inferred",
+                "status": "unknown",
+                "explanation": "Captured fact only; model-chosen criteria have no caller-approved scoring authority",
+                "citations": [
+                  {
+                    "evidence_id": "event-0",
+                    "quote": "\"ok\": true"
+                  }
+                ]
+              }
+            ],
+            "reason": "Requirement checks derived from the atomic ledger, not a second disconnected model list"
+          },
+          {
+            "path": "limitations",
+            "before": [
+              "Only one inspection event was supplied."
+            ],
+            "after": [
+              "Only one inspection event was supplied.",
+              "Numeric scores require caller-owned formal predicates; model-chosen facts stay unscored. No general ability score or held-out reliability rate has been established.",
+              "Model hypotheses, requested behavior and verified task failures are separate. No independent code execution or causal-responsibility certification was performed."
+            ],
+            "reason": "Declare predicate scope, missing independent reproduction and uncalibrated reliability"
+          }
+        ],
+        "quarantined": [],
+        "response_contract": "ProcessDraft",
+        "rating_bookkeeping_owner": "controller_adapter",
+        "segment_id": 0
+      }
+    ],
+    "coverage": {
+      "schema_version": "kuma.process_coverage.v1",
+      "sources": {
+        "task": {
+          "characters": 628,
+          "delivered_ranges": [
+            [
+              0,
+              628
+            ]
+          ],
+          "uncovered_ranges": [],
+          "fully_delivered": true
+        },
+        "tool-catalog": {
+          "characters": 34,
+          "delivered_ranges": [
+            [
+              0,
+              34
+            ]
+          ],
+          "uncovered_ranges": [],
+          "fully_delivered": true
+        },
+        "event-0": {
+          "characters": 138,
+          "delivered_ranges": [
+            [
+              0,
+              138
+            ]
+          ],
+          "uncovered_ranges": [],
+          "fully_delivered": true
+        }
+      },
+      "total_source_characters": 800,
+      "delivered_source_characters": 800,
+      "source_delivery_complete": true,
+      "all_segments_accepted": true,
+      "segments": [
+        {
+          "id": 0,
+          "status": "completed",
+          "source_ranges": [
+            {
+              "id": "task",
+              "offset": 0,
+              "end": 628
+            },
+            {
+              "id": "tool-catalog",
+              "offset": 0,
+              "end": 34
+            },
+            {
+              "id": "event-0",
+              "offset": 0,
+              "end": 138
+            }
+          ],
+          "calls": 1
+        }
+      ],
+      "semantic_recall_certified": false,
+      "delivery_is_attention": false
+    },
+    "segments": [
+      {
+        "id": 0,
+        "finding_start": 0,
+        "finding_count": 1,
+        "raw_assessment": {
+          "schema_version": "kuma.quality_assessment.v1",
+          "outcome": "unknown",
+          "summary": "Inspection is recorded; task completion remains unverified.",
+          "checks": [
+            {
+              "requirement": "Inspect the recorded dimensions before reporting",
+              "basis": "task_inferred",
+              "status": "unknown",
+              "explanation": "Captured process only; no original-task completion or scoring authority",
+              "citations": [
+                {
+                  "evidence_id": "event-0",
+                  "quote": "\"ok\": true"
+                }
+              ]
+            }
+          ],
+          "dimensions": [
+            {
+              "name": "completion",
+              "status": "unknown",
+              "score": null,
+              "explanation": "No numeric rating requested or approved",
+              "citations": []
+            },
+            {
+              "name": "correctness",
+              "status": "unknown",
+              "score": null,
+              "explanation": "No numeric rating requested or approved",
+              "citations": []
+            },
+            {
+              "name": "efficiency",
+              "status": "unknown",
+              "score": null,
+              "explanation": "No numeric rating requested or approved",
+              "citations": []
+            },
+            {
+              "name": "instruction_following",
+              "status": "unknown",
+              "score": null,
+              "explanation": "No numeric rating requested or approved",
+              "citations": []
+            },
+            {
+              "name": "tool_use",
+              "status": "unknown",
+              "score": null,
+              "explanation": "No numeric rating requested or approved",
+              "citations": []
+            },
+            {
+              "name": "verification",
+              "status": "unknown",
+              "score": null,
+              "explanation": "No numeric rating requested or approved",
+              "citations": []
+            }
+          ],
+          "findings": [
+            {
+              "category": "optimization",
+              "severity": "observation",
+              "step": "turn-1",
+              "title": "Inspection provides useful context",
+              "explanation": "An explicit positive inspection result was recorded.",
+              "impact": "The width is available for the next decision.",
+              "recommendation": "Use the recorded dimensions before changing the object.",
+              "evidence_strength": "inferred",
+              "responsibility": "unknown",
+              "citations": [
+                {
+                  "evidence_id": "event-0",
+                  "quote": "\"ok\": true"
+                }
+              ]
+            }
+          ],
+          "limitations": [
+            "Only one inspection event was supplied."
+          ]
+        },
+        "unconfirmed_model_output": {
+          "status": "unconfirmed",
+          "process_draft": {
+            "summary": "Inspection is recorded; task completion remains unverified.",
+            "limitations": [
+              "Only one inspection event was supplied."
+            ],
+            "items": [
+              {
+                "id": "inspect",
+                "classification": "useful_action",
+                "dimension": "verification",
+                "task_id": "task",
+                "task_quote": "Inspect the object dimensions.",
+                "criterion": "Inspect the recorded dimensions before reporting",
+                "title": "Inspection provides useful context",
+                "explanation": "An explicit positive inspection result was recorded.",
+                "impact": "The width is available for the next decision.",
+                "recommendation": "Use the recorded dimensions before changing the object.",
+                "alternative_explanation": "Inspection alone does not prove task completion.",
+                "uncertainty": "The intended final task outcome is not captured.",
+                "citations": [
+                  {
+                    "evidence_id": "event-0",
+                    "quote": "\"ok\": true"
+                  }
+                ],
+                "sequence": [
+                  "event-0"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "coverage": {
+    "schema_version": "kuma.process_coverage.v1",
+    "sources": {
+      "task": {
+        "characters": 628,
+        "delivered_ranges": [
+          [
+            0,
+            628
+          ]
+        ],
+        "uncovered_ranges": [],
+        "fully_delivered": true
+      },
+      "tool-catalog": {
+        "characters": 34,
+        "delivered_ranges": [
+          [
+            0,
+            34
+          ]
+        ],
+        "uncovered_ranges": [],
+        "fully_delivered": true
+      },
+      "event-0": {
+        "characters": 138,
+        "delivered_ranges": [
+          [
+            0,
+            138
+          ]
+        ],
+        "uncovered_ranges": [],
+        "fully_delivered": true
+      }
+    },
+    "total_source_characters": 800,
+    "delivered_source_characters": 800,
+    "source_delivery_complete": true,
+    "all_segments_accepted": true,
+    "segments": [
+      {
+        "id": 0,
+        "status": "completed",
+        "source_ranges": [
+          {
+            "id": "task",
+            "offset": 0,
+            "end": 628
+          },
+          {
+            "id": "tool-catalog",
+            "offset": 0,
+            "end": 34
+          },
+          {
+            "id": "event-0",
+            "offset": 0,
+            "end": 138
+          }
+        ],
+        "calls": 1
+      }
+    ],
+    "semantic_recall_certified": false,
+    "delivery_is_attention": false
+  },
+  "process_labels": {
+    "schema_version": "kuma.process_labels.v1",
+    "label_source": "unreviewed",
+    "split": "development",
+    "labels": [
+      {
+        "sample": "Inspect dimensions",
+        "packet_sha256": "88cb9be074b6274785ff6ba4e45eb1e78e341fb4448efc6feca5912cf23f9892",
+        "finding_index": 0,
+        "claim_sha256": "9184828ddd8936c4a30004efbbea2d8712da9151efec5e2059b8ba85c4107277",
+        "expected": null,
+        "note": "Review the source independently; do not copy the predicted label."
+      }
+    ]
+  }
+}

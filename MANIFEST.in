@@ -1,3 +1,8 @@
 recursive-include examples/java_agent *.md *.py *.xml *.java
 prune examples/java_agent/target
 include tools/verify_java_agent.py
+
+include examples/review_trajectory.py
+include examples/prepare_trajectory_review.py
+include tools/verify_trajectory.py
+recursive-include tools/fixtures/trajectory *.json

@@ -1,0 +1,27 @@
+{
+  "schema_version": "ATIF-v1.8",
+  "trajectory_id": "root-agent",
+  "session_id": "session-original",
+  "agent": {"name": "Root", "version": "build-1"},
+  "steps": [
+    {"step_id": 1, "source": "user", "message": "Inspect object dimensions before changing them."},
+    {"step_id": 2, "source": "agent", "message": "Inspecting the object.",
+      "tool_calls": [{"tool_call_id": "shared-call", "function_name": "inspect", "arguments": {"object": "cube"}}],
+      "observation": {"results": [{"source_call_id": "shared-call", "content": {"width": 8},
+        "extra": {"abb": {"tool_execution": {"tool": "inspect", "ok": true, "tool_call_id": "shared-call"}}},
+        "subagent_trajectory_ref": [{"trajectory_id": "child-a"}, {"trajectory_id": "child-b"}]}]},
+      "metrics": {"prompt_tokens": 30, "completion_tokens": 10}}
+  ],
+  "subagent_trajectories": [
+    {"schema_version": "ATIF-v1.8", "trajectory_id": "child-a", "session_id": "session-original",
+      "agent": {"name": "Child A", "version": "unknown"},
+      "steps": [{"step_id": 1, "source": "user", "message": "Inspect the height of the object."},
+        {"step_id": 2, "source": "agent", "message": "Height inspected.", "extra": {"call_id": "shared-call"}}],
+      "subagent_trajectories": null},
+    {"schema_version": "ATIF-v1.8", "trajectory_id": "child-b", "session_id": "session-original",
+      "agent": {"name": "Child B", "version": "unknown"},
+      "steps": [{"step_id": 1, "source": "user", "message": "Inspect the width of the object."},
+        {"step_id": 2, "source": "agent", "message": "Width inspected.", "extra": {"call_id": "shared-call"}}]}
+  ],
+  "extra": {"source_time_ns": 1789783050660927701, "artifact": {"uri": "artifact://captured-image", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+}
