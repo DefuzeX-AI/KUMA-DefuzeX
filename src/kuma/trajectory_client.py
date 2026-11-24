@@ -200,12 +200,12 @@ class TrajectoryClient:
         return validate_response(response, action, safe)
 
     def save_requirements(self, requirements: Mapping[str, Any]) -> dict[str, Any]:
-        """Explicitly save one caller requirement revision.
+        """Explicitly save one caller requirements revision.
 
         Args:
-            requirements: Complete v1 requirement mapping; validated locally before transport.
+            requirements: Complete v1 requirements mapping; validated locally before transport.
         Returns:
-            Owned immutable requirement receipt with ID, hash and display summary.
+            Owned immutable requirements receipt with ID, hash and display summary.
         Raises:
             ValidationError: Invalid or sensitive profile before HTTP; request errors also apply.
         Side Effects:
@@ -293,7 +293,7 @@ class TrajectoryClient:
         )
         if safe != value:
             raise ValidationError(
-                "Trajectory requirement revision does not match content"
+                "Trajectory requirements revision does not match content"
             )
         for text, size in ((agent_version, 80), (case_id, 128)):
             if text is not None and (

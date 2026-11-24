@@ -18,7 +18,7 @@ KUMA uses keyword-only arguments for its main APIs so call sites remain readable
 
 `KumaClient.trajectory(timeout=180)` reuses the existing Kuma credential for explicit trace
 upload and process review. See [Trajectory Judge](trajectory-platform.md) for every parameter,
-requirement field, permission, paid-call/idempotency behavior and report/coverage/audit field.
+requirements field, permission, paid-call/idempotency behavior and report/coverage/audit field.
 No separate model or storage key is required. This does not rerun an Agent or generate Cases.
 
 ## Local observation: `observe` and `ObservationSession`

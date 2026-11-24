@@ -128,7 +128,7 @@ def prepare_submission(
     observation_id: str | None = None,
     inventory: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Bind a native-event bundle to a specific requirement revision for explicit submission.
+    """Bind a native-event bundle to a specific requirements revision for explicit submission.
 
     Args:
         bundle: Existing v1 bundle from prepare_review, revalidated with its privacy boundary.
@@ -151,7 +151,7 @@ def prepare_submission(
     safe = json.loads(encode_review(bundle))
     if safe["task"] != profile["objective"] or safe["tools"] != profile["tools"]:
         raise ValidationError(
-            "Bundle task and tools must match the requirement revision"
+            "Bundle task and tools must match the requirements revision"
         )
     if observation_id is not None:
         observation_contract.checked(observation_contract.identifier, observation_id)

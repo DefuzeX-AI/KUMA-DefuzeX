@@ -116,7 +116,7 @@ embedding/Agent operation metadata; it never equates a tool error with Agent fau
 helpers return detached JSON and do not modify original captures or charge credits.
 
 `prepare_submission(bundle, requirements, observation_id=None, inventory=None)` binds the
-exact task/tool declarations and canonical requirement hash. `observation_id` is null or
+exact task/tool declarations and canonical requirements hash. `observation_id` is null or
 `obs_` plus 32 lowercase hex digits. `inventory` is null or a structural capture inventory from
 the helper. The exact submission fields are `schema_version`, `bundle`, `requirements`,
 `requirements_sha256`, `observation_id`, `inventory`; full submissions are limited to 4 MiB.
@@ -189,13 +189,13 @@ continues using existing integer units; the SDK never multiplies your displayed 
 | Actions | Exact data |
 | --- | --- |
 | `requirements.save` | `{requirements}`. |
-| `traces.import` | SDK uses `{submission, agent_version, case_id, tags}`. Browser may instead supply `{source, requirements_id, agent_version, case_id, tags}` with raw ordered events/native bundle and a saved requirement ID. Prepared source already binds requirements, so its requirement ID must be null/omitted. |
+| `traces.import` | SDK uses `{submission, agent_version, case_id, tags}`. Browser may instead supply `{source, requirements_id, agent_version, case_id, tags}` with raw ordered events/native bundle and a saved requirements ID. Prepared source already binds requirements, so its requirements ID must be null/omitted. |
 | `<kind>.get`, `<kind>.export` | `{id}` for any of the six categories. |
 | `<kind>.list` | Optional `limit` (1–100, default 20), `cursor` (null or ≤4096), `query` (name substring ≤200), `task_type` (exact ≤120), `agent_version` (exact ≤80), `tag` (exact ≤120). Unknown fields are rejected. Returns metadata-only `items` and nullable `next_cursor`. Writes commit synchronously; listing reads committed, owner-bound documents with stable keyset pagination and the supplied kind/filters. Pass the returned cursor unchanged with the same filters. |
 | `datasets.create` | `{name, trace_ids}`; nonblank name ≤200 and 1–50 unique owned IDs. Immutable ordered snapshot. |
 | `reviews.run` | `{trace_id, limits?}`; normally call `evaluate`. |
 | `experiments.create` | `{name, dataset_id, review_ids}`; 1–50 unique owned reviews from that dataset. Missing/stopped cases remain visible. |
-| `experiments.compare` | `{baseline_id, candidate_id}`. Only unique matching case IDs with identical requirement/Judge revisions and completed reviews are compared. Reports gaps and category deltas; no overall winner or retry penalty. |
+| `experiments.compare` | `{baseline_id, candidate_id}`. Only unique matching case IDs with identical requirements/Judge revisions and completed reviews are compared. Reports gaps and category deltas; no overall winner or retry penalty. |
 | `feedback.submit` | `{review_id, labels}`. Start from the report's blank `process_labels`; inspect evidence, fill each `expected` and set `label_source="human"`. Backend records the authenticated actor. This is a human declaration, not certified independence. |
 
 Details add `payload` to a receipt. Completed review results additionally contain `trace_id`,
