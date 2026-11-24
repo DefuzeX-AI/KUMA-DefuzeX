@@ -46,6 +46,23 @@ python -m pip install --upgrade kuma-defuzex
 
 The package is `kuma-defuzex`; Python imports and the CLI use `kuma`.
 
+## Trajectory Judge: one Kuma Key
+
+From 0.4.0, review an existing trace without generating Cases or rerunning the Agent.
+Set `KUMA_API_KEY` with `sdk:observe` and `judge:run`; no model or storage key is needed.
+
+```python
+from kuma import KumaClient
+
+workspace = KumaClient().trajectory()
+trace = workspace.upload_atif(atif_document, requirements)
+review = workspace.evaluate(trace["id"], idempotency_key="my-run-001-review-01")
+```
+
+[Quick start, task/tool template and runnable example](https://github.com/DefuzeX-AI/KUMA-DefuzeX/blob/main/docs/trajectory-platform.md).
+Only completed validated reviews settle the configured Judge fee. Reuse the same key/input
+on timeout. Reports preserve source locations, unknowns, normal retries and actual coverage.
+
 ## Quick start
 
 Run a deterministic local check without an account, API key, Docker, or network:

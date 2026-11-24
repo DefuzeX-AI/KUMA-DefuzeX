@@ -41,6 +41,25 @@ python -m pip install --upgrade kuma-defuzex
 
 安装包名为 `kuma-defuzex`，Python 导入和命令行名称均为 `kuma`。
 
+## 轨迹 Judge：只需一个 Kuma Key
+
+从 0.4.0 起，直接提交已有轨迹和原始任务要求，不用生成 Case 或重新运行 Agent。
+设置 `KUMA_API_KEY`，同一个 Key 需要 `sdk:observe`、`judge:run` 权限；
+不需要 DeepSeek、OpenRouter 或数据库 Key。
+
+```python
+from kuma import KumaClient
+
+workspace = KumaClient().trajectory()
+trace = workspace.upload_atif(atif_document, requirements)
+review = workspace.evaluate(trace["id"], idempotency_key="my-run-001-review-01")
+```
+
+[完整接入步骤、任务/工具模板与可运行示例](https://github.com/DefuzeX-AI/KUMA-DefuzeX/blob/main/docs/trajectory-platform.md)。
+仅完成并校验通过的评审结算既有 Judge 固定费用；超时后使用相同输入和请求 Key 恢复。
+正常重试不自动扣分，缺证据就说无法确认，并保留具体步骤位置和实际评审覆盖。
+读取/导出另需 `sdk:read` 权限，旧 Key 不会被静默增加权限。
+
 ## 快速开始
 
 无需账号、API Key、Docker 或网络即可运行确定性的本地检查：

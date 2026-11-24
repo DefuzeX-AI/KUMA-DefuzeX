@@ -16,6 +16,17 @@ KUMA uses keyword-only arguments for its main APIs so call sites remain readable
 
 ## Local observation: `observe` and `ObservationSession`
 
+The KUMA 0.4.0 entry point `KumaClient.trajectory(timeout=180)` returns an
+authenticated `TrajectoryClient` using the same Kuma credential. The positive finite timeout is
+in seconds and does not change the parent client's timeout. Construction has no I/O; explicit
+review requests require an idempotency key and can consume the configured existing Judge fee.
+See [trajectory workspace](trajectory-platform.md) for complete requirements, capture/import,
+batch, feedback, comparison and export contracts. Hosted use requires compatible enabled services.
+Existing `ATIF-v1.8` JSON can be submitted with `TrajectoryClient.upload_atif(document,
+requirements, agent_version=None, case_id=None, tags=None)` using the same Kuma credential.
+It performs one explicit upload; only a separate `evaluate` invokes Judge. The trajectory guide
+documents original source pointers, report v4 and exact delivery/segment coverage.
+
 Use `kuma.observe(tracer_provider=None, external_run_id=None,
 external_invocation_id=None, limits=None)` as a synchronous or asynchronous context
 around an already instrumented Agent. It creates no Case/Judge, reads no credentials

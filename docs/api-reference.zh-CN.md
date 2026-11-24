@@ -14,6 +14,13 @@ This page documents the stable user-facing Python entry points. Types, defaults,
 ranges, side effects, and failure behavior match the current implementation.
 KUMA uses keyword-only arguments for its main APIs so call sites remain readable.
 
+## Existing execution review (0.4.0)
+
+`KumaClient.trajectory(timeout=180)` reuses the existing Kuma credential for explicit trace
+upload and process review. See [Trajectory Judge](trajectory-platform.md) for every parameter,
+requirement field, permission, paid-call/idempotency behavior and report/coverage/audit field.
+No separate model or storage key is required. This does not rerun an Agent or generate Cases.
+
 ## Local observation: `observe` and `ObservationSession`
 
 Use `kuma.observe(tracer_provider=None, external_run_id=None,

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import observation_contract as _observation
+
+if TYPE_CHECKING:
+    from .trajectory_client import TrajectoryClient
 from .config import resolve_api_key
 from .errors import (
     AuthenticationError,
@@ -109,6 +112,24 @@ class KumaClient:
                 max_retries=0,
             )
         )
+
+    def trajectory(self, *, timeout: float = 180) -> TrajectoryClient:
+        """Return the optional trajectory client using this client's existing KUMA credential.
+
+        Args:
+            timeout: Positive finite per-request seconds, default 180 for bounded process review.
+                This does not change this KumaClient's timeout or enable automatic retries.
+        Returns:
+            kuma.trajectory_client.TrajectoryClient for explicit import, requirements, search,
+            batch review, labels and comparison; no network request occurs on construction.
+        Raises:
+            ConfigurationError: Invalid timeout, before any I/O.
+        Side Effects:
+            None; no extra key, model/tracing dependency, upload or credit consumption.
+        """
+        from .trajectory_client import TrajectoryClient
+
+        return TrajectoryClient(self, timeout=timeout)
 
     def __repr__(self) -> str:
         """Return a credential-safe diagnostic representation.
