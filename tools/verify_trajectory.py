@@ -211,6 +211,137 @@ class ExampleTests(unittest.TestCase):
         cls.example = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.example)
 
+    def arguments(self, requirements, output, *extra):
+        return [
+            "--trace",
+            str(FIXTURES / "atif.json"),
+            "--requirements",
+            str(requirements),
+            "--output",
+            str(output),
+            *extra,
+        ]
+
+    def test_local_output_and_override_errors_make_zero_http_requests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            requirements = root / "requirements.json"
+            requirements.write_text(json.dumps(profile()), encoding="utf-8")
+            occupied = root / "occupied.json"
+            occupied.write_text("existing data", encoding="utf-8")
+            blocked = root / "blocked.json"
+            cases = [
+                (root / "missing" / "report.json", ()),
+                (occupied, ()),
+                (root, ()),
+                *[
+                    (root / "report.json", ("--idempotency-key", key))
+                    for key in ["bad", "", "invalid key", "x" * 201, "非ascii请求key"]
+                ],
+            ]
+            with backend([], parent=True) as (parent, requests):
+                for output, extra in cases:
+                    with (
+                        self.subTest(output=output.name, extra=extra),
+                        patch.object(
+                            self.example, "KumaClient", return_value=parent
+                        ) as factory,
+                        redirect_stderr(io.StringIO()),
+                    ):
+                        self.assertEqual(
+                            self.example.main(
+                                self.arguments(requirements, output, *extra)
+                            ),
+                            1,
+                        )
+                        factory.assert_not_called()
+                original_open = Path.open
+
+                def deny_target(path, *args, **kwargs):
+                    if path == blocked:
+                        raise PermissionError("Synthetic filesystem admission failure")
+                    return original_open(path, *args, **kwargs)
+
+                with (
+                    patch.object(Path, "open", deny_target),
+                    patch.object(
+                        self.example, "KumaClient", return_value=parent
+                    ) as factory,
+                    redirect_stderr(io.StringIO()),
+                ):
+                    self.assertEqual(
+                        self.example.main(self.arguments(requirements, blocked)), 1
+                    )
+                    factory.assert_not_called()
+                self.assertEqual(requests, [])
+            self.assertEqual(occupied.read_text(encoding="utf-8"), "existing data")
+            self.assertFalse(blocked.exists())
+            self.assertFalse((root / "report.json").exists())
+
+    def test_failed_review_cleans_empty_reservation_and_same_path_can_recover(self):
+        capture = receipt("traces")
+        reviewed = review_payload(capture["id"])
+        malformed = copy.deepcopy(reviewed)
+        malformed["report"]["segments"][0]["unconfirmed_model_output"]["status"] = (
+            "confirmed"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            requirements = root / "requirements.json"
+            requirements.write_text(json.dumps(profile()), encoding="utf-8")
+            output = root / "report.json"
+            with (
+                backend([capture, malformed, capture, reviewed], parent=True) as (
+                    parent,
+                    requests,
+                ),
+                patch.object(self.example, "KumaClient", return_value=parent),
+                redirect_stdout(io.StringIO()),
+                redirect_stderr(io.StringIO()),
+            ):
+                args = self.arguments(
+                    requirements, output, "--idempotency-key", "synthetic-recover-01"
+                )
+                self.assertEqual(self.example.main(args), 1)
+                self.assertFalse(output.exists())
+                self.assertEqual(self.example.main(args), 0)
+                self.assertEqual(requests[1]["key"], requests[3]["key"])
+                self.assertEqual(requests[1]["key"], "synthetic-recover-01")
+            self.assertEqual(json.loads(output.read_text(encoding="utf-8")), reviewed)
+
+    def test_failure_retains_partial_or_replaced_output_and_handles_removed_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "report.json"
+            with (
+                self.assertRaisesRegex(ValueError, "interrupted"),
+                self.example.new_report(output) as stream,
+            ):
+                stream.write("partial result")
+                raise ValueError("interrupted")
+            self.assertEqual(output.read_text(encoding="utf-8"), "partial result")
+            output.unlink()
+            replacement = root / "replacement.json"
+            replacement.write_text("", encoding="utf-8")
+            with (
+                self.assertRaisesRegex(ValueError, "interrupted"),
+                self.example.new_report(output) as stream,
+            ):
+                stream.close()
+                os.replace(replacement, output)
+                raise ValueError("interrupted")
+            self.assertTrue(output.exists())
+            self.assertEqual(output.read_bytes(), b"")
+            output.unlink()
+            with (
+                self.assertRaisesRegex(ValueError, "interrupted"),
+                self.example.new_report(output) as stream,
+            ):
+                stream.close()
+                output.unlink()
+                raise ValueError("interrupted")
+            self.assertFalse(output.exists())
+
     def test_template_and_invalid_requirements_never_construct_a_network_client(self):
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / "requirements.json"

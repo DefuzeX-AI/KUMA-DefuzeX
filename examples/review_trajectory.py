@@ -5,7 +5,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import re
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 from kuma import KumaClient
@@ -47,6 +50,56 @@ def upload_trace(workspace, source: dict, profile: dict) -> dict:
     )
 
 
+def validate_request_key(key: str | None) -> None:
+    """Check the documented optional override grammar before even uploading a trace."""
+    if (
+        key is not None
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{7,199}", key) is None
+    ):
+        raise ValidationError("Use an 8..200 character trajectory idempotency key")
+
+
+@contextmanager
+def new_report(path: Path):
+    """Reserve an exclusive writable destination before transport; retain partial results.
+
+    Only this invocation's empty file is removed on failure, allowing same-path recovery.
+    A replacement or nonempty file is retained. Later disk failures remain possible.
+    """
+    with path.open("x", encoding="utf-8", newline="\n") as stream:
+        identity = os.fstat(stream.fileno())
+        try:
+            yield stream
+        except BaseException:
+            stream.close()
+            try:
+                current = path.lstat()
+            except FileNotFoundError:
+                current = None  # An already removed reservation needs no cleanup.
+            if (
+                current is not None
+                and current.st_size == 0
+                and os.path.samestat(identity, current)
+            ):
+                path.unlink()
+            raise
+
+
+def review_trace(path: Path, source: dict, profile: dict, override: str | None) -> dict:
+    """Prepare local output before explicit network work, then save the complete review."""
+    with new_report(path) as stream:
+        workspace = KumaClient().trajectory()
+        capture = upload_trace(workspace, source, profile)
+        key = (
+            override
+            or "trajectory-" + hashlib.sha256(capture["id"].encode()).hexdigest()
+        )
+        review = workspace.evaluate(capture["id"], idempotency_key=key)
+        json.dump(review, stream, ensure_ascii=False, indent=2, allow_nan=False)
+        stream.write("\n")
+        return review
+
+
 def main(argv: list[str] | None = None) -> int:
     """Explicitly upload and review one trace; identical captures use a stable paid request key.
 
@@ -57,7 +110,9 @@ def main(argv: list[str] | None = None) -> int:
     Side Effects:
         Template mode is local-only. Review mode explicitly uploads and requests fixed-fee Judge
         using the existing Kuma credential. No hidden retries, Agent execution or provider key.
-        Output is a new file; after unknown timeout, rerun the same input/key to recover safely.
+        Output is reserved exclusively before I/O; an empty own file is removed on failure.
+        After unknown timeout, rerun the same input/key to recover safely. Nonempty partial
+        results remain on disk; select a new output path to recover after a later disk failure.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--write-requirements-template", type=Path)
@@ -77,18 +132,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if not all((args.trace, args.requirements, args.output)):
             parser.error("Review requires --trace, --requirements and --output")
-        if args.output.exists():
-            raise ValueError("Choose a new output path")
+        validate_request_key(args.idempotency_key)
         profile = validate_requirements(load_json(args.requirements, 262144))
         source = load_json(args.trace, 4194304)
-        workspace = KumaClient().trajectory()
-        capture = upload_trace(workspace, source, profile)
-        key = (
-            args.idempotency_key
-            or "trajectory-" + hashlib.sha256(capture["id"].encode()).hexdigest()
-        )
-        review = workspace.evaluate(capture["id"], idempotency_key=key)
-        save_json(args.output, review)
+        review = review_trace(args.output, source, profile, args.idempotency_key)
         if review["review_status"] == "stopped":
             print("Review stopped. Inspect coverage and reason in the saved report.")
             return 2

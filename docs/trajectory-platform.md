@@ -41,8 +41,12 @@ The runnable `examples/review_trajectory.py` creates a blank template with
 `--write-requirements-template requirements.json` (no key/network), then accepts
 `--trace trace.json --requirements requirements.json --output review.json`. It supports ATIF,
 prepared KUMA bundles and ObservationSession exports, writes exclusively and derives a stable
-review key from the immutable capture ID. Repeating identical input recovers the same review;
-use `--idempotency-key` only when deliberately selecting a different logical review.
+review key from the immutable capture ID. It validates an explicit request key and reserves a
+writable exclusive output file before any network call. On failure it removes only its own
+empty reservation, so the same input/key/output can be retried. Nonempty partial output remains;
+choose a new output path to recover. Later disk failures cannot be prevented by preflight.
+Repeating identical input recovers the same review; use `--idempotency-key` only when deliberately
+selecting a different logical review.
 
 ## Describe the task and available tools
 
@@ -187,7 +191,7 @@ continues using existing integer units; the SDK never multiplies your displayed 
 | `requirements.save` | `{requirements}`. |
 | `traces.import` | SDK uses `{submission, agent_version, case_id, tags}`. Browser may instead supply `{source, requirements_id, agent_version, case_id, tags}` with raw ordered events/native bundle and a saved requirement ID. Prepared source already binds requirements, so its requirement ID must be null/omitted. |
 | `<kind>.get`, `<kind>.export` | `{id}` for any of the six categories. |
-| `<kind>.list` | Optional `limit` (1–100, default 20), `cursor` (null or ≤4096), `query` (name substring ≤200), `task_type` (exact ≤120), `agent_version` (exact ≤80), `tag` (exact ≤120). Unknown fields are rejected. Returns metadata-only `items` and nullable `next_cursor`. Indexing is asynchronous; an empty page with a cursor is valid. |
+| `<kind>.list` | Optional `limit` (1–100, default 20), `cursor` (null or ≤4096), `query` (name substring ≤200), `task_type` (exact ≤120), `agent_version` (exact ≤80), `tag` (exact ≤120). Unknown fields are rejected. Returns metadata-only `items` and nullable `next_cursor`. Writes commit synchronously; listing reads committed, owner-bound documents with stable keyset pagination and the supplied kind/filters. Pass the returned cursor unchanged with the same filters. |
 | `datasets.create` | `{name, trace_ids}`; nonblank name ≤200 and 1–50 unique owned IDs. Immutable ordered snapshot. |
 | `reviews.run` | `{trace_id, limits?}`; normally call `evaluate`. |
 | `experiments.create` | `{name, dataset_id, review_ids}`; 1–50 unique owned reviews from that dataset. Missing/stopped cases remain visible. |
