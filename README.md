@@ -46,6 +46,31 @@ python -m pip install --upgrade kuma-defuzex
 
 The package is `kuma-defuzex`; Python imports and the CLI use `kuma`.
 
+## Capture normal execution (0.5.0)
+
+Install the capture extra matching your Agent, then wrap its normal invocation:
+
+```python
+from kuma import capture
+
+task = "The actual original task for this run."
+with capture(task, framework="langgraph") as recorded:
+    answer = my_agent.invoke({"messages": [("user", task)]})
+print(recorded.capture_id)
+```
+
+KUMA automatically saves redacted data outside the workspace. In another process:
+
+```sh
+python -m kuma captures export cap_REPLACE_WITH_PRINTED_ID --output capture.json
+python -m kuma captures judge cap_REPLACE_WITH_PRINTED_ID --output review.json
+```
+
+Only explicit Judge needs `KUMA_API_KEY` and can settle the existing Judge fee.
+No hand-built ATIF or requirements file is needed for this flow. Preserve the same
+capture/rules/key after timeout. See the [capture guide](https://github.com/DefuzeX-AI/KUMA-DefuzeX/blob/main/docs/capture-lifecycle.md)
+for installation, supported integrations, task/tool rules, storage and honest gaps.
+
 ## Trajectory Judge: one Kuma Key
 
 From 0.4.0, review an existing trace without generating Cases or rerunning the Agent.

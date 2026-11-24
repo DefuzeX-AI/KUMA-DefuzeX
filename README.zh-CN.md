@@ -41,6 +41,31 @@ python -m pip install --upgrade kuma-defuzex
 
 安装包名为 `kuma-defuzex`，Python 导入和命令行名称均为 `kuma`。
 
+## 采集正常执行过程（0.5.0）
+
+安装适合 Agent 的采集扩展，在正常调用外包一层即可：
+
+```python
+from kuma import capture
+
+task = "本次运行当时收到的原始任务。"
+with capture(task, framework="langgraph") as recorded:
+    answer = my_agent.invoke({"messages": [("user", task)]})
+print(recorded.capture_id)
+```
+
+结束后自动脱敏保存到工作区外。另开进程，使用打印出的 ID：
+
+```sh
+python -m kuma captures export cap_REPLACE_WITH_PRINTED_ID --output capture.json
+python -m kuma captures judge cap_REPLACE_WITH_PRINTED_ID --output review.json
+```
+
+普通采集和导出不联网、不调用 Judge；显式评审只需一个有相应权限的
+`KUMA_API_KEY`，按既有固定费率结算。无需手写 ATIF 或另填要求 JSON。
+超时后保持相同轨迹、规则和请求 Key 恢复，不会自动重跑 Agent。
+详见[完整接入说明](https://github.com/DefuzeX-AI/KUMA-DefuzeX/blob/main/docs/capture-lifecycle.md)，包括支持范围、工具规则和缺证据的情况。
+
 ## 轨迹 Judge：只需一个 Kuma Key
 
 从 0.4.0 起，直接提交已有轨迹和原始任务要求，不用生成 Case 或重新运行 Agent。

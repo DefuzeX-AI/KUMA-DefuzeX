@@ -14,6 +14,14 @@ This page documents the stable user-facing Python entry points. Types, defaults,
 ranges, side effects, and failure behavior match the current implementation.
 KUMA uses keyword-only arguments for its main APIs so call sites remain readable.
 
+## Normal execution capture (0.5.0)
+
+`capture(task, ...)` binds the original task before normal Agent execution and automatically
+persists redacted local evidence. `list_captures`, `export_capture` and `judge_capture` use
+durable IDs, including installed `kuma captures` commands. No ATIF conversion or separate
+rules file is required for basic use. See [capture lifecycle](capture-lifecycle.md) for every
+parameter, integration/storage/exception contract, report recovery and CLI option.
+
 ## Existing execution review (0.4.0)
 
 `KumaClient.trajectory(timeout=180)` reuses the existing Kuma credential for explicit trace

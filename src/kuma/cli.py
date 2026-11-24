@@ -9,6 +9,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
+from .capture_cli import add_capture_parser
 from .client import DEFAULT_BASE_URL, KumaClient
 from .config import _validate_strategy_scan
 from .exceptions import KumaError
@@ -229,6 +230,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kuma")
     subparsers = parser.add_subparsers(dest="command", required=True)
     _add_update_parser(subparsers)
+    add_capture_parser(subparsers)
     whoami = subparsers.add_parser(
         "whoami", help="validate KUMA_API_KEY and show entitlements"
     )
