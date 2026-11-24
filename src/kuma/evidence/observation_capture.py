@@ -5,11 +5,58 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from ..capture_privacy import redact_capture_json
 from .trace import _capture_summary, _span_priority, _topology_closed
 from .trace_mapping import SpanMappingError, json_size, map_span
 from .trace_model_content import omit_largest_model_body
 
 MAX_OBSERVATION_BYTES = 5 * 1024 * 1024
+
+
+def _redact_observed_span(mapped: dict[str, Any]) -> tuple[dict[str, Any], set[str]]:
+    """Sanitize observation-only known PII before the buffer retains any body.
+
+    The shared Run mapper remains unchanged. Preserve span identity, source
+    linkage and existing omission states; retained model/tool bodies that change
+    receive their already-supported redacted status and reason. Other changed
+    metadata records the existing attribute-filtered gap. The caller enforces
+    final byte limits and capture completeness. No original provider span is edited.
+    """
+    safe, changed = redact_capture_json(mapped)
+    reasons: set[str] = set()
+    if not changed:
+        return safe, reasons
+    for direction, field in safe.get("model_content", {}).items():
+        if (
+            direction in {"input", "output"}
+            and field != mapped["model_content"][direction]
+            and field["status"] in {"present", "redacted"}
+        ):
+            field["status"] = "redacted"
+            reasons.add("trace_model_content_redacted")
+    for field, key in (
+        ("arguments", "gen_ai.tool.call.arguments"),
+        ("result", "gen_ai.tool.call.result"),
+    ):
+        if (
+            key in safe["attributes"]
+            and safe["attributes"][key] != mapped["attributes"][key]
+        ):
+            safe["tool_content_status"][field] = "redacted"
+            reasons.add("trace_tool_content_redacted")
+    metadata = {
+        key: value
+        for key, value in safe.items()
+        if key not in {"model_content", "tool_content_status"}
+    }
+    original = {
+        key: value
+        for key, value in mapped.items()
+        if key not in {"model_content", "tool_content_status"}
+    }
+    if metadata != original:
+        reasons.add("trace_attribute_filtered")
+    return safe, reasons
 
 
 class ObservationBuffer:
@@ -39,12 +86,15 @@ class ObservationBuffer:
         """Map one actual ended span; failures never retain provider error text.
 
         Called inside the session lock. Mapping uses the canonical redactor and
-        allowlist. Sampling retains higher-priority boundaries, then budget
+        allowlist, followed by review-specific known-PII projection before
+        retention. Sampling retains higher-priority boundaries, then budget
         fitting omits optional model bodies before whole spans.
         """
         self.observed = min(999_999_999, self.observed + 1)
         try:
             mapped, drops, truncated, reasons = map_span(span, self.limits)
+            mapped, privacy_reasons = _redact_observed_span(mapped)
+            reasons.update(privacy_reasons)
         except SpanMappingError as error:
             self.loss(error.reason)
             return

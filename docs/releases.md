@@ -6,11 +6,28 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
-## 0.5.1 candidate
+## 0.5.2 candidate
+
+This optional patch binds exported trajectory bytes to the requested immutable
+document digest and preserves fair per-step Trace budgets. Capture/review
+preparation redacts recognized email, IPv4 and user-home spellings without
+changing original Agent inputs or ordinary Case/Run privacy policy.
+
+KUMA-managed LangChain capture uses the same run/span callback's structured type
+instead of trusting name-based vendor classification. Original vendor kind,
+conflicts, unknown types and missing model bodies remain visible. Native operation
+identity wins; external instrumentation/exporters are unchanged. This optional
+provenance requires the matching service parser before SDK publication; historical
+objects without it remain valid. No automatic collection or new paid call occurs.
+
+Publication is pending independent review. Check GitHub Release and PyPI for
+availability; this candidate note is not a release announcement.
+
+## 0.5.1
 
 This small, optional patch updates documentation and its drift checks, not SDK
-runtime or service wire behavior. Publication is pending independent review;
-check the matching GitHub Release and PyPI version for availability.
+runtime or service wire behavior. See the matching GitHub Release and PyPI version
+for published artifacts.
 
 - Cover capture and trajectory entry points, lifecycle methods, parameter types,
   defaults, return values, failures and resource ownership in the API references.

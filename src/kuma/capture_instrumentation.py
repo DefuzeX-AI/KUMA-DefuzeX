@@ -79,6 +79,10 @@ def prepare_instrumentation(
             instrumentor.instrument(tracer_provider=chosen)
             if not instrumentor.is_instrumented_by_opentelemetry:
                 raise ValueError("instrumentation not installed")
+            if key == "langchain":
+                from .capture_source import attach_langchain_source
+
+                attach_langchain_source(instrumentor)
             _OWNED[key] = (chosen, instrumentor)
             return chosen, {"framework": framework, "status": "kuma_enabled"}
     except Exception:

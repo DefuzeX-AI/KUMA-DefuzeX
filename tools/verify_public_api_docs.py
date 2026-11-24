@@ -390,6 +390,12 @@ CAPTURE_TRAJECTORY_APIS = (
 
 PUBLIC_APIS = (
     *CAPTURE_TRAJECTORY_APIS,
+    PublicApi(
+        "TraceEvidenceCapture.begin_step",
+        "src/kuma/evidence/trace.py",
+        "TraceEvidenceCapture.begin_step",
+        check_signature_values=True,
+    ),
     PublicApi("OtlpTraceReceiver", "src/kuma/otlp.py", "OtlpTraceReceiver.__init__"),
     PublicApi("configure", "src/kuma/api.py", "configure"),
     PublicApi("create_run", "src/kuma/api.py", "create_run"),
@@ -575,7 +581,9 @@ def _validate_document(
         )
     for name, (parameters, _) in source_contracts.items():
         errors.extend(_validate_table(path, name, parameters, tables.get(name, ())))
-    for api in CAPTURE_TRAJECTORY_APIS:
+    for api in PUBLIC_APIS:
+        if not api.check_signature_values:
+            continue
         for row, (name, annotation, default) in zip(
             tables.get(api.name, ()), _signature_values(api), strict=False
         ):

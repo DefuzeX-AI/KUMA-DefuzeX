@@ -185,8 +185,8 @@ class TrajectoryProtocolTests(unittest.TestCase):
             client.evaluate(trace_id, idempotency_key="synthetic-review-02")
 
     def test_export_preserves_original_integer_bytes(self):
-        trace_id = receipt("traces")["id"]
         data = b'{"source_time_ns":1789783050660927701}'
+        trace_id = "a" * 64 + ".traces." + hashlib.sha256(data).hexdigest()
         import gzip
 
         export = {

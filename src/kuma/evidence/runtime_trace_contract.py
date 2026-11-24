@@ -107,11 +107,16 @@ def _span(value: Any) -> None:
         and value["attributes"].get("gen_ai.operation.name") == "execute_tool"
     )
     extra = {"model_content"} if "model_content" in value else set()
+    if "operation_source" in value:
+        extra.add("operation_source")
+    from ..capture_source import validate_source
+
+    validate_source(value)
     _require(
         set(value)
         == _SPAN_FIELDS | ({"tool_content_status"} if tool else set()) | extra
     )
-    if extra:
+    if "model_content" in value:
         _require(value["attributes"].get("gen_ai.operation.name") in MODEL_OPERATIONS)
         validate_model_content(value["model_content"])
     _require(_identifier(value["trace_id"], 32) and _identifier(value["span_id"], 16))
@@ -326,6 +331,9 @@ def _validate_capture(
             current = parents[current]
         checked.update(path)
     for span in spans:
+        from ..capture_source import validate_source
+
+        validate_source(span, reasons)
         omitted_fields += _validate_model_losses(span, reasons)
         if (
             span["parent_span_id"] is not None

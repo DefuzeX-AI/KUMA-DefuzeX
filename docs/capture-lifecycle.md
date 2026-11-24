@@ -207,6 +207,34 @@ behavior. No capture content or raw native errors are printed in CLI summaries.
 Context loss, hidden/unrecorded bodies, filtered fields and sampling are not proof
 that an Agent avoided tools or succeeded. Review the recorded scope and gaps.
 
+## Capture privacy and operation provenance
+
+Capture/trajectory review additionally redacts recognized email addresses, IPv4
+spellings and user-home paths before local persistence and review preparation.
+This matches the review service's known-PII boundary, not a promise to discover
+all personal data. Original Agent inputs and user exporters are not modified;
+ordinary source references and source fingerprints remain unchanged. Retained
+model/tool bodies expose `redacted` status and capture reasons, rather than
+pretending their original content was fully preserved. This does not change the
+privacy policy of ordinary Case/Run Evidence.
+
+For the supported KUMA-managed LangChain integration, callback `run_type` from
+the exact same run/span supplies operation identity when native
+`gen_ai.operation.name` is absent. `llm`, `tool`, and `chain` map to `chat`,
+`execute_tool`, and `invoke_workflow`. Span names and model tool proposals never
+establish model/tool execution. Existing native identity, including unknown
+values, wins; external instrumentation is not patched or rebound.
+
+Optional span `operation_source` has exactly `source="langchain_callback"`,
+`run_type` (`llm|tool|chain|retriever|unknown`) and `openinference_kind`
+(`LLM|TOOL|CHAIN|AGENT|RETRIEVER|unknown`). It preserves the original vendor kind;
+the ended vendor span and user exporters remain unchanged. Conflicts and unknown
+types are visible as `trace_operation_type_conflict` and
+`trace_operation_type_unknown`. Unknown/retriever callbacks cannot promote a
+span to model/tool. Missing model bodies retain `trace_model_content_not_recorded`.
+These are client observation claims, not server-certified execution. Historical
+objects without this optional field remain valid.
+
 ## Reproduce without a paid model
 
 From a source checkout install the pinned optional matrix, then:
