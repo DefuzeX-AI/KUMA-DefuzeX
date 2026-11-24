@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = (ROOT / "docs/api-reference.md", ROOT / "docs/api-reference.zh-CN.md")
 MARKER = re.compile(
-    r"<!-- api-parameters:(?P<name>[A-Za-z_][A-Za-z0-9_]*):start -->"
+    r"<!-- api-parameters:(?P<name>[A-Za-z_][A-Za-z0-9_.]*):start -->"
     r"(?P<body>.*?)"
     r"<!-- api-parameters:(?P=name):end -->",
     re.DOTALL,
@@ -25,6 +25,7 @@ class PublicApi:
     source: str
     qualified_name: str
     dataclass_fields: bool = False
+    check_signature_values: bool = False
     required_docstring_sections: tuple[str, ...] = (
         "Args",
         "Returns",
@@ -36,7 +37,359 @@ class PublicApi:
     )
 
 
+CAPTURE_TRAJECTORY_APIS = (
+    PublicApi(
+        "capture",
+        "src/kuma/capture.py",
+        "capture",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "export_capture",
+        "src/kuma/capture.py",
+        "export_capture",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "judge_capture",
+        "src/kuma/capture.py",
+        "judge_capture",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "list_captures",
+        "src/kuma/capture_store.py",
+        "list_captures",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "CaptureSession",
+        "src/kuma/capture.py",
+        "CaptureSession.__init__",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "CaptureSession.capture_id",
+        "src/kuma/capture.py",
+        "CaptureSession.capture_id",
+        required_docstring_sections=(
+            "Returns",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "CaptureSession.__enter__",
+        "src/kuma/capture.py",
+        "CaptureSession.__enter__",
+        required_docstring_sections=(
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "CaptureSession.__aenter__",
+        "src/kuma/capture.py",
+        "CaptureSession.__aenter__",
+        required_docstring_sections=(
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "CaptureSession.__exit__",
+        "src/kuma/capture.py",
+        "CaptureSession.__exit__",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "CaptureSession.__aexit__",
+        "src/kuma/capture.py",
+        "CaptureSession.__aexit__",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "CaptureSession.export",
+        "src/kuma/capture.py",
+        "CaptureSession.export",
+        required_docstring_sections=(
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "KumaClient.trajectory",
+        "src/kuma/client.py",
+        "KumaClient.trajectory",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "TrajectoryClient",
+        "src/kuma/trajectory_client.py",
+        "TrajectoryClient.__init__",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "TrajectoryClient.request",
+        "src/kuma/trajectory_client.py",
+        "TrajectoryClient.request",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "TrajectoryClient.save_requirements",
+        "src/kuma/trajectory_client.py",
+        "TrajectoryClient.save_requirements",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "TrajectoryClient.export",
+        "src/kuma/trajectory_client.py",
+        "TrajectoryClient.export",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "TrajectoryClient.upload",
+        "src/kuma/trajectory_client.py",
+        "TrajectoryClient.upload",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "TrajectoryClient.upload_atif",
+        "src/kuma/trajectory_client.py",
+        "TrajectoryClient.upload_atif",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "TrajectoryClient.evaluate",
+        "src/kuma/trajectory_client.py",
+        "TrajectoryClient.evaluate",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "TrajectoryClient.run_experiment",
+        "src/kuma/trajectory_client.py",
+        "TrajectoryClient.run_experiment",
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "prepare_review",
+        "src/kuma/trajectory.py",
+        "prepare_review",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "encode_review",
+        "src/kuma/trajectory.py",
+        "encode_review",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "classify_observation",
+        "src/kuma/trajectory_capture.py",
+        "classify_observation",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "prepare_observation",
+        "src/kuma/trajectory_capture.py",
+        "prepare_observation",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "prepare_submission",
+        "src/kuma/trajectory_capture.py",
+        "prepare_submission",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "atif_events",
+        "src/kuma/trajectory_atif.py",
+        "atif_events",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "prepare_atif",
+        "src/kuma/trajectory_atif.py",
+        "prepare_atif",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "requirements_template",
+        "src/kuma/trajectory_requirements.py",
+        "requirements_template",
+        required_docstring_sections=(
+            "Returns",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "validate_requirements",
+        "src/kuma/trajectory_requirements.py",
+        "validate_requirements",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "requirements_fingerprint",
+        "src/kuma/trajectory_requirements.py",
+        "requirements_fingerprint",
+        required_docstring_sections=(
+            "Args",
+            "Returns",
+            "Raises",
+            "Side Effects",
+        ),
+        check_signature_values=True,
+    ),
+)
+
+
 PUBLIC_APIS = (
+    *CAPTURE_TRAJECTORY_APIS,
     PublicApi("OtlpTraceReceiver", "src/kuma/otlp.py", "OtlpTraceReceiver.__init__"),
     PublicApi("configure", "src/kuma/api.py", "configure"),
     PublicApi("create_run", "src/kuma/api.py", "create_run"),
@@ -143,7 +496,7 @@ def _source_contract(api: PublicApi) -> tuple[tuple[str, ...], str]:
     )
     doc_owner = (
         _find_node(tree, api.qualified_name.removesuffix(".__init__"))
-        if api.qualified_name.endswith(".__init__")
+        if api.qualified_name.endswith(".__init__") and not api.check_signature_values
         else node
     )
     docstring = ast.get_docstring(doc_owner) or ""
@@ -168,6 +521,8 @@ def _documented_tables(path: Path) -> dict[str, tuple[tuple[str, ...], ...]]:
                     f"{path}: {match.group('name')} row must have 4 columns"
                 )
             rows.append(cells)
+        if match.group("name") in tables:
+            raise ValueError(f"{path}: duplicate marker {match.group('name')}")
         tables[match.group("name")] = tuple(rows)
     return tables
 
@@ -220,6 +575,12 @@ def _validate_document(
         )
     for name, (parameters, _) in source_contracts.items():
         errors.extend(_validate_table(path, name, parameters, tables.get(name, ())))
+    for api in CAPTURE_TRAJECTORY_APIS:
+        for row, (name, annotation, default) in zip(
+            tables.get(api.name, ()), _signature_values(api), strict=False
+        ):
+            if row[1] != annotation or row[2] != default:
+                errors.append(f"{path}: {api.name}.{name} type/default drift")
     return errors
 
 
@@ -248,13 +609,89 @@ def _validate_source_docstrings(
             for section in api_by_name[name].required_docstring_sections
             if section not in headings
         )
+        if api_by_name[name].check_signature_values and parameters:
+            args = re.search(r"(?ms)^Args:\n(.*?)(?=^\S|\Z)", docstring)
+            documented = (
+                tuple(re.findall(r"(?m)^    ([A-Za-z_]\w*):", args[1])) if args else ()
+            )
+            if documented != parameters:
+                errors.append(f"source Args for {name} {documented} != {parameters}")
     return errors
+
+
+def _signature_values(api: PublicApi) -> tuple[tuple[str, str, str], ...]:
+    """Read exact type/default spellings for the newly guarded API tables."""
+    tree = ast.parse((ROOT / api.source).read_text(encoding="utf-8"))
+    node = _find_node(tree, api.qualified_name)
+    positional = [*node.args.posonlyargs, *node.args.args]
+    defaults = [None] * (len(positional) - len(node.args.defaults)) + list(
+        node.args.defaults
+    )
+    pairs = list(zip(positional, defaults, strict=True)) + list(
+        zip(node.args.kwonlyargs, node.args.kw_defaults, strict=True)
+    )
+    return tuple(
+        (
+            arg.arg,
+            ast.unparse(arg.annotation) if arg.annotation else "Any",
+            "Required" if default is None else "`" + ast.unparse(default) + "`",
+        )
+        for arg, default in pairs
+        if arg.arg not in {"self", "cls"}
+    )
+
+
+def _validate_capture_trajectory_inventory() -> list[str]:
+    """Keep public definitions in these new surfaces from silently escaping the guard."""
+    registered = {(api.source, api.qualified_name) for api in CAPTURE_TRAJECTORY_APIS}
+    expected = {
+        ("src/kuma/client.py", "KumaClient.trajectory"),
+        ("src/kuma/capture_store.py", "list_captures"),
+    }
+    for module in (
+        "capture",
+        "trajectory",
+        "trajectory_client",
+        "trajectory_capture",
+        "trajectory_atif",
+        "trajectory_requirements",
+    ):
+        source = f"src/kuma/{module}.py"
+        tree = ast.parse((ROOT / source).read_text(encoding="utf-8"))
+        for node in tree.body:
+            if isinstance(
+                node, (ast.FunctionDef, ast.AsyncFunctionDef)
+            ) and not node.name.startswith("_"):
+                expected.add((source, node.name))
+            if isinstance(node, ast.ClassDef) and node.name in {
+                "CaptureSession",
+                "TrajectoryClient",
+            }:
+                for method in node.body:
+                    if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+                        not method.name.startswith("_")
+                        or method.name
+                        in {
+                            "__init__",
+                            "__enter__",
+                            "__exit__",
+                            "__aenter__",
+                            "__aexit__",
+                        }
+                    ):
+                        expected.add((source, f"{node.name}.{method.name}"))
+    if registered != expected:
+        return [
+            f"capture/trajectory inventory drift: missing={sorted(expected - registered)}, stale={sorted(registered - expected)}"
+        ]
+    return []
 
 
 def main() -> int:
     """Validate both reference paths' tables, order, and source docstrings."""
     source_contracts = {api.name: _source_contract(api) for api in PUBLIC_APIS}
     errors = _validate_source_docstrings(source_contracts)
+    errors.extend(_validate_capture_trajectory_inventory())
 
     for path in DOCS:
         errors.extend(_validate_document(path, source_contracts))

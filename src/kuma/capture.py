@@ -85,7 +85,26 @@ class CaptureSession:
         requirements: dict | None = None,
         limits: TraceEvidenceLimits | None = None,
     ) -> None:
-        """Validate task/options locally; filesystem and instrumentation wait until entry."""
+        """Construct a one-shot local capture; prefer the capture() factory.
+
+        Args:
+            task: Original nonblank task, 1..12000 characters; recognized secrets are redacted.
+            framework: existing, openai, langchain or langgraph; default existing preserves wiring.
+            tracer_provider: Application-owned provider or None for the selected integration.
+            repo_path: Existing workspace path, default current directory; never scanned.
+            storage_path: Existing disjoint external parent, or None for ~/.kuma-captures.
+            tools: Complete declared tool policies, None for unknown or [] for no tools.
+            requirements: Advanced v1 rules matching the task; mutually exclusive with tools.
+            limits: TraceEvidenceLimits or None for observation defaults; at least 2048 bytes.
+        Returns:
+            Inactive CaptureSession with stable capture_id and persistence_status=not_saved.
+        Raises:
+            ValidationError: Invalid task or declared rules, without running the Agent.
+            ConfigurationError: Unsupported framework or invalid limits.
+        Side Effects:
+            Allocates local state only. Context entry acquires storage/instrumentation;
+            exit finalizes and saves. No credentials, network, upload or Judge request.
+        """
         validate_framework(framework)
         self._requirements = _profile(task, tools, requirements)
         self._framework, self._provider = framework, tracer_provider
@@ -104,11 +123,29 @@ class CaptureSession:
 
     @property
     def capture_id(self) -> str:
-        """Return the stable opaque local ID, usable by installed CLI after successful save."""
+        """Return the stable opaque local capture identifier.
+
+        Returns:
+            str of cap_ plus 32 lowercase hexadecimal characters; available before entry.
+            A durable CLI lookup works only after successful persistence.
+        Side Effects:
+            None; does not read storage or prove the capture has been saved.
+        """
         return self._identifier
 
     def __enter__(self) -> CaptureSession:
-        """Prepare safe external storage, wire the selected integration, then open observation."""
+        """Enter this one-shot observation after local storage preflight.
+
+        Returns:
+            This CaptureSession, active for context-propagated instrumented Agent calls.
+        Raises:
+            ConfigurationError: Re-entry, unsafe/unwritable storage, unavailable integration
+                or observation setup failure. A failed entry cannot be retried on this session.
+        Side Effects:
+            Creates capture directories as needed, probes writes and attaches explicit
+            instrumentation before observation. No Agent execution or KUMA network request.
+            The caller must exit the context; application-owned providers are not shut down.
+        """
         if self._state != "new":
             raise ConfigurationError("A capture session can only be entered once")
         self._state = "entering"
@@ -125,7 +162,22 @@ class CaptureSession:
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool:
-        """Finalize and save actual observed facts; never suppress the original Agent error."""
+        """Finalize observation and persist redacted facts without hiding an Agent failure.
+
+        Args:
+            exc_type: Exception class supplied by with, or None for normal completion.
+            exc: Original exception instance or None; not copied into public error messages.
+            traceback: Original traceback or None, forwarded to the observation context.
+        Returns:
+            False in every normal return, so an original Agent exception is not suppressed.
+        Raises:
+            ConfigurationError: Finalization/save failed on normal exit; inspect
+                persistence_status/error and export() for recoverable finalized data.
+        Side Effects:
+            Closes the observation and attempts one local save; marks persistence saved
+            or failed. If an Agent exception/cancellation already exists, preserves it
+            instead of raising the save error. Repeated exit is a no-op; no upload occurs.
+        """
         if self._state != "active":
             return False
         self._state = "closed"
@@ -154,19 +206,47 @@ class CaptureSession:
         return False
 
     async def __aenter__(self) -> CaptureSession:
-        """Enter the same context-local capture without adding background tasks or services."""
+        """Enter the same capture lifecycle from async with.
+
+        Returns:
+            This active CaptureSession, with the same one-shot semantics as __enter__.
+        Raises:
+            ConfigurationError: The same storage/instrumentation/entry failures as __enter__.
+        Side Effects:
+            Performs synchronous local setup on the calling thread; adds no background task.
+            Application-owned providers remain owned by the caller.
+        """
         return self.__enter__()
 
     async def __aexit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool:
-        """Persist on async exit/cancellation while preserving the original cancellation."""
+        """Finalize on async exit while retaining the original cancellation identity.
+
+        Args:
+            exc_type: Exception class from async with, or None on normal completion.
+            exc: Original exception/cancellation instance or None; never rewritten.
+            traceback: Original traceback or None passed to observation finalization.
+        Returns:
+            False, preserving exception propagation as in __exit__.
+        Raises:
+            ConfigurationError: Local save/finalization failure on otherwise normal exit.
+        Side Effects:
+            Synchronously finalizes and saves on the calling thread, without scheduling
+            background work. On cancellation, save failure is exposed through persistence
+            status/error rather than replacing that cancellation. No upload or Judge call.
+        """
         return self.__exit__(exc_type, exc, traceback)
 
     def export(self) -> dict:
         """Return detached finalized capture data, including task, gaps and actual execution status.
 
-        This local recovery method performs no I/O. It can remain available after a
-        save failure. Before finalization (or unavailable finalization) it raises
-        ConfigurationError; it never manufactures a successful capture.
+        Returns:
+            Detached kuma.capture.v1 dict containing the task, observation, instrumentation
+            and capture_id; may be available even when the local save failed.
+        Raises:
+            ConfigurationError: Finalization has not produced a document; no synthetic
+                successful capture is returned.
+        Side Effects:
+            None; reads only finalized in-memory state, with no I/O or upload.
         """
         if self._document is None:
             raise ConfigurationError("Finish capture before exporting its data")
@@ -236,10 +316,19 @@ def export_capture(
 ) -> Path:
     """Load one durable ID and atomically export its task-bound document without overwrite.
 
-    identifier is a local cap_ ID; path selects a new file in an existing directory.
-    repo_path/storage_path select the same external store used by capture(). Returns
-    the absolute export path. Safe local errors raise KumaError; no keys/network,
-    Agent execution or model billing occur. Partial/failed capture is preserved.
+    Args:
+        identifier: Durable cap_ plus 32 lowercase hex ID from a saved session.
+        path: New destination path with an existing parent; existing targets are rejected.
+        repo_path: Existing original workspace path, default current directory.
+        storage_path: Original disjoint external parent or None for ~/.kuma-captures.
+    Returns:
+        Absolute pathlib.Path of the atomically published task-bound JSON document.
+    Raises:
+        KumaError: Invalid/missing capture, unsafe paths, malformed content or local I/O
+            failure; messages do not expose raw OS details.
+    Side Effects:
+        Bounded local read and atomic no-overwrite write; pinned handles are released.
+        Partial/failed capture status is preserved. No credentials, network or billing.
     """
     document, _ = load_capture(
         identifier, repo_path=repo_path, storage_path=storage_path
