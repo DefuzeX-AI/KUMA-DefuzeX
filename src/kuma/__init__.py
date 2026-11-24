@@ -6,6 +6,8 @@ credentials, inspect the environment, access the network, or create files.
 
 from ._version import __version__
 from .api import configure, create_run
+from .capture import CaptureSession, capture, export_capture, judge_capture
+from .capture_store import list_captures
 from .client import DEFAULT_BASE_URL, KumaClient
 from .contracts import (
     CaptureComponent,
@@ -82,6 +84,7 @@ __all__ = [
     "AgentCapabilities",
     "AuthenticationError",
     "CaptureComponent",
+    "CaptureSession",
     "CaptureStatus",
     "Case",
     "CaseIntegrityError",
@@ -121,10 +124,14 @@ __all__ = [
     "ToolCapability",
     "ValidationError",
     "__version__",
+    "capture",
     "check_for_updates",
     "collect_public_messages",
     "configure",
     "create_run",
+    "export_capture",
+    "judge_capture",
+    "list_captures",
     "list_requests",
     "load_agent_capabilities",
     "observe",

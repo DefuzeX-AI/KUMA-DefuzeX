@@ -6,3 +6,9 @@ include examples/review_trajectory.py
 include examples/prepare_trajectory_review.py
 include tools/verify_trajectory.py
 recursive-include tools/fixtures/trajectory *.json
+
+include examples/capture_lifecycle.py
+include examples/instrumented_observation.py
+include examples/requirements-instrumentation.txt
+include tools/verify_capture.py
+include tools/verify_capture_boundaries.py
