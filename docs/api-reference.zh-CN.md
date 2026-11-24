@@ -551,6 +551,626 @@ objects. Runtime Evidence v1 is hash-only; explicitly negotiated v2 may carry a
 bounded, scanned completed Agent output. Both formats are defined in the
 [Runtime Evidence contract](runtime-evidence.md).
 
+## Capture and trajectory callable contracts
+
+These tables cover the stable local capture and trajectory APIs, including context
+lifecycle methods (normally invoked by `with` / `async with`, not manually).
+Types and Python default expressions are checked against source signatures.
+See [capture lifecycle](capture-lifecycle.md) and [trajectory workspace](trajectory-platform.md)
+for complete workflows and serialized field bounds. Local preparation does not
+verify that user declarations are true. Hosted operations remain explicit.
+
+### capture
+
+Record normal Agent execution and save locally; never implicitly upload or Judge.
+
+<!-- api-parameters:capture:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `task` | str | Required | Actual original task, nonblank1..12000 characters; recognized secrets are redacted before persistence, with a limitation. The Agent input is caller-owned and is never mutated. No success/reference is invented. |
+| `framework` | str | `'existing'` | existing (default) observes application-owned OTel wiring; openai/langchain/langgraph explicitly enable the supported optional hook. |
+| `tracer_provider` | Any | `None` | Existing SDK-compatible provider, preserved as-is. None reuses compatible global/established KUMA wiring, or creates a private no-exporter provider for an explicit selected integration. |
+| `repo_path` | str \| os.PathLike | `'.'` | Existing Agent workspace, default current directory; no scanning. |
+| `storage_path` | str \| os.PathLike \| None | `None` | Existing external parent, disjoint from workspace, or None for ~/.kuma-captures. Default root and .kuma/captures are created on entry. |
+| `tools` | list[dict] \| None | `None` | Optional complete v1 tool policies; None means unknown, [] declares no tools. No tool catalog is inferred from observed calls. |
+| `requirements` | dict \| None | `None` | Optional complete advanced v1 profile with objective equal to the original task; mutually exclusive with tools. No JSON file required. |
+| `limits` | TraceEvidenceLimits \| None | `None` | TraceEvidenceLimits or None for existing observation limits. Omissions and zero capture remain visible; no hidden whole-field truncation. |
+
+<!-- api-parameters:capture:end -->
+
+**Returns:** One-shot CaptureSession, supporting with/async with and stable capture_id.
+
+**Raises:** ValidationError: Invalid task/rules. ConfigurationError: Unsupported or unavailable explicit integration, unsafe storage or normal-exit save failure.
+
+**Side Effects:** Explicit optional process instrumentation and local redacted persistence on exit. No key, model request, network, Case, Judge or credit consumption. User exporters retain their independent behavior. Agent exceptions/cancellation propagate; inspect persistence_status/error if saving also fails.
+
+### export_capture
+
+Load one durable ID and atomically export its task-bound document without overwrite.
+
+<!-- api-parameters:export_capture:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `identifier` | str | Required | Durable cap_ plus 32 lowercase hex ID from a saved session. |
+| `path` | str \| os.PathLike | Required | New destination path with an existing parent; existing targets are rejected. |
+| `repo_path` | str \| os.PathLike | `'.'` | Existing original workspace path, default current directory. |
+| `storage_path` | str \| os.PathLike \| None | `None` | Original disjoint external parent or None for ~/.kuma-captures. |
+
+<!-- api-parameters:export_capture:end -->
+
+**Returns:** Absolute pathlib.Path of the atomically published task-bound JSON document.
+
+**Raises:** KumaError: Invalid/missing capture, unsafe paths, malformed content or local I/O failure; messages do not expose raw OS details.
+
+**Side Effects:** Bounded local read and atomic no-overwrite write; pinned handles are released. Partial/failed capture status is preserved. No credentials, network or billing.
+
+### judge_capture
+
+Explicitly review a saved execution using one Kuma credential and the bound task.
+
+<!-- api-parameters:judge_capture:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `identifier` | str | Required | Durable cap_ ID in the selected local store. |
+| `repo_path` | str \| os.PathLike | `'.'` | Original workspace, default current directory. |
+| `storage_path` | str \| os.PathLike \| None | `None` | Original external storage parent, or None for the default. |
+| `client` | KumaClient \| None | `None` | KumaClient or None to resolve KUMA_API_KEY/normal credentials. No provider/storage credential is needed; Agent runtime keys remain separate. |
+| `requirements` | dict \| None | `None` | Optional richer v1 rules retaining the exact original task. |
+| `idempotency_key` | str \| None | `None` | Optional8..200 ASCII protocol key. None hashes immutable capture/submission content. Same input/key recovers the same review; selecting a fresh key deliberately requests a separate paid review. |
+
+<!-- api-parameters:judge_capture:end -->
+
+**Returns:** Validated completed/stopped public review, also durably retained locally.
+
+**Raises:** KumaError: Invalid/unavailable local capture, empty evidence, auth/scopes, credits, unknown timeout outcome, remote failure or local save failure.
+
+**Side Effects:** One explicit upload then one Judge request, no retry or Agent rerun. Existing configured fixed Judge fee applies only to completed validated review. A local result-save failure does not undo a completed server review: recover with identical inputs/key. No original trace is rewritten or deleted.
+
+### list_captures
+
+Read at most limit summaries, newest local file first; never emit task/body content.
+
+<!-- api-parameters:list_captures:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `repo_path` | str \| os.PathLike | `'.'` | Existing original workspace path, default current directory; no scanning. |
+| `storage_path` | str \| os.PathLike \| None | `None` | Original external parent or None for ~/.kuma-captures; must exist. |
+| `limit` | int | `20` | Integer 1..100, default 20; maximum summaries, not automatic pagination. |
+
+<!-- api-parameters:list_captures:end -->
+
+**Returns:** List of metadata dicts sorted by file modification time then name, newest first. Each has capture_id, execution_status, capture_status, span_count, operation_counts and reasons. Counts describe retained observations, not inferred Agent activity.
+
+**Raises:** ValidationError: Invalid limit or invalid stored capture content. ConfigurationError: Absent/unreadable/unsafe store or file; no fake complete entry.
+
+**Side Effects:** Bounded no-follow local file reads with handles closed on completion/failure. Does not create a store, read credentials, contact a service or output task bodies.
+
+### CaptureSession
+
+Construct a one-shot local capture; prefer the capture() factory.
+
+<!-- api-parameters:CaptureSession:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `task` | str | Required | Original nonblank task, 1..12000 characters; recognized secrets are redacted. |
+| `framework` | str | `'existing'` | existing, openai, langchain or langgraph; default existing preserves wiring. |
+| `tracer_provider` | Any | `None` | Application-owned provider or None for the selected integration. |
+| `repo_path` | str \| os.PathLike | `'.'` | Existing workspace path, default current directory; never scanned. |
+| `storage_path` | str \| os.PathLike \| None | `None` | Existing disjoint external parent, or None for ~/.kuma-captures. |
+| `tools` | list[dict] \| None | `None` | Complete declared tool policies, None for unknown or [] for no tools. |
+| `requirements` | dict \| None | `None` | Advanced v1 rules matching the task; mutually exclusive with tools. |
+| `limits` | TraceEvidenceLimits \| None | `None` | TraceEvidenceLimits or None for observation defaults; at least 2048 bytes. |
+
+<!-- api-parameters:CaptureSession:end -->
+
+**Returns:** Inactive CaptureSession with stable capture_id and persistence_status=not_saved.
+
+**Raises:** ValidationError: Invalid task or declared rules, without running the Agent. ConfigurationError: Unsupported framework or invalid limits.
+
+**Side Effects:** Allocates local state only. Context entry acquires storage/instrumentation; exit finalizes and saves. No credentials, network, upload or Judge request.
+
+### CaptureSession.capture_id
+
+Return the stable opaque local capture identifier.
+
+<!-- api-parameters:CaptureSession.capture_id:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+
+
+<!-- api-parameters:CaptureSession.capture_id:end -->
+
+No caller parameters.
+
+**Returns:** str of cap_ plus 32 lowercase hexadecimal characters; available before entry. A durable CLI lookup works only after successful persistence.
+
+**Side Effects:** None; does not read storage or prove the capture has been saved.
+
+### CaptureSession.__enter__
+
+Enter this one-shot observation after local storage preflight.
+
+<!-- api-parameters:CaptureSession.__enter__:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+
+
+<!-- api-parameters:CaptureSession.__enter__:end -->
+
+No caller parameters.
+
+**Returns:** This CaptureSession, active for context-propagated instrumented Agent calls.
+
+**Raises:** ConfigurationError: Re-entry, unsafe/unwritable storage, unavailable integration or observation setup failure. A failed entry cannot be retried on this session.
+
+**Side Effects:** Creates capture directories as needed, probes writes and attaches explicit instrumentation before observation. No Agent execution or KUMA network request. The caller must exit the context; application-owned providers are not shut down.
+
+### CaptureSession.__aenter__
+
+Enter the same capture lifecycle from async with.
+
+<!-- api-parameters:CaptureSession.__aenter__:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+
+
+<!-- api-parameters:CaptureSession.__aenter__:end -->
+
+No caller parameters.
+
+**Returns:** This active CaptureSession, with the same one-shot semantics as __enter__.
+
+**Raises:** ConfigurationError: The same storage/instrumentation/entry failures as __enter__.
+
+**Side Effects:** Performs synchronous local setup on the calling thread; adds no background task. Application-owned providers remain owned by the caller.
+
+### CaptureSession.__exit__
+
+Finalize observation and persist redacted facts without hiding an Agent failure.
+
+<!-- api-parameters:CaptureSession.__exit__:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `exc_type` | Any | Required | Exception class supplied by with, or None for normal completion. |
+| `exc` | Any | Required | Original exception instance or None; not copied into public error messages. |
+| `traceback` | Any | Required | Original traceback or None, forwarded to the observation context. |
+
+<!-- api-parameters:CaptureSession.__exit__:end -->
+
+**Returns:** False in every normal return, so an original Agent exception is not suppressed.
+
+**Raises:** ConfigurationError: Finalization/save failed on normal exit; inspect persistence_status/error and export() for recoverable finalized data.
+
+**Side Effects:** Closes the observation and attempts one local save; marks persistence saved or failed. If an Agent exception/cancellation already exists, preserves it instead of raising the save error. Repeated exit is a no-op; no upload occurs.
+
+### CaptureSession.__aexit__
+
+Finalize on async exit while retaining the original cancellation identity.
+
+<!-- api-parameters:CaptureSession.__aexit__:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `exc_type` | Any | Required | Exception class from async with, or None on normal completion. |
+| `exc` | Any | Required | Original exception/cancellation instance or None; never rewritten. |
+| `traceback` | Any | Required | Original traceback or None passed to observation finalization. |
+
+<!-- api-parameters:CaptureSession.__aexit__:end -->
+
+**Returns:** False, preserving exception propagation as in __exit__.
+
+**Raises:** ConfigurationError: Local save/finalization failure on otherwise normal exit.
+
+**Side Effects:** Synchronously finalizes and saves on the calling thread, without scheduling background work. On cancellation, save failure is exposed through persistence status/error rather than replacing that cancellation. No upload or Judge call.
+
+### CaptureSession.export
+
+Return detached finalized capture data, including task, gaps and actual execution status.
+
+<!-- api-parameters:CaptureSession.export:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+
+
+<!-- api-parameters:CaptureSession.export:end -->
+
+No caller parameters.
+
+**Returns:** Detached kuma.capture.v1 dict containing the task, observation, instrumentation and capture_id; may be available even when the local save failed.
+
+**Raises:** ConfigurationError: Finalization has not produced a document; no synthetic successful capture is returned.
+
+**Side Effects:** None; reads only finalized in-memory state, with no I/O or upload.
+
+### KumaClient.trajectory
+
+Return the optional trajectory client using this client's existing KUMA credential.
+
+<!-- api-parameters:KumaClient.trajectory:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `timeout` | float | `180` | Positive finite per-request seconds, default 180 for bounded process review. This does not change this KumaClient's timeout or enable automatic retries. |
+
+<!-- api-parameters:KumaClient.trajectory:end -->
+
+**Returns:** kuma.trajectory_client.TrajectoryClient for explicit import, requirements, search, batch review, labels and comparison; no network request occurs on construction.
+
+**Raises:** ConfigurationError: Invalid timeout, before any I/O.
+
+**Side Effects:** None; no extra key, model/tracing dependency, upload or credit consumption.
+
+### TrajectoryClient
+
+Reuse existing KUMA configuration without reading a new key or changing parent timeouts.
+
+<!-- api-parameters:TrajectoryClient:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `client` | Any | Required | Existing kuma.KumaClient, normally produced by client.trajectory(). |
+| `timeout` | float | `180` | Positive finite per-request seconds, default 180 for bounded process reviews. |
+
+<!-- api-parameters:TrajectoryClient:end -->
+
+**Raises:** ConfigurationError: Invalid timeout, before any HTTP request.
+
+**Returns:** TrajectoryClient sharing the existing credential through a copied transport.
+
+**Side Effects:** None; a shallow private transport copy disables automatic retries for this capability. No model client, tracing platform, credentials file, database or collector is added.
+
+### TrajectoryClient.request
+
+Execute one allowlisted workspace command using normal KUMA authentication.
+
+<!-- api-parameters:TrajectoryClient.request:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `action` | str | Required | Exact supported workspace action; see docs/trajectory-platform.md. |
+| `data` | Mapping[str, Any] | Required | Action-specific finite JSON fields; no owner, provider URL or credentials. |
+| `idempotency_key` | str \| None | `None` | Required for reviews.run, 8..200 ASCII letters/digits/._:-. Reuse unchanged to recover the same logical paid review; never reuse with new input. |
+
+<!-- api-parameters:TrajectoryClient.request:end -->
+
+**Returns:** Detached user-owned result from kuma.trajectory_workspace.v1, with no automatic pagination.
+
+**Raises:** ValidationError: Unsupported action, invalid key or unsafe input before HTTP. ProviderError: Malformed/private/sensitive remote response. KumaError: Auth/scope, credits, conflicts, feature, timeout or platform failure.
+
+**Side Effects:** One authenticated public Backend POST, no retries. reviews.run may consume the existing Judge fee only after completion; imports, storage, labels and reads never invoke Judge. A timeout is an unknown server outcome; retry explicitly with the same key, not a new key.
+
+### TrajectoryClient.save_requirements
+
+Explicitly save one caller requirements revision.
+
+<!-- api-parameters:TrajectoryClient.save_requirements:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `requirements` | Mapping[str, Any] | Required | Complete v1 requirements mapping; validated locally before transport. |
+
+<!-- api-parameters:TrajectoryClient.save_requirements:end -->
+
+**Returns:** Owned immutable requirements receipt with ID, hash and display summary.
+
+**Raises:** ValidationError: Invalid or sensitive profile before HTTP; request errors also apply.
+
+**Side Effects:** One authenticated write, without model calls or Judge charges. Content is immutable.
+
+### TrajectoryClient.export
+
+Retrieve an exact canonical JSON artifact without changing large integers or source types.
+
+<!-- api-parameters:TrajectoryClient.export:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `kind` | str | Required | requirements, traces, reviews, datasets, experiments or feedback. |
+| `identity` | str | Required | Owned document ID returned by the workspace. |
+
+<!-- api-parameters:TrajectoryClient.export:end -->
+
+**Returns:** Hash-verified UTF-8 JSON bytes, at most 6 MiB uncompressed. The caller owns saving them.
+
+**Raises:** ValidationError: Unsupported category; standard request errors also apply. ProviderError: Bad encoding, expansion limit or mismatched content hash.
+
+**Side Effects:** One read-only POST; no local file, model, credit or automatic retry.
+
+### TrajectoryClient.upload
+
+Explicitly import a prepared submission with declared version/case/tags; never evaluates it.
+
+<!-- api-parameters:TrajectoryClient.upload:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `submission` | Mapping[str, Any] | Required | v1 prepare_submission/prepare_observation output, revalidated before HTTP. |
+| `agent_version` | str \| None | `None` | Optional caller build/model label up to 80 characters, not verified identity. |
+| `case_id` | str \| None | `None` | Optional stable caller test-case ID up to 128 characters; required for version matching. |
+| `tags` | list[str] \| None | `None` | Optional list of up to 32 labels of 1..120 characters, default empty. |
+
+<!-- api-parameters:TrajectoryClient.upload:end -->
+
+**Returns:** Owned trace document receipt; unchanged content reuses its content identity.
+
+**Raises:** ValidationError: Invalid/mismatched input before HTTP; standard request errors also apply.
+
+**Side Effects:** One explicit Backend write; no model, credits or file changes.
+
+### TrajectoryClient.upload_atif
+
+Upload existing ATIF without collecting or executing an Agent.
+
+<!-- api-parameters:TrajectoryClient.upload_atif:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `document` | Mapping[str, Any] | Required | ATIF-v1.8 source JSON; original values and coordinates remain unchanged. |
+| `requirements` | Mapping[str, Any] | Required | Actual reviewed v1 requirements; unknown tools stay null. |
+| `agent_version` | str \| None | `None` | Optional caller build label, at most 80 characters. |
+| `case_id` | str \| None | `None` | Optional stable task identity, at most 128 characters. |
+| `tags` | list[str] \| None | `None` | Optional list of at most 32 metadata labels, each 1..120 characters. |
+
+<!-- api-parameters:TrajectoryClient.upload_atif:end -->
+
+**Returns:** Owned trace receipt from upload(); no model review is automatically requested.
+
+**Raises:** ValidationError: Unsafe/invalid/oversized source or declarations before HTTP. KumaError: Existing authentication, scope, transport or storage errors.
+
+**Side Effects:** One explicit Backend write using the existing Kuma key. No file/URL resolution, model calls or Judge credit consumption; the caller's source object is unchanged.
+
+### TrajectoryClient.evaluate
+
+Run the private process Judge on one owned stored trace, without running the Agent.
+
+<!-- api-parameters:TrajectoryClient.evaluate:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `trace_id` | str | Required | Owned document ID returned by upload/list, not a model provider trace URL. |
+| `idempotency_key` | str | Required | Required unchanged logical review identity; see request() for constraints. |
+| `limits` | Mapping[str, Any] \| None | `None` | Optional integer budgets: decisions 1..12 (default 6), tool_calls 1..24 (12), evidence_characters 1000..120000 (40000), seconds 1..900 (120), source_characters 1000..4194304 (4194304), chunk_characters 1000..350000 (240000). None leaves defaults to the service; deployment lease/timeout constraints may reduce accepted seconds. See docs/trajectory-platform.md. |
+
+<!-- api-parameters:TrajectoryClient.evaluate:end -->
+
+**Returns:** Completed report with blank human labels, or an explicit stopped artifact with reason.
+
+**Raises:** ValidationError: Invalid trace ID, key, budget or sensitive input before HTTP. ProviderError: Malformed or unsafe remote response. KumaError: Missing authentication, scope, credit, timeout or service failure; a timeout is an unknown outcome, not evidence that no review occurred.
+
+**Side Effects:** One explicit billable request; completed review uses the configured Judge fixed fee. No hidden retries, gold-label generation or automatic score penalties for retries/gaps.
+
+### TrajectoryClient.run_experiment
+
+Review each frozen dataset trace sequentially and preserve failed/missing cases.
+
+<!-- api-parameters:TrajectoryClient.run_experiment:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `name` | str | Required | Nonblank experiment label up to 200 characters, frozen by the server. |
+| `dataset_id` | str | Required | Owned dataset document with 1..50 ordered trace IDs. |
+| `idempotency_key` | str | Required | Required run identity; deterministic child keys recover completed trace reviews on explicit rerun. Changing name, dataset or limits changes children. |
+| `limits` | Mapping[str, Any] \| None | `None` | Optional per-trace budgets, forwarded unchanged to evaluate. |
+
+<!-- api-parameters:TrajectoryClient.run_experiment:end -->
+
+**Returns:** Always a dict with exactly experiment, reviews and errors on normal return. experiment is a saved experiment receipt (dict), or None only when no review artifact was returned. reviews is an ordered list of validated completed/stopped review dicts. errors is an ordered list of {trace_id: str, code: str} for individual evaluate() KumaError failures; it contains no exception messages. If all evaluations raise KumaError, reviews is empty and experiment is None; the outer result is never None. A stopped artifact is retained in reviews, not errors, and does not establish successful Agent behavior or complete review.
+
+**Raises:** ValidationError: Invalid name/key before the dataset read, or unsafe child-key seed during iteration; these errors are not converted to per-trace errors. ProviderError: Invalid dataset response before evaluations begin. KumaError: Initial dataset read or final experiment save fails, with no returned wrapper. Only KumaError from individual evaluate() calls is accumulated. BaseException: Cancellation/KeyboardInterrupt propagates immediately; completed remote work is not rolled back. Unexpected non-KumaError also propagates.
+
+**Preconditions:** Use an owned frozen dataset and a credential authorized for its traces. Explicit recovery must preserve name, dataset, limits and the run key.
+
+**Postconditions:** Normal return preserves each returned artifact or per-trace error in input order. A raised read/save/cancellation error does not roll back remote work.
+
+**Security/Privacy:** Uses the existing authenticated trajectory boundary; errors contain safe categories, not exception text. Returned reviews remain caller-owned data.
+
+**Side Effects:** One dataset read, up to 50 explicit review requests and, only if reviews exist, one experiment write. No experiment is saved when every evaluation raises. Each newly completed review can charge its configured Judge fee; storage is separate. Does not run evaluated Agents, synthesize missing traces or calculate an overall ranking.
+
+### prepare_review
+
+Detach and redact existing task/tool/event records for local Core review.
+
+<!-- api-parameters:prepare_review:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `task` | str | Required | Required original task text, 1..12000 characters after trimming. Preserve amendments in the text or recorded events; do not add a rubric. |
+| `events` | Sequence[Mapping[str, Any]] | Required | Ordered exported event objects, 1..10000 entries. Each requires a nonempty string ``event`` field. Preserve observed fields, including tool, arguments, result, ok, turn_id and operation IDs when available. This helper neither collects telemetry nor parses vendor log files. |
+| `sample` | str | `'trajectory'` | Nonempty review label, at most 200 characters; default trajectory. |
+| `tools` | Sequence[Mapping[str, Any]] \| None | `None` | Actual tools available during execution, at most 256 objects with distinct nonempty ``name`` fields. Include descriptions, parameter schemas, prerequisites and availability changes when known. None means not supplied; an empty list explicitly declares no available tools. |
+| `limitations` | Sequence[str] | `()` | At most 32 known capture gaps as nonempty strings. Missing outputs, changed tool versions and partial logs belong here. |
+
+<!-- api-parameters:prepare_review:end -->
+
+**Returns:** Detached ``kuma.trajectory_review_bundle.v1`` JSON. ``content_status`` distinguishes present from redacted content; the original is unchanged.
+
+**Raises:** ValidationError: Invalid shape, graph, size or remaining sensitive content. Diagnostics never include source values. Nothing is silently truncated.
+
+**Side Effects:** None. No filesystem, environment, API key, model or network access.
+
+**Security/Privacy:** Reuses KUMA's existing finite-JSON and Evidence redaction/scanning boundary, capped at 4 MiB and depth 32. There is no allow-sensitive override. Detection covers recognized patterns, not all possible private information. Review prepared contents before sharing them outside your environment.
+
+### encode_review
+
+Revalidate and serialize a prepared bundle as canonical UTF-8 JSON bytes.
+
+<!-- api-parameters:encode_review:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `bundle` | Mapping[str, Any] | Required | A prepared v1 bundle. Content is checked and sanitized again so edits made after preparation cannot bypass the Evidence boundary. |
+
+<!-- api-parameters:encode_review:end -->
+
+**Returns:** Sorted, compact UTF-8 JSON suitable for a caller-owned local file. Redacted status is retained when revalidation makes no further changes.
+
+**Raises:** ValidationError: Unsupported schema, fields or content. No raw value is echoed.
+
+**Side Effects:** None; the caller owns file creation and any later submission authorization. This is a local preparation API, not a live hosted review endpoint.
+
+### classify_observation
+
+Group recorded operations structurally, without turning errors into Agent fault.
+
+<!-- api-parameters:classify_observation:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `observation` | Mapping[str, Any] | Required | Completed kuma.observe().export() data, validated using its existing contract. |
+
+<!-- api-parameters:classify_observation:end -->
+
+**Returns:** v1 inventory of exact trace/span/parent IDs, operation classes, recorded statuses and durations; unmapped operations are other. Counts describe retained spans only. Includes capture status/gaps; no semantic task category, retry blame, success or cost is inferred.
+
+**Raises:** ValidationError: Invalid, sensitive or oversized observation.
+
+**Side Effects:** None; no collector, Agent, tool, network or filesystem operation.
+
+### prepare_observation
+
+Prepare actual observed spans with caller requirements and explicit capture gaps.
+
+<!-- api-parameters:prepare_observation:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `observation` | Mapping[str, Any] | Required | Completed local export from existing kuma.observe; never an active session. |
+| `requirements` | Mapping[str, Any] | Required | Reviewed v1 task/tool/retry/budget document; full field guide in platform docs. |
+| `sample` | str | `'trajectory'` | Review label, nonblank up to 200 characters, defaults to trajectory. |
+
+<!-- api-parameters:prepare_observation:end -->
+
+**Returns:** kuma.trajectory_submission.v1 with detached bundle, requirements, content revision, recorded observation ID and structural inventory. Empty capture is represented by a genuine capture-summary event, never fabricated Agent activity. No turn IDs are inferred.
+
+**Raises:** ValidationError: Invalid input, unsafe policies or complete review bundle above 4 MiB.
+
+**Side Effects:** None; importing/preparing does not upload, evaluate, save or charge.
+
+### prepare_submission
+
+Bind a native-event bundle to a specific requirements revision for explicit submission.
+
+<!-- api-parameters:prepare_submission:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `bundle` | Mapping[str, Any] | Required | Existing v1 bundle from prepare_review, revalidated with its privacy boundary. |
+| `requirements` | Mapping[str, Any] | Required | Reviewed v1 document; objective and tool catalog must match the bundle. |
+| `observation_id` | str \| None | `None` | Optional existing obs_ ID for correlation; null for native-file imports. |
+| `inventory` | Mapping[str, Any] \| None | `None` | Optional classify_observation output, null for native events; descriptive only. |
+
+<!-- api-parameters:prepare_submission:end -->
+
+**Returns:** Detached v1 submission, with a content fingerprint for immutable evaluation provenance.
+
+**Raises:** ValidationError: Invalid/mismatched bundle, policy or observation ID; no network occurs.
+
+**Side Effects:** None; owner/project identity and server credentials are never caller-controlled fields.
+
+### atif_events
+
+Partition a finite ATIF 1.8 document into lossless, source-addressed records.
+
+<!-- api-parameters:atif_events:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `document` | Mapping[str, Any] | Required | Caller-owned JSON trajectory with unique trajectory IDs, ordered steps and optional nested subagent_trajectories. Unknown fields and artifact references stay data. |
+
+<!-- api-parameters:atif_events:end -->
+
+**Returns:** Detached event list preserving every source field. JSON pointers address original nodes; event order is source traversal, not invented global execution chronology. User-step boundaries supply explicitly derived turn IDs within each execution only.
+
+**Raises:** ValidationError: Invalid, oversized, nonfinite/deep, sensitive or ambiguous source.
+
+**Side Effects:** None. No file/URL resolution, imports of Agent code, network or model calls.
+
+### prepare_atif
+
+Prepare ATIF as a normal public review bundle with exact source coordinates.
+
+<!-- api-parameters:prepare_atif:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `task` | str | Required | Actual caller-provided task/review scope, 1..12000 characters; never inferred. |
+| `document` | Mapping[str, Any] | Required | ATIF-v1.8 source object, bounded by existing four-MiB/depth-32 preparation. |
+| `sample` | str | `'trajectory'` | Nonblank review label up to 200 characters, default trajectory. |
+| `tools` | list[dict[str, Any]] \| None | `None` | Actual declared tools, None for unknown, empty list for explicitly no tools. |
+| `limitations` | list[str] \| tuple[str, ...] | `()` | Up to 32 caller-known capture limits. Format notes use remaining slots; Core independently preserves source-format and coordinate semantics. |
+
+<!-- api-parameters:prepare_atif:end -->
+
+**Returns:** Existing v1 bundle usable with prepare_submission/upload, retaining redaction status. Source hash covers the sanitized original document, not unavailable raw private bytes.
+
+**Raises:** ValidationError: Unsafe/invalid source, policy or existing bundle size limits exceeded.
+
+**Side Effects:** None; references and scripts are never opened, fetched or executed. Caller owns submission.
+
+### requirements_template
+
+Return an editable requirements document with explicit unknowns, never invented answers.
+
+<!-- api-parameters:requirements_template:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+
+
+<!-- api-parameters:requirements_template:end -->
+
+No caller parameters.
+
+**Returns:** Detached v1 dictionary. Fill name, version, objective and criteria before validation; null tools means unavailable catalog, whereas an empty list declares no tools.
+
+**Side Effects:** None; does not infer requirements, inspect an Agent or contact a service.
+
+### validate_requirements
+
+Validate and detach a reviewed requirements document without changing caller policies.
+
+<!-- api-parameters:validate_requirements:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `value` | Mapping[str, Any] | Required | Exact v1 template shape. Required nonblank name/version/objective and 1..16 success criteria; task_type may be empty (unclassified); unknown tools/reference and each unknown budget are null. See docs/trajectory-platform.md for every field. |
+
+<!-- api-parameters:validate_requirements:end -->
+
+**Returns:** Detached finite JSON, at most 256 KiB and depth 32, preserving user-declared policies.
+
+**Raises:** ValidationError: Invalid/oversized shape or sensitive content requiring redaction. Requirements with redacted policies are rejected for user correction, not changed.
+
+**Side Effects:** None; no model, network, files, credentials, tool/schema execution or scoring.
+
+### requirements_fingerprint
+
+Return SHA-256 of canonical validated requirements; edits produce a different revision.
+
+<!-- api-parameters:requirements_fingerprint:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `value` | Mapping[str, Any] | Required | Reviewed requirements accepted by validate_requirements. |
+
+<!-- api-parameters:requirements_fingerprint:end -->
+
+**Returns:** Lowercase 64-character content identity, not proof of truth or authority.
+
+**Raises:** ValidationError: The same invalid/sensitive/size conditions as validation.
+
+**Side Effects:** None; does not register or persist a revision.
+
 ## Error fields
 
 `support_code: str | None` is an optional opaque support category from exactly

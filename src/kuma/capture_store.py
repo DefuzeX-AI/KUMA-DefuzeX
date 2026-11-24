@@ -198,9 +198,20 @@ def list_captures(
 ) -> list[dict]:
     """Read at most limit summaries, newest local file first; never emit task/body content.
 
-    limit is an integer1..100. Only exact capture filenames in the selected external
-    directory are considered; no recursive workspace scan. Invalid entries fail
-    safely instead of being represented as complete captures.
+    Args:
+        repo_path: Existing original workspace path, default current directory; no scanning.
+        storage_path: Original external parent or None for ~/.kuma-captures; must exist.
+        limit: Integer 1..100, default 20; maximum summaries, not automatic pagination.
+    Returns:
+        List of metadata dicts sorted by file modification time then name, newest first.
+        Each has capture_id, execution_status, capture_status, span_count, operation_counts
+        and reasons. Counts describe retained observations, not inferred Agent activity.
+    Raises:
+        ValidationError: Invalid limit or invalid stored capture content.
+        ConfigurationError: Absent/unreadable/unsafe store or file; no fake complete entry.
+    Side Effects:
+        Bounded no-follow local file reads with handles closed on completion/failure.
+        Does not create a store, read credentials, contact a service or output task bodies.
     """
     if type(limit) is not int or not 1 <= limit <= 100:
         raise ValidationError("Capture list limit must be an integer from 1 to 100")

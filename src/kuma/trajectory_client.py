@@ -132,6 +132,8 @@ class TrajectoryClient:
             timeout: Positive finite per-request seconds, default 180 for bounded process reviews.
         Raises:
             ConfigurationError: Invalid timeout, before any HTTP request.
+        Returns:
+            TrajectoryClient sharing the existing credential through a copied transport.
         Side Effects:
             None; a shallow private transport copy disables automatic retries for this capability.
             No model client, tracing platform, credentials file, database or collector is added.
@@ -374,10 +376,18 @@ class TrajectoryClient:
         Args:
             trace_id: Owned document ID returned by upload/list, not a model provider trace URL.
             idempotency_key: Required unchanged logical review identity; see request() for constraints.
-            limits: Optional decisions/tool_calls/evidence_characters/seconds object. None uses Core
-                defaults 6/12/40000/120; server validates bounds and lease/timeout compatibility.
+            limits: Optional integer budgets: decisions 1..12 (default 6), tool_calls 1..24
+                (12), evidence_characters 1000..120000 (40000), seconds 1..900 (120),
+                source_characters 1000..4194304 (4194304), chunk_characters 1000..350000
+                (240000). None leaves defaults to the service; deployment lease/timeout
+                constraints may reduce accepted seconds. See docs/trajectory-platform.md.
         Returns:
             Completed report with blank human labels, or an explicit stopped artifact with reason.
+        Raises:
+            ValidationError: Invalid trace ID, key, budget or sensitive input before HTTP.
+            ProviderError: Malformed or unsafe remote response.
+            KumaError: Missing authentication, scope, credit, timeout or service failure;
+                a timeout is an unknown outcome, not evidence that no review occurred.
         Side Effects:
             One explicit billable request; completed review uses the configured Judge fixed fee.
             No hidden retries, gold-label generation or automatic score penalties for retries/gaps.
@@ -404,13 +414,34 @@ class TrajectoryClient:
                 trace reviews on explicit rerun. Changing name, dataset or limits changes children.
             limits: Optional per-trace budgets, forwarded unchanged to evaluate.
         Returns:
-            experiment receipt or None if every HTTP operation failed; reviews and safe error codes
-            per trace. Stopped reviews remain artifacts, never successful quality reports.
+            Always a dict with exactly experiment, reviews and errors on normal return.
+            experiment is a saved experiment receipt (dict), or None only when no review
+            artifact was returned. reviews is an ordered list of validated completed/stopped
+            review dicts. errors is an ordered list of {trace_id: str, code: str} for
+            individual evaluate() KumaError failures; it contains no exception messages.
+            If all evaluations raise KumaError, reviews is empty and experiment is None;
+            the outer result is never None. A stopped artifact is retained in reviews,
+            not errors, and does not establish successful Agent behavior or complete review.
         Raises:
-            KumaError: Initial dataset read/final experiment save fails; individual review errors
-                are recorded separately. Cancellation/KeyboardInterrupt propagates immediately.
+            ValidationError: Invalid name/key before the dataset read, or unsafe child-key
+                seed during iteration; these errors are not converted to per-trace errors.
+            ProviderError: Invalid dataset response before evaluations begin.
+            KumaError: Initial dataset read or final experiment save fails, with no returned
+                wrapper. Only KumaError from individual evaluate() calls is accumulated.
+            BaseException: Cancellation/KeyboardInterrupt propagates immediately; completed
+                remote work is not rolled back. Unexpected non-KumaError also propagates.
+        Preconditions:
+            Use an owned frozen dataset and a credential authorized for its traces.
+            Explicit recovery must preserve name, dataset, limits and the run key.
+        Postconditions:
+            Normal return preserves each returned artifact or per-trace error in input
+            order. A raised read/save/cancellation error does not roll back remote work.
+        Security/Privacy:
+            Uses the existing authenticated trajectory boundary; errors contain safe
+            categories, not exception text. Returned reviews remain caller-owned data.
         Side Effects:
-            One dataset read, up to 50 explicit review requests and one experiment write.
+            One dataset read, up to 50 explicit review requests and, only if reviews exist,
+            one experiment write. No experiment is saved when every evaluation raises.
             Each newly completed review can charge its configured Judge fee; storage is separate.
             Does not run evaluated Agents, synthesize missing traces or calculate an overall ranking.
         """

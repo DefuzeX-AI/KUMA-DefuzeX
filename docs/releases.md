@@ -6,6 +6,22 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
+## 0.5.1 candidate
+
+This small, optional patch updates documentation and its drift checks, not SDK
+runtime or service wire behavior. Publication is pending independent review;
+check the matching GitHub Release and PyPI version for availability.
+
+- Cover capture and trajectory entry points, lifecycle methods, parameter types,
+  defaults, return values, failures and resource ownership in the API references.
+- Correct `run_experiment` documentation: normal returns always contain
+  `experiment`, `reviews` and `errors`; only `experiment` can be null. Initial
+  dataset reads and final experiment writes can still raise exceptions.
+- Add an [offline consumption example](../examples/consume_experiment.py) that
+  distinguishes completed reviews, stopped artifacts and per-trace failures.
+
+No new collection, automatic retry, model call or billing behavior is introduced.
+
 ## 0.3.10
 
 This optional update adds external-process Trace capture without changing the

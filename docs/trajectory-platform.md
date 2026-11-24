@@ -184,6 +184,42 @@ validated reviews settle the configured existing Judge fixed fee in public Credi
 imports, reads and human feedback do not invoke Judge or consume that fee. Internal accounting
 continues using existing integer units; the SDK never multiplies your displayed balance.
 
+## Consume an experiment result
+
+On normal return, `run_experiment` always returns a dictionary with exactly
+`experiment`, `reviews`, and `errors`; never test `result is None`.
+Only `result["experiment"]` can be None. It is None when no evaluation returned
+a review artifact, in which case no experiment write is attempted.
+
+| Outcome | experiment | reviews | errors |
+| --- | --- | --- | --- |
+| Every evaluation returns an artifact | Saved receipt dict | All returned artifacts | Empty list |
+| Some evaluations raise KumaError | Saved receipt dict | Returned artifacts in dataset order | Failed trace IDs and safe codes, in dataset order |
+| Every evaluation raises KumaError | None | Empty list | One trace_id/code entry for each failure |
+
+A stopped review is still an artifact in `reviews`, not an entry in `errors`.
+Neither a saved experiment nor an empty error list proves Agent success.
+Initial dataset read/validation errors propagate before any evaluation. Final
+experiment-save errors also propagate, after reviews may already have completed
+and incurred fees; there is no returned wrapper on those failures. Invalid
+name/key, unsafe child-key seed and cancellation are not converted into per-item
+errors. Only `KumaError` raised by individual `evaluate` calls is accumulated.
+Explicit recovery must keep the same name, dataset, limits and run key.
+
+The offline [consumer example](../examples/consume_experiment.py) demonstrates
+all-completed, partial-failure (including stopped), and all-failed wrappers:
+
+```sh
+python examples/consume_experiment.py
+```
+
+It uses clearly synthetic display-only data, not fake evidence of service calls.
+For a real call, catch `KumaError` around `workspace.run_experiment(...)`;
+handle a propagated failure separately from a returned wrapper. Inspect safe
+error codes rather than logging raw exceptions, credentials or full report bodies.
+See the [API reference](api-reference.md#trajectoryclientrun_experiment) for the
+complete argument, exception and side-effect contract.
+
 ## Action data
 
 | Actions | Exact data |
