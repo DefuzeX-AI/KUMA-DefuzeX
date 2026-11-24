@@ -11,7 +11,7 @@
   ],
   "source": "langchain_callback",
   "fixture_convention": "operation_source:null represents an absent optional field, not JSON null on wire; native is test input only and is not a new serialized field",
-  "admission_rule": "Known callback mapping mismatch without trace_operation_type_conflict is rejected; with conflict preserve the recorded operation, including unknown native strings. No execution authenticity is inferred. unknown/retriever require unknown; any retained operation also requires conflict. null operation in vectors means absent attribute.",
+  "admission_rule": "Known callback mapping mismatch without trace_operation_type_conflict is rejected; with conflict preserve the recorded operation, including unknown native strings. No execution authenticity is inferred. unknown/retriever require unknown; any retained operation also requires conflict. null operation in vectors means absent attribute. Vendor kind is descriptive only at admission: known callback plus matching wire operation accepts without vendor-conflict/unknown reasons. Producers still report observed vendor gaps.",
   "run_types": [
     "llm",
     "tool",
@@ -242,6 +242,28 @@
         "trace_operation_type_unknown",
         "trace_operation_type_conflict"
       ],
+      "expected": "accept"
+    },
+    {
+      "name": "server-admissible-known-callback-AGENT",
+      "operation": "chat",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "llm",
+        "openinference_kind": "AGENT"
+      },
+      "reasons": [],
+      "expected": "accept"
+    },
+    {
+      "name": "server-admissible-known-callback-unknown",
+      "operation": "chat",
+      "operation_source": {
+        "source": "langchain_callback",
+        "run_type": "llm",
+        "openinference_kind": "unknown"
+      },
+      "reasons": [],
       "expected": "accept"
     }
   ]

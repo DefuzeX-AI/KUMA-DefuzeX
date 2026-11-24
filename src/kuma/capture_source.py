@@ -7,6 +7,8 @@ from contextvars import ContextVar
 from typing import Any
 
 _CURRENT: ContextVar[Any] = ContextVar("kuma_langchain_source", default=None)
+_UNBOUND = object()
+_WRAPPER = object()
 _TYPES = frozenset({"llm", "tool", "chain", "retriever", "unknown"})
 _KINDS = frozenset({"LLM", "TOOL", "CHAIN", "AGENT", "RETRIEVER", "unknown"})
 _MAPPING = {"llm": "chat", "tool": "execute_tool", "chain": "invoke_workflow"}
@@ -31,6 +33,8 @@ def attach_langchain_source(instrumentor: Any) -> None:
         expose the actual run type paired with the exact trace/span identity to
         KUMA's mapper. Finally reset context on success or failure. No vendor
         span, global tracer class, exporter, Agent input or callback result changes.
+        Missing lookup identity instead marks a window-level unknown-type gap;
+        no per-span provenance or model identity is fabricated.
     Security/Privacy:
         Only closed type labels and numeric span identity enter the context.
         This is observation provenance, not authenticated proof of execution.
@@ -40,10 +44,12 @@ def attach_langchain_source(instrumentor: Any) -> None:
     lookup = getattr(tracer, "get_span", None)
     if not callable(original) or not callable(lookup):
         raise ValueError("LangChain callback source unavailable")
+    if getattr(original, "_kuma_source_wrapper", None) is _WRAPPER:
+        return
 
     def end(run: Any) -> Any:
         """Scope provenance to the original synchronous same-run span finalization."""
-        source = None
+        source = _UNBOUND
         try:
             span = lookup(run.id)
             context = span.get_span_context()
@@ -54,13 +60,14 @@ def attach_langchain_source(instrumentor: Any) -> None:
                 run_type if type(run_type) is str and run_type in _TYPES else "unknown",
             )
         except Exception:
-            pass  # No guess when the supported callback identity is unavailable.
+            pass  # Mark a window-level gap; never guess which span belongs to this run.
         token = _CURRENT.set(source)
         try:
             return original(run)
         finally:
             _CURRENT.reset(token)
 
+    end._kuma_source_wrapper = _WRAPPER
     tracer._end_trace = end
 
 
@@ -77,6 +84,8 @@ def project_source(
     current = _CURRENT.get()
     if current is None:
         return attributes, None, set()
+    if current is _UNBOUND:
+        return attributes, None, {"trace_operation_type_unknown"}
     context = span.get_span_context()
     if (context.trace_id, context.span_id) != current[:2]:
         return attributes, None, set()
@@ -113,6 +122,8 @@ def validate_source(
     Omission preserves old packages. Call once for shape, then with envelope
     reasons for mapping checks. A conflict permits retained native identity;
     without a native-present bit it cannot prove execution or identify its source.
+    Vendor kind is descriptive at admission, not a requirement for extra reasons
+    when a known callback already agrees with the recorded wire operation.
     Raises value-free ValueError on malformed fields or an unexplained mismatch.
     """
     if "operation_source" not in span:
@@ -135,10 +146,9 @@ def validate_source(
     if reasons is None:
         return
     expected = _MAPPING.get(source["run_type"])
-    unknown = expected is None or source["openinference_kind"] == "unknown"
+    unknown = expected is None
     conflict = expected is not None and (
         span["attributes"].get("gen_ai.operation.name") != expected
-        or _VENDOR.get(source["openinference_kind"]) != expected
     )
     if unknown and "trace_operation_type_unknown" not in reasons:
         raise ValueError("Missing operation source diagnostic")

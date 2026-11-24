@@ -235,6 +235,13 @@ span to model/tool. Missing model bodies retain `trace_model_content_not_recorde
 These are client observation claims, not server-certified execution. Historical
 objects without this optional field remain valid.
 
+If KUMA installs a hook but cannot attach its source callback, capture setup fails
+with a configuration error. Retrying repairs or rejects that same owned hook;
+it is not relabeled as externally configured success. If an owned callback later
+cannot resolve its span identity, the capture window reports an unknown-type gap
+without inventing per-span provenance. Original callback results and exceptions
+still propagate, and callback-local context is always reset.
+
 ## Reproduce without a paid model
 
 From a source checkout install the pinned optional matrix, then:
