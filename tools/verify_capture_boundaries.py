@@ -64,6 +64,18 @@ class CaptureBoundaryTests(unittest.TestCase):
         self.directory = self.store / ".kuma/captures"
         self.options = {"repo_path": self.repo, "storage_path": self.store}
 
+    def test_explicit_worker_binding_lifecycle(self):
+        session = capture("Inspect", tracer_provider=object(), **self.options)
+        with self.assertRaises(ConfigurationError):
+            session.bind(str)
+        with session:
+            bound = session.bind(str)
+            self.assertEqual(bound(7), "7")
+        with self.assertRaises(ConfigurationError):
+            bound(8)
+        with self.assertRaises(ConfigurationError):
+            session.bind(str)
+
     def test_task_rules_reuse_and_detached_exports(self):
         for task in [None, "", " ", "x" * 12001]:
             with (

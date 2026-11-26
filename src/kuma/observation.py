@@ -8,8 +8,13 @@ import re
 import threading
 import time
 import uuid
+import warnings
+from collections.abc import Callable
+from contextlib import suppress
+from contextvars import copy_context
+from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, ParamSpec, TypeVar
 
 from ._version import __version__
 from .errors import ConfigurationError, ValidationError
@@ -17,6 +22,9 @@ from .evidence.observation_capture import ObservationBuffer
 from .evidence.observation_otel import ACTIVE_OBSERVATION, attach, span_key
 from .evidence.trace import TraceEvidenceLimits
 from .repository.privacy import scan_sensitive_text
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 def _external_id(value: str | None) -> str | None:
@@ -110,6 +118,9 @@ class ObservationSession:
         means failed; cancellation/interrupt means aborted. Only this status is
         retained, never exception values, reprs or stack frames. Open spans become
         explicit window loss. No exporter flush, file write or upload is performed.
+        With a compatible provider but no completed spans, emit a nonfatal
+        RuntimeWarning; warning filters cannot replace the Agent outcome. The
+        existing status/reasons do not infer unseen thread activity or its count.
         """
         with self._lock:
             if self._state != "active":
@@ -141,7 +152,63 @@ class ObservationSession:
                 self._buffer.loss("trace_capture_failed")
                 self._result = self._buffer._export(self._metadata)
             self._buffer.spans.clear()
+        if self._processor is not None and self._buffer.observed == 0:
+            # Warning filters/handlers cannot replace the Agent outcome; the
+            # export retains its existing gap status even if display fails.
+            with suppress(Exception):
+                warnings.warn(
+                    "KUMA captured no completed spans. Check instrumentation and use "
+                    "session.bind(worker) for worker threads or server callbacks; "
+                    "join workers before leaving the session. Saved data does not "
+                    "prove capture succeeded; inspect capture_status and reasons.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
         return False
+
+    def bind(self, callback: Callable[_P, _R]) -> Callable[_P, _R]:
+        """Bind synchronous work explicitly to this observation's capture window.
+
+        Args:
+            callback: Required synchronous callable. Its positional/keyword
+                arguments and return value pass through unchanged. Do not pass
+                coroutine functions or callbacks returning deferred async work.
+        Returns:
+            Reusable callable with the same signature. Each invocation runs in
+            a fresh copy of the binding-time context, including OTel parentage;
+            concurrent calls never enter the same Context object.
+        Raises:
+            ConfigurationError: Binding or invoking outside the active window,
+                or callback is not callable. Callback exceptions propagate intact.
+        Preconditions:
+            Enter this session before binding. Join workers before session exit;
+            this helper does not start threads or own servers/executors.
+        Postconditions:
+            Caller context is restored on return, exception or cancellation.
+            Late invocations fail before executing the callback. Work already
+            running when the window closes is not reassigned to another session.
+        Side Effects:
+            Snapshots context variables at binding, without invoking the callback.
+            Invocation temporarily selects this session even inside another one.
+        Security/Privacy:
+            Only explicitly bound work is attributed. No global thread inference,
+            uploads or changes to user exporters; normal capture redaction applies.
+        """
+        with self._lock:
+            if self._state != "active" or not callable(callback):
+                raise ConfigurationError("Bind a callable inside an active session")
+            context = copy_context()
+            context.run(ACTIVE_OBSERVATION.set, self)
+
+        @wraps(callback)
+        def bound(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+            """Reject late work and isolate each caller's context and exceptions."""
+            with self._lock:
+                if self._state != "active":
+                    raise ConfigurationError("The bound observation session is closed")
+            return context.copy().run(callback, *args, **kwargs)
+
+        return bound
 
     async def __aenter__(self) -> ObservationSession:
         """Enter without blocking on external I/O; tasks inherit context naturally."""

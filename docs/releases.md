@@ -6,7 +6,22 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
-## 0.5.2 candidate
+## 0.5.3 candidate
+
+This optional patch adds explicit `session.bind(callback)` to capture and observe
+for synchronous worker/executor/server callbacks. Every invocation gets its own
+context copy; late invocations fail before executing after session closure.
+Unbound threads are not guessed or attributed. Zero completed-span capture emits
+a nonfatal diagnostic while keeping persistence and capture status distinct.
+
+Final Judge message fitting remains a service responsibility, separate from
+upload limits. The SDK retains the public budget-omission gap and provides a
+plain-English notice without equating it with Agent failure. Only optional model
+bodies may be omitted from the private Judge view; mandatory content can still
+exceed the limit. This candidate note does not claim deployment or availability.
+No automatic paid retry or client-side estimate of private prompt overhead is added.
+
+## 0.5.2
 
 This optional patch binds exported trajectory bytes to the requested immutable
 document digest and preserves fair per-step Trace budgets. Capture/review
@@ -20,8 +35,7 @@ identity wins; external instrumentation/exporters are unchanged. This optional
 provenance requires the matching service parser before SDK publication; historical
 objects without it remain valid. No automatic collection or new paid call occurs.
 
-Publication is pending independent review. Check GitHub Release and PyPI for
-availability; this candidate note is not a release announcement.
+See the immutable 0.5.2 GitHub Release and PyPI package for published artifacts.
 
 ## 0.5.1
 
