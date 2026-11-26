@@ -61,7 +61,65 @@ Changing only the output filename does not request a new review. Changing rules 
 explicitly selecting a new `--idempotency-key` does. Existing service idempotency
 protects the same logical request; KUMA does not retry model calls automatically.
 
-## Actual support and boundaries
+## Worker threads and existing servers
+
+Ordinary worker threads do not inherit the capture context. Explicitly bind the
+synchronous work to its owning session; the same API works with `observe()`.
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+from kuma import capture
+
+with capture(task, framework="openai") as recorded:
+    bound_call = recorded.bind(my_agent.invoke)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        answer = executor.submit(bound_call, task).result()
+```
+
+`task` and `my_agent` are your existing inputs and configured Agent. Bind once;
+repeat/concurrent calls each receive an independent binding-time context copy.
+Arguments, return values and original exceptions are unchanged. This is for
+synchronous callbacks, not coroutine functions or deferred async work. Normal
+async tasks inherit context; await them before leaving the session.
+
+For an already-running `ThreadingHTTPServer`, hand its handler an explicit
+per-request callback. The server need not be started inside the capture:
+
+```python
+# In the existing handler's do_POST, after authenticating and resolving a
+# caller-owned request ID to its exact registered callback:
+handler_callback = callbacks[request_id]
+answer = handler_callback(agent_input)
+
+# In the request owner's orchestration code:
+with capture(task, framework="openai") as recorded:
+    callbacks[request_id] = recorded.bind(my_agent.invoke)
+    try:
+        send_request_and_wait_for_handler(request_id, task)
+    finally:
+        del callbacks[request_id]
+```
+
+The application owns the synchronized callback registry, request authentication,
+server lifecycle and completion wait. Never use a shared "current session"
+fallback for unrelated requests. A concrete credential-free server regression is
+in the SDK canonical tests; no gateway/server is created by KUMA.
+
+Bind only while active and finish workers before exit. Calling a saved wrapper
+after closure raises `ConfigurationError` before the Agent runs. A callback that
+already started may continue normally, but spans outside the original window are
+not reassigned to a new session. Nested sessions retain explicit ownership; the
+calling context is restored after return or failure.
+
+When a compatible provider produces no completed spans in the session, KUMA emits
+a non-fatal English `RuntimeWarning` pointing to instrumentation and worker
+binding. Even warning-as-error settings cannot replace the Agent outcome. The
+existing `capture_status`/`reasons` remain authoritative; unknown unbound activity
+has no inferred count or ownership. `persistence_status="saved"` only means the
+document was saved, not that any spans were captured. Inspect `kuma captures list`
+or the exported observation before Judge; zero retained spans are rejected locally.
+
+## Capture boundaries
 
 | Selection | Optional installation | Verified ordinary execution | Scope and gaps |
 | --- | --- | --- | --- |

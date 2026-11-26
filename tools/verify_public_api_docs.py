@@ -39,6 +39,18 @@ class PublicApi:
 
 CAPTURE_TRAJECTORY_APIS = (
     PublicApi(
+        "CaptureSession.bind",
+        "src/kuma/capture.py",
+        "CaptureSession.bind",
+        check_signature_values=True,
+    ),
+    PublicApi(
+        "ObservationSession.bind",
+        "src/kuma/observation.py",
+        "ObservationSession.bind",
+        check_signature_values=True,
+    ),
+    PublicApi(
         "capture",
         "src/kuma/capture.py",
         "capture",
@@ -653,6 +665,7 @@ def _validate_capture_trajectory_inventory() -> list[str]:
     """Keep public definitions in these new surfaces from silently escaping the guard."""
     registered = {(api.source, api.qualified_name) for api in CAPTURE_TRAJECTORY_APIS}
     expected = {
+        ("src/kuma/observation.py", "ObservationSession.bind"),
         ("src/kuma/client.py", "KumaClient.trajectory"),
         ("src/kuma/capture_store.py", "list_captures"),
     }

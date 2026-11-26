@@ -8,6 +8,7 @@ from typing import Any
 from ..correlation import validate_run_receipt
 from ..errors import ProviderError
 from ._assessment_result import extract_assessment
+from ._budget_gap import budget_gap_notice
 from ._official_wire import (
     contains_private_fields,
     plain_json,
@@ -297,6 +298,7 @@ def normalize_official_judgment(
             "The Backend returned an invalid Judgment status", code="invalid_response"
         )
     issues, step_results, evidence_gaps = _validated_collections(response)
+    budget_notice = budget_gap_notice(evidence_gaps, status)
     excluded = {
         "judgment_id",
         "status",
@@ -306,6 +308,7 @@ def normalize_official_judgment(
         "step_explanations",
         "explanation",
         "claim_coverage_notice",
+        "model_input_budget_notice",
     }
     confidence = _validated_confidence(response.get("confidence"))
     if confidence is not None:
@@ -318,6 +321,8 @@ def normalize_official_judgment(
         "extensions": _report_extensions(response, excluded, receipt, assessment),
     }
     result["extensions"].update(_local_explanations(status, step_results, assessment))
+    if budget_notice is not None:
+        result["extensions"]["model_input_budget_notice"] = budget_notice
     if confidence is not None:
         result["confidence"] = confidence
     if isinstance(response.get("stop_reason"), str):

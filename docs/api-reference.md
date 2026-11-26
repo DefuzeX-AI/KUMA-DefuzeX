@@ -778,6 +778,51 @@ Finalize on async exit while retaining the original cancellation identity.
 
 **Side Effects:** Synchronously finalizes and saves on the calling thread, without scheduling background work. On cancellation, save failure is exposed through persistence status/error rather than replacing that cancellation. No upload or Judge call.
 
+### Judge model-budget notice
+
+`TestReport.evidence_gaps` preserves the service's closed
+`model_input_budget_omission` gap. Its empty `required_evidence` list means no
+missing capture capability is invented. The SDK adds a static
+`extensions.model_input_budget_notice` when this gap exists. It describes omitted
+optional model bodies, not an Agent failure; source Evidence and Case remain intact.
+No budget gap means no notice. Remote text cannot spoof this local field.
+See [fitting semantics and limitations](sdk-guide.md#server-side-judge-budget-omission).
+
+### Explicit worker binding
+
+Both session types expose the same synchronous callback contract.
+
+<!-- api-parameters:CaptureSession.bind:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `callback` | Callable[_P, _R] | Required | Synchronous worker or server callback to associate with this active capture. Arguments and result are unchanged; do not return deferred async work. |
+
+<!-- api-parameters:CaptureSession.bind:end -->
+
+<!-- api-parameters:ObservationSession.bind:start -->
+
+| Argument | Type | Required/default | What it does and when to use it |
+| --- | --- | --- | --- |
+| `callback` | Callable[_P, _R] | Required | Synchronous worker or server callback to associate with this active observation; no automatic local persistence. |
+
+<!-- api-parameters:ObservationSession.bind:end -->
+
+**Returns:** A reusable callable; every invocation uses a separate copy of the
+binding-time context, preserving OTel parentage and explicit session identity.
+Repeated and concurrent calls are supported.
+
+**Raises:** `ConfigurationError` for a non-callable, binding outside the active
+window, or invoking after closure. Callback exceptions and cancellation propagate.
+
+**Preconditions:** Enter the session before binding; join workers before exit.
+**Postconditions:** Caller context is restored even on failure. Already-running
+late spans cannot enter a later session; late invocations do not execute.
+**Side Effects:** Copies context variables; does not manage worker/server lifetime.
+**Security/Privacy:** No guessing ownership of unbound threads, no uploads and no
+exporter changes. Existing redaction applies.
+See [worker/server examples](capture-lifecycle.md#worker-threads-and-existing-servers).
+
 ### CaptureSession.export
 
 Return detached finalized capture data, including task, gaps and actual execution status.

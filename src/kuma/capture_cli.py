@@ -98,7 +98,8 @@ def add_capture_parser(subparsers: Any) -> None:
     )
     commands = captures.add_subparsers(dest="captures_command", required=True)
     listed = commands.add_parser(
-        "list", help="list local capture IDs and honest gap metadata"
+        "list",
+        help="list local capture IDs and gap metadata; saved does not mean spans were captured",
     )
     listed.add_argument("--limit", type=int, default=20)
     listed.set_defaults(func=cmd_capture_list)

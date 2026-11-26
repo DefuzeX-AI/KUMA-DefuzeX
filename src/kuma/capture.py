@@ -7,6 +7,7 @@ import hashlib
 import os
 import re
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,7 @@ from .capture_store import (
 from .client import KumaClient
 from .errors import ConfigurationError, ProviderError, ValidationError
 from .evidence.trace import TraceEvidenceLimits
-from .observation import observe
+from .observation import _P, _R, observe
 from .trajectory_capture import prepare_observation
 from .trajectory_requirements import requirements_template, validate_requirements
 
@@ -257,6 +258,35 @@ class CaptureSession:
             raise ConfigurationError("Finish capture before exporting its data")
         return copy.deepcopy(self._document)
 
+    def bind(self, callback: Callable[_P, _R]) -> Callable[_P, _R]:
+        """Bind synchronous worker or server work to this capture's observation.
+
+        Args:
+            callback: Required synchronous callable; arguments, return values
+                and exceptions pass through unchanged. Deferred async work is
+                not supported; use normal async context propagation instead.
+        Returns:
+            Reusable callable running each invocation in its own context copy,
+            preserving binding-time OTel parentage and this capture's identity.
+        Raises:
+            ConfigurationError: Session is not active, callback is not callable,
+                or invocation occurs after closure. Agent exceptions are retained.
+        Preconditions:
+            Bind inside the entered session and join workers before exit.
+        Postconditions:
+            Concurrent invocations are isolated; late callbacks cannot enter the
+            next capture. Caller context is restored even on callback failure.
+        Side Effects:
+            Delegates to ObservationSession.bind; does not execute work, start
+            threads, manage proxy/server lifecycle or persist until capture exit.
+        Security/Privacy:
+            No implicit ownership of unrelated threads and no upload. Existing
+            observation allowlists and redaction remain unchanged.
+        """
+        if self._state != "active":
+            raise ConfigurationError("Bind a callable inside an active capture")
+        return self._observation.bind(callback)
+
 
 def capture(
     task: str,
@@ -363,7 +393,8 @@ def _review_inputs(
         )
     if not document["observation"]["spans"]:
         raise ValidationError(
-            "No spans retained; fix instrumentation before requesting Judge"
+            "No spans retained; check instrumentation and session.bind(worker) "
+            "for worker threads before requesting Judge"
         )
     submission = prepare_observation(document["observation"], profile)
     logical = (

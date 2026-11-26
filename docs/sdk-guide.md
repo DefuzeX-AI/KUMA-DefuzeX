@@ -683,6 +683,41 @@ assign global causes to steps. See [examples and interpretation limits](judge-as
 - [Full-stack user-flow example](../examples/full_stack/USER_GUIDE.md)
 - [Architecture and security boundaries](architecture.md)
 
+### Server-side Judge budget omission
+
+A service may report this closed gap:
+
+```json
+{"code": "model_input_budget_omission", "required_evidence": []}
+```
+
+This means optional Trace `model_content` input/output bodies were omitted only
+from the Judge's private model view. The submitted Case, Evidence, hashes, Agent
+completion output and tool facts remain intact. The service, not the SDK,
+measures the actual final messages; the SDK does not guess private prompt overhead
+or alter signed Evidence to fit.
+
+The gap remains in `report.evidence_gaps` and saved/exported reports. The SDK also
+adds static English `report.extensions["model_input_budget_notice"]` wording.
+This notice is local display text, never trusted remote prose or a new wire field.
+A real issue remains `issue`; otherwise budget omission yields
+`insufficient_evidence`, not pass. It does not establish an Agent failure or imply
+that the original capture was incomplete. A contradictory pass plus this gap is
+rejected as `invalid_response`, not silently rewritten.
+
+Only optional model bodies can be omitted. Mandatory content may still exceed
+the service limit and return the existing safe, nonretryable size error before a
+model call. Fitting therefore does not guarantee every large task can run. No
+automatic paid retry is added. Recover existing operations with their original
+identity; do not generate a new idempotency key merely to retry a failure.
+
+Coded gaps use only `code` and `required_evidence`, with at most three unique
+codes. The two older codes retain their semantics: `required_evidence_missing`
+has a nonempty canonical Evidence capability list; `evidence_contract_unavailable`
+has an empty list. Budget omission also requires an empty list; it does not invent
+missing capture capabilities. Legacy responses without the budget gap keep their
+existing behavior and have no synthetic notice.
+
 ## Final Judge input budget
 
 Use `KumaClient().judge_config().get("judge_input_limit")` to inspect the optional
