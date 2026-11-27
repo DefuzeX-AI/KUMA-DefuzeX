@@ -222,6 +222,11 @@ def _result(
         )
         return
     if operation == "compare":
+        scoped = "contains_media_omission" in result
+        if scoped:
+            _require(
+                accept_media_omission and result["contains_media_omission"] is True
+            )
         _require(
             set(result)
             == {
@@ -234,6 +239,7 @@ def _result(
                 "counts_are",
                 "normal_retries_are_penalties",
             }
+            | ({"contains_media_omission"} if scoped else set())
         )
         _require(
             result["schema_version"] == "kuma.trajectory_comparison.v1"
