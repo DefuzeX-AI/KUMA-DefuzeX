@@ -626,6 +626,7 @@ Explicitly review a saved execution using one Kuma credential and the bound task
 | `client` | KumaClient \| None | `None` | KumaClient or None to resolve KUMA_API_KEY/normal credentials. No provider/storage credential is needed; Agent runtime keys remain separate. |
 | `requirements` | dict \| None | `None` | Optional richer v1 rules retaining the exact original task. |
 | `idempotency_key` | str \| None | `None` | Optional8..200 ASCII protocol key. None hashes immutable capture/submission content. Same input/key recovers the same review; selecting a fresh key deliberately requests a separate paid review. |
+| `accept_media_omission` | bool | `True` | Permit text-and-structure review without changing the original trace. False preserves legacy media rejection and automatic keys. True binds mode into automatic keys; explicit recovery keys must retain their original mode. |
 
 <!-- api-parameters:judge_capture:end -->
 
@@ -891,6 +892,7 @@ Execute one allowlisted workspace command using normal KUMA authentication.
 | `action` | str | Required | Exact supported workspace action; see docs/trajectory-platform.md. |
 | `data` | Mapping[str, Any] | Required | Action-specific finite JSON fields; no owner, provider URL or credentials. |
 | `idempotency_key` | str \| None | `None` | Required for reviews.run, 8..200 ASCII letters/digits/._:-. Reuse unchanged to recover the same logical paid review; never reuse with new input. |
+| `accept_media_omission` | bool | `False` | Legacy low-level default. True explicitly permits scoped text-and-structure review and scoped artifact reads. Strict boolean; changing mode with a submitted manual key conflicts. |
 
 <!-- api-parameters:TrajectoryClient.request:end -->
 
@@ -928,6 +930,7 @@ Retrieve an exact canonical JSON artifact without changing large integers or sou
 | --- | --- | --- | --- |
 | `kind` | str | Required | requirements, traces, reviews, datasets, experiments or feedback. |
 | `identity` | str | Required | Owned document ID returned by the workspace. |
+| `accept_media_omission` | bool | `True` | Read immutable scoped reports without changing exported bytes. False keeps legacy semantics and rejects scoped artifacts; trace contents are unchanged. |
 
 <!-- api-parameters:TrajectoryClient.export:end -->
 
@@ -991,6 +994,7 @@ Run the private process Judge on one owned stored trace, without running the Age
 | `trace_id` | str | Required | Owned document ID returned by upload/list, not a model provider trace URL. |
 | `idempotency_key` | str | Required | Required unchanged logical review identity; see request() for constraints. |
 | `limits` | Mapping[str, Any] \| None | `None` | Optional integer budgets: decisions 1..12 (default 6), tool_calls 1..24 (12), evidence_characters 1000..120000 (40000), seconds 1..900 (120), source_characters 1000..4194304 (4194304), chunk_characters 1000..350000 (240000). None leaves defaults to the service; deployment lease/timeout constraints may reduce accepted seconds. See docs/trajectory-platform.md. |
+| `accept_media_omission` | bool | `True` | Permit bounded text-and-structure review, preserving original media and marking it unreviewed. False retains legacy rejection; reuse the original mode when recovering a key. |
 
 <!-- api-parameters:TrajectoryClient.evaluate:end -->
 
@@ -1012,6 +1016,7 @@ Review each frozen dataset trace sequentially and preserve failed/missing cases.
 | `dataset_id` | str | Required | Owned dataset document with 1..50 ordered trace IDs. |
 | `idempotency_key` | str | Required | Required run identity; deterministic child keys recover completed trace reviews on explicit rerun. Changing name, dataset or limits changes children. |
 | `limits` | Mapping[str, Any] \| None | `None` | Optional per-trace budgets, forwarded unchanged to evaluate. |
+| `accept_media_omission` | bool | `True` | Permit scoped reviews. False retains legacy child-key derivation. True adds the mode to generated child keys; switching mode creates new logical child reviews and may incur another fee. |
 
 <!-- api-parameters:TrajectoryClient.run_experiment:end -->
 

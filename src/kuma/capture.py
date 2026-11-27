@@ -374,9 +374,15 @@ def export_capture(
 
 
 def _review_inputs(
-    document: dict, requirements: dict | None, key: str | None
+    document: dict,
+    requirements: dict | None,
+    key: str | None,
+    *,
+    accept_media_omission: bool = False,
 ) -> tuple[dict, str]:
     """Validate source/profile/key before uploads and derive a stable logical review identity."""
+    if type(accept_media_omission) is not bool:
+        raise ValidationError("accept_media_omission must be a boolean")
     if key is not None and (
         not isinstance(key, str)
         or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{7,199}", key) is None
@@ -397,13 +403,10 @@ def _review_inputs(
             "for worker threads before requesting Judge"
         )
     submission = prepare_observation(document["observation"], profile)
-    logical = (
-        key
-        or "capture-"
-        + hashlib.sha256(
-            encoded({"capture_id": document["capture_id"], "submission": submission})
-        ).hexdigest()
-    )
+    seed = {"capture_id": document["capture_id"], "submission": submission}
+    if accept_media_omission:
+        seed["accept_media_omission"] = True
+    logical = key or "capture-" + hashlib.sha256(encoded(seed)).hexdigest()
     return submission, logical
 
 
@@ -415,6 +418,7 @@ def judge_capture(
     client: KumaClient | None = None,
     requirements: dict | None = None,
     idempotency_key: str | None = None,
+    accept_media_omission: bool = True,
 ) -> dict:
     """Explicitly review a saved execution using one Kuma credential and the bound task.
 
@@ -428,6 +432,10 @@ def judge_capture(
         idempotency_key: Optional8..200 ASCII protocol key. None hashes immutable
             capture/submission content. Same input/key recovers the same review;
             selecting a fresh key deliberately requests a separate paid review.
+        accept_media_omission: Strict bool, default True for text-and-structure review.
+            Original media stays saved, but is not understood by Judge. False retains
+            legacy media rejection and automatic keys. True enters automatic keys;
+            explicit keys must retain their original mode when recovering a review.
     Returns:
         Validated completed/stopped public review, also durably retained locally.
     Raises:
@@ -442,11 +450,20 @@ def judge_capture(
     document, directory = load_capture(
         identifier, repo_path=repo_path, storage_path=storage_path
     )
-    submission, key = _review_inputs(document, requirements, idempotency_key)
+    submission, key = _review_inputs(
+        document,
+        requirements,
+        idempotency_key,
+        accept_media_omission=accept_media_omission,
+    )
     preflight_capture_write(directory)
     workspace = (KumaClient() if client is None else client).trajectory()
     uploaded = workspace.upload(submission)
-    review = workspace.evaluate(uploaded["id"], idempotency_key=key)
+    review = workspace.evaluate(
+        uploaded["id"],
+        idempotency_key=key,
+        accept_media_omission=accept_media_omission,
+    )
     if review["requirements_sha256"] != submission["requirements_sha256"]:
         raise ProviderError("Review does not match the submitted task and rules")
     save_review(directory, review)

@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from .errors import ProviderError
+from .trajectory_media import validate_media_coverage
 
 
 def _require(condition: bool) -> None:
@@ -73,7 +74,9 @@ def _page(result: dict, kind: str, data: dict) -> None:
     _require(cursor is None or (isinstance(cursor, str) and 1 <= len(cursor) <= 4096))
 
 
-def _review(result: dict, data: dict) -> set[str]:
+def _review(
+    result: dict, data: dict, *, accept_media_omission: bool = False
+) -> set[str]:
     """Require explicit completion/report agreement; stopped provider work is never a successful score."""
     _require(
         result["trace_id"] == data["trace_id"]
@@ -100,8 +103,15 @@ def _review(result: dict, data: dict) -> set[str]:
         "agent_version",
     }
     if "coverage" in result:
-        _coverage(result["coverage"], completed=result["review_status"] == "completed")
+        _coverage(
+            result["coverage"],
+            completed=result["review_status"] == "completed",
+            accept_media_omission=accept_media_omission,
+        )
         fields.add("coverage")
+        if "media_omission" in result["coverage"]:
+            _require(result.get("review_scope") == "text_and_structure")
+            fields.add("review_scope")
     if (
         isinstance(result["report"], dict)
         and result["report"]["schema_version"] == "kuma.quality_agent_report.v4"
@@ -122,7 +132,9 @@ def _review(result: dict, data: dict) -> set[str]:
     return fields
 
 
-def _coverage(value: dict, *, completed: bool) -> None:
+def _coverage(
+    value: dict, *, completed: bool, accept_media_omission: bool = False
+) -> None:
     """Keep physical source coverage explicit and separate from unmeasured semantic recall."""
     fields = {
         "schema_version",
@@ -135,7 +147,12 @@ def _coverage(value: dict, *, completed: bool) -> None:
         "semantic_recall_certified",
         "delivery_is_attention",
     }
-    _require(isinstance(value, dict) and set(value) == fields)
+    _require(isinstance(value, dict))
+    scoped = "media_omission" in value
+    if scoped:
+        _require(accept_media_omission is True)
+        fields.add("media_omission")
+    _require(set(value) == fields)
     _require(
         value["schema_version"] == "kuma.process_coverage.v1"
         and value["semantic_recall_certified"] is False
@@ -153,7 +170,9 @@ def _coverage(value: dict, *, completed: bool) -> None:
             and set(item)
             == {"characters", "delivered_ranges", "uncovered_ranges", "fully_delivered"}
         )
-    if completed:
+    if scoped:
+        validate_media_coverage(value, completed=completed)
+    elif completed:
         _require(
             value["source_delivery_complete"] is True
             and value["all_segments_accepted"] is True
@@ -167,9 +186,13 @@ def _coverage(value: dict, *, completed: bool) -> None:
         )
 
 
-def _result(result: dict, action: str, data: dict) -> None:
+def _result(
+    result: dict, action: str, data: dict, *, accept_media_omission: bool = False
+) -> None:
     """Validate action-specific closed result envelopes before application code sees them."""
     kind, operation = action.split(".")
+    if kind in {"reviews", "experiments", "feedback"}:
+        _scoped_result(result, kind, accept_media_omission=accept_media_omission)
     if operation == "list":
         _page(result, kind, data)
         return
@@ -232,12 +255,81 @@ def _result(result: dict, action: str, data: dict) -> None:
         ).encode("utf-8")
         _require(hashlib.sha256(encoded).hexdigest() == result["content_sha256"])
     elif action == "reviews.run":
-        fields |= _review(result, data)
+        fields |= _review(result, data, accept_media_omission=accept_media_omission)
     _require(set(result) == fields)
 
 
+def _scoped_result(result: dict, kind: str, *, accept_media_omission: bool) -> None:
+    """Check only contract-bearing artifact slots, never guess scope from arbitrary user JSON.
+
+    Server ownership/transitive-reference gates remain authoritative. The client checks
+    supplied summary markers, persisted review coverage and experiment case markers;
+    it cannot resolve a feedback review ID or inspect an absent source remotely here.
+    """
+    summaries = [result.get("summary", {})]
+    summaries.extend(item.get("summary", {}) for item in result.get("items", []))
+    payload = result.get("payload", result)
+    for item in [*summaries, payload]:
+        if "review_scope" in item:
+            _require(
+                accept_media_omission and item["review_scope"] == "text_and_structure"
+            )
+        if "contains_media_omission" in item:
+            _require(accept_media_omission and item["contains_media_omission"] is True)
+    if kind == "reviews" and "coverage" in payload:
+        _coverage(
+            payload["coverage"],
+            completed=payload["review_status"] == "completed",
+            accept_media_omission=accept_media_omission,
+        )
+        if "media_omission" in payload["coverage"]:
+            _require(payload.get("review_scope") == "text_and_structure")
+            _require(payload["review_status"] in {"completed", "stopped"})
+            _require(
+                (payload["review_status"] == "completed")
+                == isinstance(payload.get("report"), dict)
+            )
+            if isinstance(payload.get("report"), dict):
+                _require(payload["report"].get("coverage") == payload["coverage"])
+    if kind == "experiments":
+        for case in payload.get("cases", []):
+            if "review_scope" in case:
+                _require(
+                    accept_media_omission
+                    and case["review_scope"] == "text_and_structure"
+                )
+
+
+def validate_export_scope(
+    raw: bytes, kind: str, *, accept_media_omission: bool
+) -> None:
+    """Validate report-dependent decoded exports after digest verification without rewriting bytes.
+
+    Original trace/data exports stay opaque and byte-exact. Report-dependent exports
+    must be finite JSON artifacts with explicit opted-in scope; safe failures expose
+    no payload or decoder detail. No external references are followed.
+    """
+    if kind not in {"reviews", "experiments", "feedback"}:
+        return
+    failed = False
+    try:
+        payload = json.loads(raw)
+        _require(isinstance(payload, dict))
+        _scoped_result(
+            {"payload": payload}, kind, accept_media_omission=accept_media_omission
+        )
+    except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
+        failed = True
+    if failed:
+        raise ProviderError("Invalid trajectory export scope", code="invalid_response")
+
+
 def validate_response(
-    value: dict[str, Any], action: str, data: dict[str, Any]
+    value: dict[str, Any],
+    action: str,
+    data: dict[str, Any],
+    *,
+    accept_media_omission: bool = False,
 ) -> dict[str, Any]:
     """Return a detached caller-owned result after shape, identity and revision checks.
 
@@ -245,6 +337,8 @@ def validate_response(
         value: Already finite/privacy-checked public envelope from Backend.
         action: Exact allowlisted action used for this request.
         data: The same admitted action input, used for response identity binding.
+        accept_media_omission: Strict capability from the original request, default False.
+            True permits closed text-and-structure coverage, never media understanding.
     Returns:
         Public result mapping; metadata pages contain no source bodies. Details bind their payload hash.
     Raises:
@@ -260,7 +354,8 @@ def validate_response(
             and isinstance(value["result"], dict)
         )
         result = value["result"]
-        _result(result, action, data)
+        _require(type(accept_media_omission) is bool)
+        _result(result, action, data, accept_media_omission=accept_media_omission)
     except (ValueError, TypeError, KeyError, AttributeError):
         failed = True
     if failed:

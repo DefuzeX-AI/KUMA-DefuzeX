@@ -16,7 +16,7 @@ from .errors import AuthenticationError, KumaError, ProviderError, ValidationErr
 from .evidence.trace_tool_content import normalize_tool_content
 from .trajectory_capture import prepare_submission
 from .trajectory_requirements import validate_requirements
-from .trajectory_wire import export_digest, validate_response
+from .trajectory_wire import export_digest, validate_export_scope, validate_response
 from .transport.backend import _validate_timeout
 
 READ_ACTIONS = frozenset(
@@ -150,6 +150,7 @@ class TrajectoryClient:
         data: Mapping[str, Any],
         *,
         idempotency_key: str | None = None,
+        accept_media_omission: bool = False,
     ) -> dict[str, Any]:
         """Execute one allowlisted workspace command using normal KUMA authentication.
 
@@ -158,6 +159,9 @@ class TrajectoryClient:
             data: Action-specific finite JSON fields; no owner, provider URL or credentials.
             idempotency_key: Required for reviews.run, 8..200 ASCII letters/digits/._:-.
                 Reuse unchanged to recover the same logical paid review; never reuse with new input.
+            accept_media_omission: Strict bool, default False for legacy raw requests.
+                True permits text-and-structure review and scoped artifact reads; media
+                is not understood. Changing this option with a manual key conflicts.
         Returns:
             Detached user-owned result from kuma.trajectory_workspace.v1, with no automatic pagination.
         Raises:
@@ -173,6 +177,8 @@ class TrajectoryClient:
             "reviews.run"
         }:
             raise ValidationError("Unsupported trajectory workspace action")
+        if type(accept_media_omission) is not bool:
+            raise ValidationError("accept_media_omission must be a boolean")
         safe = _safe(data)
         if action == "reviews.run":
             _review_input(safe)
@@ -191,15 +197,20 @@ class TrajectoryClient:
             if action in WRITE_ACTIONS
             else "review"
         )
+        command = {"action": action, "data": safe}
+        if accept_media_omission:
+            command["accept_media_omission"] = True
         response = self._backend.json(
             "POST",
             f"/sdk/trajectory/{mode}/",
-            {"action": action, "data": safe},
+            command,
             idempotency_key=idempotency_key or "trajectory-" + uuid.uuid4().hex,
             _expected_status=200,
         )
         response = _safe(response, remote=True)
-        return validate_response(response, action, safe)
+        return validate_response(
+            response, action, safe, accept_media_omission=accept_media_omission
+        )
 
     def save_requirements(self, requirements: Mapping[str, Any]) -> dict[str, Any]:
         """Explicitly save one caller requirements revision.
@@ -217,12 +228,16 @@ class TrajectoryClient:
             "requirements.save", {"requirements": validate_requirements(requirements)}
         )
 
-    def export(self, kind: str, identity: str) -> bytes:
+    def export(
+        self, kind: str, identity: str, *, accept_media_omission: bool = True
+    ) -> bytes:
         """Retrieve an exact canonical JSON artifact without changing large integers or source types.
 
         Args:
             kind: requirements, traces, reviews, datasets, experiments or feedback.
             identity: Owned document ID returned by the workspace.
+            accept_media_omission: Strict bool, default True to read scoped artifacts.
+                False retains legacy request semantics and rejects media-scoped reports.
         Returns:
             UTF-8 JSON bytes bound to the requested ID digest, at most 6 MiB uncompressed.
             Response identity, category, declared digest and decoded-byte hash must agree.
@@ -240,7 +255,11 @@ class TrajectoryClient:
             expected_digest = export_digest(identity, kind)
         except ValueError:
             raise ValidationError("Invalid trajectory export identity") from None
-        result = self.request(kind + ".export", {"id": identity})
+        result = self.request(
+            kind + ".export",
+            {"id": identity},
+            accept_media_omission=accept_media_omission,
+        )
         failed, raw = False, b""
         try:
             import io
@@ -259,6 +278,7 @@ class TrajectoryClient:
             failed = True
         if failed:
             raise ProviderError("Invalid trajectory export", code="invalid_response")
+        validate_export_scope(raw, kind, accept_media_omission=accept_media_omission)
         return raw
 
     def upload(
@@ -384,6 +404,7 @@ class TrajectoryClient:
         *,
         idempotency_key: str,
         limits: Mapping[str, Any] | None = None,
+        accept_media_omission: bool = True,
     ) -> dict[str, Any]:
         """Run the private process Judge on one owned stored trace, without running the Agent.
 
@@ -395,6 +416,9 @@ class TrajectoryClient:
                 source_characters 1000..4194304 (4194304), chunk_characters 1000..350000
                 (240000). None leaves defaults to the service; deployment lease/timeout
                 constraints may reduce accepted seconds. See docs/trajectory-platform.md.
+            accept_media_omission: Strict bool, default True. Permit bounded text-and-structure
+                review while preserving the original trace and marking unreviewed media.
+                False keeps legacy media rejection. Reuse the original value on recovery.
         Returns:
             Completed report with blank human labels, or an explicit stopped artifact with reason.
         Raises:
@@ -409,7 +433,12 @@ class TrajectoryClient:
         data: dict[str, Any] = {"trace_id": trace_id}
         if limits is not None:
             data["limits"] = dict(limits)
-        return self.request("reviews.run", data, idempotency_key=idempotency_key)
+        return self.request(
+            "reviews.run",
+            data,
+            idempotency_key=idempotency_key,
+            accept_media_omission=accept_media_omission,
+        )
 
     def run_experiment(
         self,
@@ -418,6 +447,7 @@ class TrajectoryClient:
         *,
         idempotency_key: str,
         limits: Mapping[str, Any] | None = None,
+        accept_media_omission: bool = True,
     ) -> dict[str, Any]:
         """Review each frozen dataset trace sequentially and preserve failed/missing cases.
 
@@ -427,6 +457,9 @@ class TrajectoryClient:
             idempotency_key: Required run identity; deterministic child keys recover completed
                 trace reviews on explicit rerun. Changing name, dataset or limits changes children.
             limits: Optional per-trace budgets, forwarded unchanged to evaluate.
+            accept_media_omission: Strict bool, default True for text-and-structure review.
+                False retains legacy child keys. True binds the mode into generated child
+                keys; changing the mode requests separate reviews, not automatic recovery.
         Returns:
             Always a dict with exactly experiment, reviews and errors on normal return.
             experiment is a saved experiment receipt (dict), or None only when no review
@@ -459,6 +492,8 @@ class TrajectoryClient:
             Each newly completed review can charge its configured Judge fee; storage is separate.
             Does not run evaluated Agents, synthesize missing traces or calculate an overall ranking.
         """
+        if type(accept_media_omission) is not bool:
+            raise ValidationError("accept_media_omission must be a boolean")
         if not isinstance(name, str) or not name.strip() or len(name) > 200:
             raise ValidationError("Invalid experiment name")
         if (
@@ -489,13 +524,18 @@ class TrajectoryClient:
                     "limits": None if limits is None else dict(limits),
                 }
             )
+            if accept_media_omission:
+                seed["accept_media_omission"] = True
             child = hashlib.sha256(
                 json.dumps(seed, sort_keys=True, ensure_ascii=True).encode()
             ).hexdigest()
             try:
                 reviews.append(
                     self.evaluate(
-                        trace_id, idempotency_key="experiment-" + child, limits=limits
+                        trace_id,
+                        idempotency_key="experiment-" + child,
+                        limits=limits,
+                        accept_media_omission=accept_media_omission,
                     )
                 )
             except KumaError as exc:
@@ -508,6 +548,7 @@ class TrajectoryClient:
                     "dataset_id": dataset_id,
                     "review_ids": [r["id"] for r in reviews],
                 },
+                accept_media_omission=accept_media_omission,
             )
             if reviews
             else None

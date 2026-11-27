@@ -554,6 +554,7 @@ class CaptureBoundaryTests(unittest.TestCase):
                 output=str(self.root / "judged.json"),
                 requirements=None,
                 idempotency_key="cli-completed-01",
+                reject_media=False,
                 base_url=url,
                 timeout=180,
             )
