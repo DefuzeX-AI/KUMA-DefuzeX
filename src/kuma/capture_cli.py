@@ -77,14 +77,18 @@ def cmd_capture_judge(args: argparse.Namespace) -> int:
             ),
             requirements=requirements,
             idempotency_key=args.idempotency_key,
+            accept_media_omission=not args.reject_media,
         )
         publish(result)
+    scope = result.get("coverage", {}).get("media_omission")
     print(
         json.dumps(
             {
                 "capture_id": args.capture_id,
                 "review_status": result["review_status"],
                 "reasons": result["reason"],
+                "review_scope": "text_and_structure" if scope else "supplied_source",
+                "media_understanding": "not_performed" if scope else None,
             }
         )
     )
@@ -114,6 +118,11 @@ def add_capture_parser(subparsers: Any) -> None:
     )
     judged.add_argument("capture_id")
     judged.add_argument("--output", required=True)
+    judged.add_argument(
+        "--reject-media",
+        action="store_true",
+        help="retain legacy media rejection and automatic key; default reviews retained text/structure",
+    )
     judged.add_argument(
         "--idempotency-key",
         help="optional logical review identity; default is stable for this capture/input",

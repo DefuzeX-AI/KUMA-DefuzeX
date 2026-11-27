@@ -5,17 +5,46 @@ task/tool requirements, stored traces, datasets, process Judge reports, human co
 version comparisons through the existing public Backend. The hosted trajectory Judge is enabled.
 Self-hosted use requires compatible enabled services; clients never configure private storage.
 
-### Unsupported inline media
+### Text-and-structure review with unreviewed media
 
-When the service identifies unsupported inline image data, review preflight
-returns `review_status="stopped"`, `reason="unsupported_inline_media"`,
-`attempts=[]`, and `report=None`, before model work or a review charge. This is
-an unsupported review input, not an Agent failure or a visual verdict. Original
-uploaded traces remain readable/exportable; no media is silently stripped or
-marked delivered. A normal text-only review is unchanged. External references
-are not fetched, and unrecognized media formats are not proof of visual review.
-Check `review_status` and `reason` before consuming a report; these responses
-are also readable by SDK 0.5.4 without a new request capability.
+KUMA 0.6.0 high-level `evaluate`, `judge_capture` and `run_experiment` default to
+`accept_media_omission=True`. Compatible services omit recognized unsupported
+media only from model input, retain structured task/tool facts, and review the
+remaining text. Original capture, stored trace, source hashes and exact trace
+exports remain unchanged. No image/audio/video understanding is performed.
+
+Inspect `coverage.media_omission` when present: `scope="text_and_structure"`,
+`media_understanding="not_performed"`, bounded omission coordinates/hashes and
+`reviewable_delivery_complete` describe this restricted review. Physical
+`source_delivery_complete` remains false. `completed` is neither full-source
+review nor proof of Agent success/failure. Safe completed restricted review uses
+the existing fixed Judge fee; unsafe or pure-media inputs stop before model work
+and are not charged. External references are not fetched; detection is bounded,
+not a guarantee of recognizing every encoding.
+
+Pass `accept_media_omission=False` (CLI `kuma captures judge ... --reject-media`)
+to retain legacy rejection and automatic capture/experiment keys. True adds mode
+to automatically generated keys. Changing a directly submitted manual review key's
+mode conflicts; keep the original mode on recovery. Experiment parent keys are
+local seeds, not remote operations: switching mode generates new child keys and
+can request another paid review. No automatic retry or re-review occurs.
+
+Low-level `workspace.request(...)` remains legacy by default. For scoped review
+reads, lists, feedback and experiment operations, explicitly supply
+`accept_media_omission=True`; `workspace.export(...)` does so by default. Old
+readers receive a safe compatibility error for scoped artifacts rather than a
+rewritten report or silently filtered page. Original trace reads stay unchanged.
+Scoped/full-source experiment cases are not blindly compared. Upgrade compatible
+services before using the new option; the SDK never silently falls back.
+
+```python
+review = workspace.evaluate(trace_id, idempotency_key="review-text-scope-01")
+omission = review.get("coverage", {}).get("media_omission")
+if omission:
+    print("Text and structure only; media was not reviewed.")
+saved = workspace.request("reviews.get", {"id": review["id"]},
+                          accept_media_omission=True)
+```
 
 No separate storage or model key belongs in your Agent. `KumaClient().trajectory()` reuses your Kuma
 credential. Local capture and preparation never upload automatically. Your ordinary Agent

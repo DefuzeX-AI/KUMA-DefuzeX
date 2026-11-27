@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import gzip
 import hashlib
 import hmac
 import importlib.util
@@ -81,6 +82,97 @@ def review_payload(trace_id):
     return {**receipt("reviews", value), **value}
 
 
+def media_review_payload(trace_id):
+    """Build a synthetic scoped response; this is protocol data, not a model judgment."""
+    text = "Before data:image/png;base64,QUJD after."
+    start, end = text.index("data:"), text.index(" after.")
+    ranges = [[0, start], [end, len(text)]]
+    coverage = {
+        "schema_version": "kuma.process_coverage.v1",
+        "sources": {
+            "event-0": {
+                "characters": len(text),
+                "delivered_ranges": ranges,
+                "uncovered_ranges": [[start, end]],
+                "fully_delivered": False,
+            }
+        },
+        "total_source_characters": len(text),
+        "delivered_source_characters": len(text) - (end - start),
+        "source_delivery_complete": False,
+        "all_segments_accepted": True,
+        "segments": [
+            {
+                "id": 0,
+                "status": "completed",
+                "calls": 1,
+                "source_ranges": [
+                    {"id": "event-0", "offset": a, "end": b} for a, b in ranges
+                ],
+            }
+        ],
+        "semantic_recall_certified": False,
+        "delivery_is_attention": False,
+        "media_omission": {
+            "schema_version": "kuma.media_omission.v1",
+            "scope": "text_and_structure",
+            "reason": "unsupported_media_content",
+            "media_understanding": "not_performed",
+            "reviewable_characters": len(text) - (end - start),
+            "reviewable_delivery_complete": True,
+            "omissions": [
+                {
+                    "evidence_id": "event-0",
+                    "offset": start,
+                    "end": end,
+                    "media_kind": "image",
+                    "utf8_bytes": end - start,
+                    "sha256": hashlib.sha256(text[start:end].encode()).hexdigest(),
+                }
+            ],
+        },
+    }
+    value = review_payload(trace_id)
+    value.update(coverage=coverage, review_scope="text_and_structure")
+    value["summary"]["review_scope"] = "text_and_structure"
+    value["report"]["coverage"] = copy.deepcopy(coverage)
+    value["report"]["assessment"] = {
+        "outcome": "unknown",
+        "dimensions": [{"status": "unknown", "score": None, "citations": []}],
+        "limitations": [
+            "Review scope is text and structure only; omitted media was not interpreted."
+        ],
+    }
+    return value
+
+
+def stored_review(value):
+    """Bind synthetic get/export payload bytes to their public document digest."""
+    payload = {
+        k: v
+        for k, v in value.items()
+        if k not in {"id", "kind", "content_sha256", "summary"}
+    }
+    record = {
+        **receipt("reviews", payload),
+        "payload": payload,
+        "summary": copy.deepcopy(value["summary"]),
+    }
+    raw = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode()
+    exported = {
+        "schema_version": "kuma.trajectory_export.v1",
+        "filename": "reviews.json",
+        "document_id": record["id"],
+        "media_type": "application/json",
+        "encoding": "gzip+base64",
+        "content": base64.b64encode(gzip.compress(raw)).decode(),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    return record, exported, raw
+
+
 @contextmanager
 def backend(replies, *, parent=False):
     """Run a disposable external HTTP boundary; retain only synthetic bodies and auth booleans."""
@@ -132,6 +224,90 @@ def backend(replies, *, parent=False):
 
 
 class TrajectoryProtocolTests(unittest.TestCase):
+    def test_media_mode_wire_and_scoped_run_get_export(self):
+        trace_id = receipt("traces")["id"]
+        legacy, scoped = review_payload(trace_id), media_review_payload(trace_id)
+        record, exported, raw = stored_review(scoped)
+        with backend([legacy, legacy, scoped, record, exported]) as (client, requests):
+            client.request(
+                "reviews.run",
+                {"trace_id": trace_id},
+                idempotency_key="synthetic-legacy-01",
+            )
+            client.evaluate(
+                trace_id,
+                idempotency_key="synthetic-reject-01",
+                accept_media_omission=False,
+            )
+            self.assertEqual(
+                client.evaluate(trace_id, idempotency_key="synthetic-aware-01"), scoped
+            )
+            self.assertEqual(
+                client.request(
+                    "reviews.get", {"id": record["id"]}, accept_media_omission=True
+                ),
+                record,
+            )
+            self.assertEqual(client.export("reviews", record["id"]), raw)
+        for request in requests[:2]:
+            self.assertNotIn("accept_media_omission", request["data"])
+        for request in requests[2:]:
+            self.assertIs(request["data"]["accept_media_omission"], True)
+            self.assertNotIn("accept_media_omission", request["data"]["data"])
+
+    def test_scoped_responses_require_explicit_read_capability(self):
+        value = media_review_payload(receipt("traces")["id"])
+        record, exported, _raw = stored_review(value)
+        with backend([value, record, exported]) as (client, _requests):
+            with self.assertRaises(ProviderError):
+                client.evaluate(
+                    value["trace_id"],
+                    idempotency_key="synthetic-no-scope",
+                    accept_media_omission=False,
+                )
+            with self.assertRaises(ProviderError):
+                client.request("reviews.get", {"id": record["id"]})
+            with self.assertRaises(ProviderError):
+                client.export("reviews", record["id"], accept_media_omission=False)
+
+    def test_scoped_malformed_coverage_and_assessment_are_rejected(self):
+        trace_id = receipt("traces")["id"]
+        for defect in (
+            "segment_extra",
+            "byte_count",
+            "passed",
+            "missing_scope",
+            "nested_scope",
+        ):
+            value = media_review_payload(trace_id)
+            if defect == "segment_extra":
+                value["coverage"]["segments"][0]["unexpected"] = True
+            elif defect == "byte_count":
+                value["coverage"]["media_omission"]["omissions"][0]["utf8_bytes"] = (
+                    999999
+                )
+            elif defect == "passed":
+                value["report"]["assessment"]["outcome"] = "passed"
+            elif defect == "missing_scope":
+                del value["review_scope"]
+            else:
+                del value["report"]["coverage"]["media_omission"]
+            if defect in {"segment_extra", "byte_count"}:
+                value["report"]["coverage"] = copy.deepcopy(value["coverage"])
+            record, exported, _raw = stored_review(value)
+            with (
+                self.subTest(defect=defect),
+                backend([value, record, exported]) as (client, _requests),
+            ):
+                with self.assertRaises(ProviderError):
+                    client.evaluate(trace_id, idempotency_key="synthetic-invalid-01")
+                with self.assertRaises(ProviderError):
+                    client.request(
+                        "reviews.get", {"id": record["id"]}, accept_media_omission=True
+                    )
+                with self.assertRaises(ProviderError):
+                    client.export("reviews", record["id"])
+
     def test_historical_common_versions_and_future_rejection(self):
         for minor in range(9):
             source = {

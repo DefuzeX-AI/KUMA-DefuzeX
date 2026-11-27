@@ -44,6 +44,12 @@ wiring = importlib.import_module("kuma.capture_instrumentation")
 
 
 class ModelContentBoundaryTests(unittest.TestCase):
+    def test_media_mode_rejects_coercion_before_capture_or_transport(self):
+        core = importlib.import_module("kuma.capture")
+        for value in (None, 0, 1, "true"):
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                core._review_inputs({}, None, None, accept_media_omission=value)
+
     def test_indexed_metadata_is_not_a_body(self):
         from kuma.evidence.trace_model_content import map_model_content
 
@@ -554,6 +560,7 @@ class CaptureBoundaryTests(unittest.TestCase):
                 output=str(self.root / "judged.json"),
                 requirements=None,
                 idempotency_key="cli-completed-01",
+                reject_media=False,
                 base_url=url,
                 timeout=180,
             )

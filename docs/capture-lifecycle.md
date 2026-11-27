@@ -61,6 +61,24 @@ Changing only the output filename does not request a new review. Changing rules 
 explicitly selecting a new `--idempotency-key` does. Existing service idempotency
 protects the same logical request; KUMA does not retry model calls automatically.
 
+## Review scope and recovery in 0.6.0
+
+`judge_capture` and `kuma captures judge` now permit bounded text-and-structure
+review by default. Recognized unsupported media is omitted only from model input;
+the captured document and trace export stay unchanged. The CLI prints
+`review_scope="text_and_structure"` and `media_understanding="not_performed"`
+when omission occurred. A completed restricted report does not mean visual/audio
+content was understood or all original source was reviewed. Inspect the report's
+`coverage.media_omission` ranges and limitations.
+
+Use Python `accept_media_omission=False` or CLI `--reject-media` for legacy
+rejection and legacy automatic key derivation. The new automatic key includes the
+mode; changing mode is a different logical review and may incur another fixed
+Judge fee. An explicitly supplied key must keep its original mode on recovery;
+a mismatch conflicts rather than silently re-evaluating. Unsafe or pure-media
+inputs stop without model work or a Judge charge. This does not change capture
+instrumentation or promise visibility into uninstrumented activity.
+
 ## Worker threads and existing servers
 
 Ordinary worker threads do not inherit the capture context. Explicitly bind the
