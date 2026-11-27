@@ -9,9 +9,9 @@ def _check(condition: bool) -> None:
         raise ValueError("Invalid media omission coverage")
 
 
-def _number(value: object) -> int:
+def _number(value: object, maximum: int = 8388608) -> int:
     """Require a nonnegative JSON integer without treating booleans as coordinates."""
-    _check(type(value) is int and 0 <= value <= 2**63 - 1)
+    _check(type(value) is int and 0 <= value <= maximum)
     return value
 
 
@@ -19,10 +19,10 @@ def _ranges(value: object, length: int, maximum: int) -> list[list[int]]:
     """Validate bounded ordered disjoint half-open ranges in original character coordinates."""
     _check(isinstance(value, list) and len(value) <= maximum)
     end = 0
-    for pair in value:
+    for index, pair in enumerate(value):
         _check(isinstance(pair, list) and len(pair) == 2)
         start, stop = (_number(v) for v in pair)
-        _check(end <= start < stop <= length)
+        _check((end < start if index else end <= start) and start < stop <= length)
         end = stop
     return value
 
@@ -108,7 +108,7 @@ def _omissions(media: dict, sources: dict) -> dict:
         _check(not omitted[identity] or omitted[identity][-1][1] <= start)
         omitted[identity].append([start, end])
         _check(item["media_kind"] in {"image", "audio", "video", "binary"})
-        _check(_number(item["utf8_bytes"]) >= end - start)
+        _check(_number(item["utf8_bytes"], 4 * (end - start)) >= end - start)
         _check(
             isinstance(item["sha256"], str)
             and re.fullmatch(r"[0-9a-f]{64}", item["sha256"]) is not None
@@ -116,7 +116,13 @@ def _omissions(media: dict, sources: dict) -> dict:
     return omitted
 
 
-def validate_media_coverage(value: dict, *, completed: bool) -> None:
+def validate_media_coverage(
+    value: dict,
+    *,
+    completed: bool,
+    attempts: list | None = None,
+    limits: dict | None = None,
+) -> None:
     """Validate opted-in restricted coverage before a review is presented or saved.
 
     The wire boundary invokes this only with explicit capability. Coordinates,
@@ -132,8 +138,13 @@ def validate_media_coverage(value: dict, *, completed: bool) -> None:
     for identity, source in sources.items():
         length = _number(source["characters"])
         ranges = _ranges(source["delivered_ranges"], length, 1025)
-        gaps = _ranges(source["uncovered_ranges"], length, 1025)
-        _check(_union(gaps) == _complement(ranges, length))
+        _check(
+            isinstance(identity, str)
+            and re.fullmatch(r"task|tool-catalog|event-[0-9]{1,5}", identity)
+            is not None
+        )
+        gaps = _ranges(source["uncovered_ranges"], length, 1026)
+        _check(gaps == _complement(ranges, length))
         _check(
             type(source["fully_delivered"]) is bool
             and source["fully_delivered"] == (not gaps)
@@ -154,9 +165,48 @@ def validate_media_coverage(value: dict, *, completed: bool) -> None:
         and type(value["all_segments_accepted"]) is bool
     )
     _check(media["reviewable_delivery_complete"] == fully_reviewable)
+    _segments(value, omitted, attempts=attempts, limits=limits)
+    if completed:
+        _check(
+            fully_reviewable
+            and total > missing
+            and value["all_segments_accepted"]
+            and total <= (limits or {}).get("source_characters", 4194304)
+        )
+
+
+def _segments(
+    value: dict, omitted: dict, *, attempts: list | None, limits: dict | None
+) -> None:
+    """Bind closed planned segments and answered calls to the physical footprint, even on stop.
+
+    The result boundary supplies attempts and original request budgets when known.
+    Historical get/export has no original request budgets, so the public maximum
+    is used instead of inventing a lower budget. No accounting action is performed.
+    """
+    sources = value["sources"]
     segment_ranges = {key: [] for key in sources}
-    for segment in value["segments"]:
-        _check(isinstance(segment, dict) and isinstance(segment["source_ranges"], list))
+    calls = 0
+    complete = bool(value["segments"])
+    for index, segment in enumerate(value["segments"]):
+        _check(
+            isinstance(segment, dict)
+            and set(segment) == {"id", "status", "source_ranges", "calls"}
+        )
+        _check(type(segment["id"]) is int and segment["id"] == index)
+        _check(
+            segment["status"]
+            in {"not_started", "completed", "rejected", "provider_failed"}
+        )
+        count = _number(segment["calls"], 2)
+        _check(segment["status"] != "not_started" or count == 0)
+        _check(segment["status"] != "completed" or count >= 1)
+        calls += count
+        complete &= segment["status"] == "completed"
+        _check(
+            isinstance(segment["source_ranges"], list)
+            and 1 <= len(segment["source_ranges"]) <= 10002
+        )
         for item in segment["source_ranges"]:
             _check(isinstance(item, dict) and set(item) == {"id", "offset", "end"})
             identity = item["id"]
@@ -170,18 +220,39 @@ def validate_media_coverage(value: dict, *, completed: bool) -> None:
                     )
                 )
             )
-            segment_ranges[identity].append([start, end])
-    if completed:
-        _check(
-            fully_reviewable
-            and total > missing
-            and value["all_segments_accepted"]
-            and bool(value["segments"])
+            if count:
+                segment_ranges[identity].append([start, end])
+    _check(value["all_segments_accepted"] is complete)
+    _check(calls <= (limits or {}).get("decisions", 12))
+    if attempts is not None:
+        _check(isinstance(attempts, list) and len(attempts) == calls)
+    _check(
+        all(
+            _union(segment_ranges[k]) == v["delivered_ranges"]
+            for k, v in sources.items()
         )
-        _check(all(s["status"] == "completed" for s in value["segments"]))
+    )
+
+
+def validate_media_assessment(report: dict) -> None:
+    """Reject scored or task-verdict claims in a restricted public report, not its raw audit.
+
+    Core raw model drafts stay explicitly unconfirmed. Only the public assessment
+    must carry the fixed limitation and unknown/unscored/uncited dimensions.
+    """
+    assessment = report["assessment"]
+    _check(isinstance(assessment, dict) and assessment["outcome"] == "unknown")
+    _check(
+        isinstance(assessment["limitations"], list)
+        and "Review scope is text and structure only; omitted media was not interpreted."
+        in assessment["limitations"]
+    )
+    dimensions = assessment["dimensions"]
+    _check(isinstance(dimensions, list) and 1 <= len(dimensions) <= 12)
+    for dimension in dimensions:
         _check(
-            all(
-                _union(segment_ranges[k]) == _union(v["delivered_ranges"])
-                for k, v in sources.items()
-            )
+            isinstance(dimension, dict)
+            and dimension["status"] == "unknown"
+            and dimension["score"] is None
+            and dimension["citations"] == []
         )

@@ -7,8 +7,10 @@ import json
 import re
 from typing import Any
 
+from ._json_values import detach_json
 from .errors import ProviderError
-from .trajectory_media import validate_media_coverage
+from .repository.case_artifact_io import _unique_object
+from .trajectory_media import validate_media_assessment, validate_media_coverage
 
 
 def _require(condition: bool) -> None:
@@ -107,6 +109,8 @@ def _review(
             result["coverage"],
             completed=result["review_status"] == "completed",
             accept_media_omission=accept_media_omission,
+            attempts=result["attempts"],
+            limits={"decisions": 6, **data.get("limits", {})},
         )
         fields.add("coverage")
         if "media_omission" in result["coverage"]:
@@ -133,7 +137,12 @@ def _review(
 
 
 def _coverage(
-    value: dict, *, completed: bool, accept_media_omission: bool = False
+    value: dict,
+    *,
+    completed: bool,
+    accept_media_omission: bool = False,
+    attempts: list | None = None,
+    limits: dict | None = None,
 ) -> None:
     """Keep physical source coverage explicit and separate from unmeasured semantic recall."""
     fields = {
@@ -171,7 +180,9 @@ def _coverage(
             == {"characters", "delivered_ranges", "uncovered_ranges", "fully_delivered"}
         )
     if scoped:
-        validate_media_coverage(value, completed=completed)
+        validate_media_coverage(
+            value, completed=completed, attempts=attempts, limits=limits
+        )
     elif completed:
         _require(
             value["source_delivery_complete"] is True
@@ -282,11 +293,38 @@ def _scoped_result(result: dict, kind: str, *, accept_media_omission: bool) -> N
             )
         if "contains_media_omission" in item:
             _require(accept_media_omission and item["contains_media_omission"] is True)
-    if kind == "reviews" and "coverage" in payload:
+    if kind == "reviews":
+        _scoped_review(result, payload, accept_media_omission=accept_media_omission)
+    if kind == "experiments":
+        for case in payload.get("cases", []):
+            if "review_scope" in case:
+                _require(
+                    accept_media_omission
+                    and case["review_scope"] == "text_and_structure"
+                )
+
+
+def _scoped_review(result: dict, payload: dict, *, accept_media_omission: bool) -> None:
+    """Bind a review's scope, physical coverage and unknown-only public assessment.
+
+    Shared by run/get and decoded export; immutable bytes and raw model audit are
+    never changed. Missing or contradictory scope is rejected before presentation.
+    """
+    if "coverage" in payload:
+        _require(
+            ("review_scope" in payload) == ("media_omission" in payload["coverage"])
+        )
+        if "summary" in result:
+            _require(
+                ("review_scope" in result["summary"]) == ("review_scope" in payload)
+            )
+        if "media_omission" in payload["coverage"]:
+            _require(isinstance(payload.get("attempts"), list))
         _coverage(
             payload["coverage"],
             completed=payload["review_status"] == "completed",
             accept_media_omission=accept_media_omission,
+            attempts=payload.get("attempts"),
         )
         if "media_omission" in payload["coverage"]:
             _require(payload.get("review_scope") == "text_and_structure")
@@ -297,13 +335,9 @@ def _scoped_result(result: dict, kind: str, *, accept_media_omission: bool) -> N
             )
             if isinstance(payload.get("report"), dict):
                 _require(payload["report"].get("coverage") == payload["coverage"])
-    if kind == "experiments":
-        for case in payload.get("cases", []):
-            if "review_scope" in case:
-                _require(
-                    accept_media_omission
-                    and case["review_scope"] == "text_and_structure"
-                )
+                validate_media_assessment(payload["report"])
+    else:
+        _require("review_scope" not in payload)
 
 
 def validate_export_scope(
@@ -319,7 +353,7 @@ def validate_export_scope(
         return
     failed = False
     try:
-        payload = json.loads(raw)
+        payload = detach_json(json.loads(raw, object_pairs_hook=_unique_object))
         _require(isinstance(payload, dict))
         _scoped_result(
             {"payload": payload}, kind, accept_media_omission=accept_media_omission
