@@ -29,7 +29,9 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def normalize_tool_content(value: Any, *, redact: bool = False) -> tuple[Any, str]:
+def normalize_tool_content(
+    value: Any, *, redact: bool = False, _redact_sensitive: bool = True
+) -> tuple[Any, str]:
     """Detach one observed tool argument/result or return a safe omission status.
 
     Args:
@@ -38,7 +40,10 @@ def normalize_tool_content(value: Any, *, redact: bool = False) -> tuple[Any, st
         redact: Apply the shared Evidence sanitizer before the final scan.
             False preserves historical whole-field omission; True can return
             a detached partial value with ``redacted`` status. Callers must
-            negotiate that status before upload. Neither policy permits secrets.
+            negotiate that status before upload. Both remain protected by default.
+        _redact_sensitive: Internal strict Boolean, default True. Only an explicitly
+            warned local capture/trajectory operation passes False to retain bounded
+            originals. Classic Run and cloud Observation callers keep the default.
 
     Returns:
         Detached JSON and ``present``/``redacted``, or ``None`` with ``size_limit``,
@@ -58,8 +63,9 @@ def normalize_tool_content(value: Any, *, redact: bool = False) -> tuple[Any, st
         No I/O or tool execution; only existing JSON and privacy validation.
 
     Security/Privacy:
-        The canonical sensitive scanner always applies, without an
-        ``allow_sensitive`` override. Unsupported objects are never repr'd.
+        The canonical sensitive scanner applies under the default privacy policy;
+        legacy ``allow_sensitive`` does not override it. Unsupported objects are
+        never repr'd. Raw policy does not weaken graph, size or identity validation.
     """
     try:
         if type(value) is str:
@@ -78,7 +84,9 @@ def normalize_tool_content(value: Any, *, redact: bool = False) -> tuple[Any, st
         if len(encoded) > RUNTIME_AGENT_OUTPUT_MAX_BYTES:
             return None, "size_limit"
         changed = False
-        if redact:
+        if type(_redact_sensitive) is not bool:
+            return None, "invalid"
+        if redact and _redact_sensitive:
             plain, changed = redact_sensitive_json(plain)
             if (
                 len(
@@ -93,7 +101,9 @@ def normalize_tool_content(value: Any, *, redact: bool = False) -> tuple[Any, st
                 > RUNTIME_AGENT_OUTPUT_MAX_BYTES
             ):
                 return None, "size_limit"
-        if scan_sensitive_json(plain, location="trace_tool_content"):
+        if _redact_sensitive and scan_sensitive_json(
+            plain, location="trace_tool_content"
+        ):
             return None, "sensitive_content"
         return plain, "redacted" if changed else "present"
     except Exception:

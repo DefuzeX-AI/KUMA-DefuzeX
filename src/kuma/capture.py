@@ -27,23 +27,35 @@ from .errors import ConfigurationError, ProviderError, ValidationError
 from .evidence.trace import TraceEvidenceLimits
 from .observation import _P, _R, observe
 from .trajectory_capture import prepare_observation
+from .trajectory_privacy import (
+    REMOTE_WARNING,
+    checked_policy,
+    privacy_operation,
+    warned_substep,
+)
 from .trajectory_requirements import requirements_template, validate_requirements
 
 
-def _profile(task: str, tools: Any, requirements: dict | None) -> dict:
+def _profile(
+    task: str, tools: Any, requirements: dict | None, *, redact_sensitive: bool = True
+) -> dict:
     """Bind the recorded task and declared rules without inventing evaluation facts.
 
     Capture-specific credential/known-PII projection changes only the saved
     profile, never the Agent's original input. Advanced requirements remain
     authoritative and must match the projected task; a mismatch fails locally.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     """
     if not isinstance(task, str) or not task.strip() or len(task) > 12000:
         raise ValidationError(
             "Capture task must be nonblank text of at most 12000 characters"
         )
-    safe, redacted = redact_capture_json(task)
+    safe, redacted = redact_capture_json(task) if redact_sensitive else (task, False)
     if requirements is not None:
-        profile = validate_requirements(requirements)
+        profile = validate_requirements(requirements, redact_sensitive=redact_sensitive)
         if tools is not None or profile["objective"] != safe:
             raise ValidationError(
                 "Advanced requirements must match the original task; do not also pass tools"
@@ -67,11 +79,11 @@ def _profile(task: str, tools: Any, requirements: dict | None) -> dict:
         profile["limitations"].append(
             "Recognized sensitive text was redacted from the original task."
         )
-    return validate_requirements(profile)
+    return validate_requirements(profile, redact_sensitive=redact_sensitive)
 
 
 class CaptureSession:
-    """One-shot sync/async execution window with automatic redacted local persistence.
+    """One-shot sync/async execution window with policy-bound local persistence.
 
     Construct with capture(). It never runs an Agent, uploads or evaluates. Optional
     process hooks are explicit; original observe() remains non-persistent. On exit,
@@ -79,6 +91,9 @@ class CaptureSession:
     persistence_status/error expose such failures without raw OS or Agent messages.
     """
 
+    @privacy_operation(
+        "Original content is retained in memory and saved as a local plaintext capture on exit."
+    )
     def __init__(
         self,
         task: str,
@@ -90,11 +105,12 @@ class CaptureSession:
         tools: list[dict] | None = None,
         requirements: dict | None = None,
         limits: TraceEvidenceLimits | None = None,
+        redact_sensitive: bool = True,
     ) -> None:
         """Construct a one-shot local capture; prefer the capture() factory.
 
         Args:
-            task: Original nonblank task, 1..12000 characters; recognized secrets are redacted.
+            task: Original nonblank task, 1..12000 characters; recognized secrets are redacted by default.
             framework: existing, openai, langchain or langgraph; default existing preserves wiring.
             tracer_provider: Application-owned provider or None for the selected integration.
             repo_path: Existing workspace path, default current directory; never scanned.
@@ -102,6 +118,8 @@ class CaptureSession:
             tools: Complete declared tool policies, None for unknown or [] for no tools.
             requirements: Advanced v1 rules matching the task; mutually exclusive with tools.
             limits: TraceEvidenceLimits or None for observation defaults; at least 2048 bytes.
+            redact_sensitive: Strict bool, default True. False explicitly retains original
+                bounded content for this operation only; existing redaction cannot be undone.
         Returns:
             Inactive CaptureSession with stable capture_id and persistence_status=not_saved.
         Raises:
@@ -112,7 +130,10 @@ class CaptureSession:
             exit finalizes and saves. No credentials, network, upload or Judge request.
         """
         validate_framework(framework)
-        self._requirements = _profile(task, tools, requirements)
+        self._redact_sensitive = redact_sensitive
+        self._requirements = _profile(
+            task, tools, requirements, redact_sensitive=redact_sensitive
+        )
         self._framework, self._provider = framework, tracer_provider
         self._repo_path, self._storage_path = repo_path, storage_path
         if limits is not None and (
@@ -162,13 +183,18 @@ class CaptureSession:
         provider, self._instrumentation = prepare_instrumentation(
             self._framework, self._provider
         )
-        self._observation = observe(tracer_provider=provider, limits=self._limits)
+        with warned_substep():
+            self._observation = observe(
+                tracer_provider=provider,
+                limits=self._limits,
+                redact_sensitive=self._redact_sensitive,
+            )
         self._observation.__enter__()
         self._state = "active"
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool:
-        """Finalize observation and persist redacted facts without hiding an Agent failure.
+        """Finalize and persist under the capture's initial policy without hiding Agent failure.
 
         Args:
             exc_type: Exception class supplied by with, or None for normal completion.
@@ -190,14 +216,25 @@ class CaptureSession:
         failed = False
         try:
             self._observation.__exit__(exc_type, exc, traceback)
+            with warned_substep():
+                observation = self._observation.export(
+                    redact_sensitive=self._redact_sensitive
+                )
             self._document = {
                 "schema_version": "kuma.capture.v1",
                 "capture_id": self.capture_id,
                 "requirements": self._requirements,
-                "observation": self._observation.export(),
+                "observation": observation,
                 "instrumentation": self._instrumentation,
             }
-            save_capture(self._directory, self._document)
+            if not self._redact_sensitive:
+                self._document["content_privacy"] = "raw"
+            with warned_substep():
+                save_capture(
+                    self._directory,
+                    self._document,
+                    redact_sensitive=self._redact_sensitive,
+                )
             self.persistence_status = "saved"
         except Exception:
             failed = True
@@ -242,7 +279,10 @@ class CaptureSession:
         """
         return self.__exit__(exc_type, exc, traceback)
 
-    def export(self) -> dict:
+    @privacy_operation(
+        "Original capture content is returned as local data; saving it creates plaintext."
+    )
+    def export(self, *, redact_sensitive: bool = True) -> dict:
         """Return detached finalized capture data, including task, gaps and actual execution status.
 
         Returns:
@@ -253,9 +293,17 @@ class CaptureSession:
                 successful capture is returned.
         Side Effects:
             None; reads only finalized in-memory state, with no I/O or upload.
+
+        Args:
+            redact_sensitive: Strict bool, default True. False explicitly retains original
+                bounded content for this operation only; existing redaction cannot be undone.
         """
         if self._document is None:
             raise ConfigurationError("Finish capture before exporting its data")
+        if not self._redact_sensitive and redact_sensitive:
+            raise ValidationError(
+                "Raw capture requires explicit redact_sensitive=False"
+            )
         return copy.deepcopy(self._document)
 
     def bind(self, callback: Callable[_P, _R]) -> Callable[_P, _R]:
@@ -288,6 +336,9 @@ class CaptureSession:
         return self._observation.bind(callback)
 
 
+@privacy_operation(
+    "Original content is retained in memory and saved as a local plaintext capture on exit."
+)
 def capture(
     task: str,
     *,
@@ -298,6 +349,7 @@ def capture(
     tools: list[dict] | None = None,
     requirements: dict | None = None,
     limits: TraceEvidenceLimits | None = None,
+    redact_sensitive: bool = True,
 ) -> CaptureSession:
     """Record normal Agent execution and save locally; never implicitly upload or Judge.
 
@@ -319,6 +371,8 @@ def capture(
             the original task; mutually exclusive with tools. No JSON file required.
         limits: TraceEvidenceLimits or None for existing observation limits. Omissions
             and zero capture remain visible; no hidden whole-field truncation.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     Returns:
         One-shot CaptureSession, supporting with/async with and stable capture_id.
     Raises:
@@ -339,15 +393,20 @@ def capture(
         tools=tools,
         requirements=requirements,
         limits=limits,
+        redact_sensitive=redact_sensitive,
     )
 
 
+@privacy_operation(
+    "Original capture content will be read and saved to a local plaintext file."
+)
 def export_capture(
     identifier: str,
     path: str | os.PathLike,
     *,
     repo_path: str | os.PathLike = ".",
     storage_path: str | os.PathLike | None = None,
+    redact_sensitive: bool = True,
 ) -> Path:
     """Load one durable ID and atomically export its task-bound document without overwrite.
 
@@ -356,6 +415,8 @@ def export_capture(
         path: New destination path with an existing parent; existing targets are rejected.
         repo_path: Existing original workspace path, default current directory.
         storage_path: Original disjoint external parent or None for ~/.kuma-captures.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     Returns:
         Absolute pathlib.Path of the atomically published task-bound JSON document.
     Raises:
@@ -366,7 +427,10 @@ def export_capture(
         Partial/failed capture status is preserved. No credentials, network or billing.
     """
     document, _ = load_capture(
-        identifier, repo_path=repo_path, storage_path=storage_path
+        identifier,
+        repo_path=repo_path,
+        storage_path=storage_path,
+        redact_sensitive=redact_sensitive,
     )
     with output_target(path) as publish:
         publish(document)
@@ -379,10 +443,17 @@ def _review_inputs(
     key: str | None,
     *,
     accept_media_omission: bool = False,
+    redact_sensitive: bool = True,
 ) -> tuple[dict, str]:
-    """Validate source/profile/key before uploads and derive a stable logical review identity."""
+    """Validate source/profile/key before uploads and derive a stable logical review identity.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
     if type(accept_media_omission) is not bool:
         raise ValidationError("accept_media_omission must be a boolean")
+    checked_policy(redact_sensitive)
     if key is not None and (
         not isinstance(key, str)
         or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{7,199}", key) is None
@@ -391,7 +462,7 @@ def _review_inputs(
     profile = (
         document["requirements"]
         if requirements is None
-        else validate_requirements(requirements)
+        else validate_requirements(requirements, redact_sensitive=redact_sensitive)
     )
     if profile["objective"] != document["requirements"]["objective"]:
         raise ValidationError(
@@ -402,14 +473,21 @@ def _review_inputs(
             "No spans retained; check instrumentation and session.bind(worker) "
             "for worker threads before requesting Judge"
         )
-    submission = prepare_observation(document["observation"], profile)
+    submission = prepare_observation(
+        document["observation"], profile, redact_sensitive=redact_sensitive
+    )
     seed = {"capture_id": document["capture_id"], "submission": submission}
+    if not redact_sensitive:
+        seed["redact_sensitive"] = False
     if accept_media_omission:
         seed["accept_media_omission"] = True
     logical = key or "capture-" + hashlib.sha256(encoded(seed)).hexdigest()
     return submission, logical
 
 
+@privacy_operation(
+    REMOTE_WARNING + " The returned review is also saved locally as plaintext."
+)
 def judge_capture(
     identifier: str,
     *,
@@ -419,6 +497,7 @@ def judge_capture(
     requirements: dict | None = None,
     idempotency_key: str | None = None,
     accept_media_omission: bool = True,
+    redact_sensitive: bool = True,
 ) -> dict:
     """Explicitly review a saved execution using one Kuma credential and the bound task.
 
@@ -436,6 +515,8 @@ def judge_capture(
             Original media stays saved, but is not understood by Judge. False retains
             legacy media rejection and automatic keys. True enters automatic keys;
             explicit keys must retain their original mode when recovering a review.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     Returns:
         Validated completed/stopped public review, also durably retained locally.
     Raises:
@@ -448,23 +529,28 @@ def judge_capture(
         with identical inputs/key. No original trace is rewritten or deleted.
     """
     document, directory = load_capture(
-        identifier, repo_path=repo_path, storage_path=storage_path
+        identifier,
+        repo_path=repo_path,
+        storage_path=storage_path,
+        redact_sensitive=redact_sensitive,
     )
     submission, key = _review_inputs(
         document,
         requirements,
         idempotency_key,
         accept_media_omission=accept_media_omission,
+        redact_sensitive=redact_sensitive,
     )
     preflight_capture_write(directory)
     workspace = (KumaClient() if client is None else client).trajectory()
-    uploaded = workspace.upload(submission)
+    uploaded = workspace.upload(submission, redact_sensitive=redact_sensitive)
     review = workspace.evaluate(
         uploaded["id"],
         idempotency_key=key,
         accept_media_omission=accept_media_omission,
+        redact_sensitive=redact_sensitive,
     )
     if review["requirements_sha256"] != submission["requirements_sha256"]:
         raise ProviderError("Review does not match the submitted task and rules")
-    save_review(directory, review)
+    save_review(directory, review, redact_sensitive=redact_sensitive)
     return review

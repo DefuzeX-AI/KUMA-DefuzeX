@@ -15,6 +15,7 @@ from typing import Any
 from .errors import AuthenticationError, KumaError, ProviderError, ValidationError
 from .evidence.trace_tool_content import normalize_tool_content
 from .trajectory_capture import prepare_submission
+from .trajectory_privacy import REMOTE_WARNING, privacy_operation
 from .trajectory_requirements import validate_requirements
 from .trajectory_wire import export_digest, validate_export_scope, validate_response
 from .transport.backend import _validate_timeout
@@ -53,11 +54,20 @@ WRITE_ACTIONS = frozenset(
 )
 
 
-def _safe(value: Any, *, remote: bool = False) -> dict[str, Any]:
-    """Reject unsafe/malformed graphs without returning raw local or remote values."""
+def _safe(
+    value: Any, *, remote: bool = False, redact_sensitive: bool = True
+) -> dict[str, Any]:
+    """Reject unsafe/malformed graphs without returning raw local or remote values.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
     if remote:
-        return _remote_safe(value)
-    result, status = normalize_tool_content(value, redact=True)
+        return _remote_safe(value, redact_sensitive=redact_sensitive)
+    result, status = normalize_tool_content(
+        value, redact=True, _redact_sensitive=redact_sensitive
+    )
     if status != "present" or not isinstance(result, dict):
         raise ValidationError(
             "Trajectory data is invalid or requires privacy correction",
@@ -66,8 +76,13 @@ def _safe(value: Any, *, remote: bool = False) -> dict[str, Any]:
     return result
 
 
-def _remote_safe(value: Any) -> dict[str, Any]:
-    """Admit an eight-MiB finite response with existing depth/privacy primitives, without rewriting it."""
+def _remote_safe(value: Any, *, redact_sensitive: bool = True) -> dict[str, Any]:
+    """Admit an eight-MiB finite response with existing depth/privacy primitives, without rewriting it.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
     from .repository.privacy import scan_sensitive_json
     from .repository.tool_capabilities import _plain_json
 
@@ -80,7 +95,10 @@ def _remote_safe(value: Any) -> dict[str, Any]:
                 json.dumps(result, ensure_ascii=False, allow_nan=False).encode("utf-8")
             )
             > 8 * 1024 * 1024
-            or scan_sensitive_json(result, location="trajectory_response")
+            or (
+                redact_sensitive
+                and scan_sensitive_json(result, location="trajectory_response")
+            )
         ):
             raise ValueError("Invalid trajectory response")
     except Exception:
@@ -144,6 +162,7 @@ class TrajectoryClient:
             self._backend.timeout = self.timeout
             self._backend.max_retries = 0
 
+    @privacy_operation(REMOTE_WARNING)
     def request(
         self,
         action: str,
@@ -151,6 +170,7 @@ class TrajectoryClient:
         *,
         idempotency_key: str | None = None,
         accept_media_omission: bool = False,
+        redact_sensitive: bool = True,
     ) -> dict[str, Any]:
         """Execute one allowlisted workspace command using normal KUMA authentication.
 
@@ -162,6 +182,8 @@ class TrajectoryClient:
             accept_media_omission: Strict bool, default False for legacy raw requests.
                 True permits text-and-structure review and scoped artifact reads; media
                 is not understood. Changing this option with a manual key conflicts.
+            redact_sensitive: Strict bool, default True. False explicitly retains original
+                bounded content for this operation only; existing redaction cannot be undone.
         Returns:
             Detached user-owned result from kuma.trajectory_workspace.v1, with no automatic pagination.
         Raises:
@@ -179,7 +201,7 @@ class TrajectoryClient:
             raise ValidationError("Unsupported trajectory workspace action")
         if type(accept_media_omission) is not bool:
             raise ValidationError("accept_media_omission must be a boolean")
-        safe = _safe(data)
+        safe = _safe(data, redact_sensitive=redact_sensitive)
         if action == "reviews.run":
             _review_input(safe)
         if (action == "reviews.run" or idempotency_key is not None) and (
@@ -198,6 +220,8 @@ class TrajectoryClient:
             else "review"
         )
         command = {"action": action, "data": safe}
+        if not redact_sensitive:
+            command["redact_sensitive"] = False
         if accept_media_omission:
             command["accept_media_omission"] = True
         response = self._backend.json(
@@ -207,16 +231,25 @@ class TrajectoryClient:
             idempotency_key=idempotency_key or "trajectory-" + uuid.uuid4().hex,
             _expected_status=200,
         )
-        response = _safe(response, remote=True)
+        response = _safe(response, remote=True, redact_sensitive=redact_sensitive)
         return validate_response(
-            response, action, safe, accept_media_omission=accept_media_omission
+            response,
+            action,
+            safe,
+            accept_media_omission=accept_media_omission,
+            redact_sensitive=redact_sensitive,
         )
 
-    def save_requirements(self, requirements: Mapping[str, Any]) -> dict[str, Any]:
+    @privacy_operation(REMOTE_WARNING)
+    def save_requirements(
+        self, requirements: Mapping[str, Any], *, redact_sensitive: bool = True
+    ) -> dict[str, Any]:
         """Explicitly save one caller requirements revision.
 
         Args:
             requirements: Complete v1 requirements mapping; validated locally before transport.
+            redact_sensitive: Strict bool, default True. False explicitly retains original
+                bounded content for this operation only; existing redaction cannot be undone.
         Returns:
             Owned immutable requirements receipt with ID, hash and display summary.
         Raises:
@@ -225,11 +258,23 @@ class TrajectoryClient:
             One authenticated write, without model calls or Judge charges. Content is immutable.
         """
         return self.request(
-            "requirements.save", {"requirements": validate_requirements(requirements)}
+            "requirements.save",
+            {
+                "requirements": validate_requirements(
+                    requirements, redact_sensitive=redact_sensitive
+                )
+            },
+            redact_sensitive=redact_sensitive,
         )
 
+    @privacy_operation(REMOTE_WARNING)
     def export(
-        self, kind: str, identity: str, *, accept_media_omission: bool = True
+        self,
+        kind: str,
+        identity: str,
+        *,
+        accept_media_omission: bool = True,
+        redact_sensitive: bool = True,
     ) -> bytes:
         """Retrieve an exact canonical JSON artifact without changing large integers or source types.
 
@@ -238,6 +283,8 @@ class TrajectoryClient:
             identity: Owned document ID returned by the workspace.
             accept_media_omission: Strict bool, default True to read scoped artifacts.
                 False retains legacy request semantics and rejects media-scoped reports.
+            redact_sensitive: Strict bool, default True. False explicitly retains original
+                bounded content for this operation only; existing redaction cannot be undone.
         Returns:
             UTF-8 JSON bytes bound to the requested ID digest, at most 6 MiB uncompressed.
             Response identity, category, declared digest and decoded-byte hash must agree.
@@ -259,6 +306,7 @@ class TrajectoryClient:
             kind + ".export",
             {"id": identity},
             accept_media_omission=accept_media_omission,
+            redact_sensitive=redact_sensitive,
         )
         failed, raw = False, b""
         try:
@@ -278,9 +326,15 @@ class TrajectoryClient:
             failed = True
         if failed:
             raise ProviderError("Invalid trajectory export", code="invalid_response")
-        validate_export_scope(raw, kind, accept_media_omission=accept_media_omission)
+        validate_export_scope(
+            raw,
+            kind,
+            accept_media_omission=accept_media_omission,
+            redact_sensitive=redact_sensitive,
+        )
         return raw
 
+    @privacy_operation(REMOTE_WARNING)
     def upload(
         self,
         submission: Mapping[str, Any],
@@ -288,6 +342,7 @@ class TrajectoryClient:
         agent_version: str | None = None,
         case_id: str | None = None,
         tags: list[str] | None = None,
+        redact_sensitive: bool = True,
     ) -> dict[str, Any]:
         """Explicitly import a prepared submission with declared version/case/tags; never evaluates it.
 
@@ -296,6 +351,8 @@ class TrajectoryClient:
             agent_version: Optional caller build/model label up to 80 characters, not verified identity.
             case_id: Optional stable caller test-case ID up to 128 characters; required for version matching.
             tags: Optional list of up to 32 labels of 1..120 characters, default empty.
+            redact_sensitive: Strict bool, default True. False explicitly retains original
+                bounded content for this operation only; existing redaction cannot be undone.
         Returns:
             Owned trace document receipt; unchanged content reuses its content identity.
         Raises:
@@ -303,7 +360,7 @@ class TrajectoryClient:
         Side Effects:
             One explicit Backend write; no model, credits or file changes.
         """
-        value = _safe(submission)
+        value = _safe(submission, redact_sensitive=redact_sensitive)
         if (
             set(value)
             != {
@@ -322,6 +379,7 @@ class TrajectoryClient:
             value["requirements"],
             observation_id=value["observation_id"],
             inventory=value["inventory"],
+            redact_sensitive=redact_sensitive,
         )
         if safe != value:
             raise ValidationError(
@@ -349,8 +407,10 @@ class TrajectoryClient:
                 "case_id": case_id,
                 "tags": labels,
             },
+            redact_sensitive=redact_sensitive,
         )
 
+    @privacy_operation(REMOTE_WARNING)
     def upload_atif(
         self,
         document: Mapping[str, Any],
@@ -359,6 +419,7 @@ class TrajectoryClient:
         agent_version: str | None = None,
         case_id: str | None = None,
         tags: list[str] | None = None,
+        redact_sensitive: bool = True,
     ) -> dict[str, Any]:
         """Upload existing ATIF without collecting or executing an Agent.
 
@@ -372,6 +433,8 @@ class TrajectoryClient:
             agent_version: Optional caller build label, at most 80 characters.
             case_id: Optional stable task identity, at most 128 characters.
             tags: Optional list of at most 32 metadata labels, each 1..120 characters.
+            redact_sensitive: Strict bool, default True. False explicitly retains original
+                bounded content for this operation only; existing redaction cannot be undone.
         Returns:
             Owned trace receipt from upload(); no model review is automatically requested.
         Raises:
@@ -383,21 +446,24 @@ class TrajectoryClient:
         """
         from .trajectory_atif import prepare_atif
 
-        profile = validate_requirements(requirements)
+        profile = validate_requirements(requirements, redact_sensitive=redact_sensitive)
         bundle = prepare_atif(
             profile["objective"],
             document,
             sample=profile["name"],
             tools=profile["tools"],
             limitations=profile["limitations"],
+            redact_sensitive=redact_sensitive,
         )
         return self.upload(
-            prepare_submission(bundle, profile),
+            prepare_submission(bundle, profile, redact_sensitive=redact_sensitive),
             agent_version=agent_version,
             case_id=case_id,
             tags=tags,
+            redact_sensitive=redact_sensitive,
         )
 
+    @privacy_operation(REMOTE_WARNING)
     def evaluate(
         self,
         trace_id: str,
@@ -405,6 +471,7 @@ class TrajectoryClient:
         idempotency_key: str,
         limits: Mapping[str, Any] | None = None,
         accept_media_omission: bool = True,
+        redact_sensitive: bool = True,
     ) -> dict[str, Any]:
         """Run the private process Judge on one owned stored trace, without running the Agent.
 
@@ -419,6 +486,8 @@ class TrajectoryClient:
             accept_media_omission: Strict bool, default True. Permit bounded text-and-structure
                 review while preserving the original trace and marking unreviewed media.
                 False keeps legacy media rejection. Reuse the original value on recovery.
+            redact_sensitive: Strict bool, default True. False explicitly retains original
+                bounded content for this operation only; existing redaction cannot be undone.
         Returns:
             Completed report with blank human labels, or an explicit stopped artifact with reason.
         Raises:
@@ -438,8 +507,10 @@ class TrajectoryClient:
             data,
             idempotency_key=idempotency_key,
             accept_media_omission=accept_media_omission,
+            redact_sensitive=redact_sensitive,
         )
 
+    @privacy_operation(REMOTE_WARNING)
     def run_experiment(
         self,
         name: str,
@@ -448,6 +519,7 @@ class TrajectoryClient:
         idempotency_key: str,
         limits: Mapping[str, Any] | None = None,
         accept_media_omission: bool = True,
+        redact_sensitive: bool = True,
     ) -> dict[str, Any]:
         """Review each frozen dataset trace sequentially and preserve failed/missing cases.
 
@@ -460,6 +532,8 @@ class TrajectoryClient:
             accept_media_omission: Strict bool, default True for text-and-structure review.
                 False retains legacy child keys. True binds the mode into generated child
                 keys; changing the mode requests separate reviews, not automatic recovery.
+            redact_sensitive: Strict bool, default True. False explicitly retains original
+                bounded content for this operation only; existing redaction cannot be undone.
         Returns:
             Always a dict with exactly experiment, reviews and errors on normal return.
             experiment is a saved experiment receipt (dict), or None only when no review
@@ -502,7 +576,9 @@ class TrajectoryClient:
             is None
         ):
             raise ValidationError("A valid experiment idempotency key is required")
-        dataset = self.request("datasets.get", {"id": dataset_id})
+        dataset = self.request(
+            "datasets.get", {"id": dataset_id}, redact_sensitive=redact_sensitive
+        )
         trace_ids = dataset.get("payload", {}).get("trace_ids")
         if (
             not isinstance(trace_ids, list)
@@ -522,8 +598,11 @@ class TrajectoryClient:
                     "trace_id": trace_id,
                     "key": idempotency_key,
                     "limits": None if limits is None else dict(limits),
-                }
+                },
+                redact_sensitive=redact_sensitive,
             )
+            if not redact_sensitive:
+                seed["redact_sensitive"] = False
             if accept_media_omission:
                 seed["accept_media_omission"] = True
             child = hashlib.sha256(
@@ -536,6 +615,7 @@ class TrajectoryClient:
                         idempotency_key="experiment-" + child,
                         limits=limits,
                         accept_media_omission=accept_media_omission,
+                        redact_sensitive=redact_sensitive,
                     )
                 )
             except KumaError as exc:
@@ -549,6 +629,7 @@ class TrajectoryClient:
                     "review_ids": [r["id"] for r in reviews],
                 },
                 accept_media_omission=accept_media_omission,
+                redact_sensitive=redact_sensitive,
             )
             if reviews
             else None

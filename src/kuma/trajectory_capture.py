@@ -9,6 +9,7 @@ from typing import Any
 from . import observation_contract
 from .errors import ValidationError
 from .trajectory import prepare_review
+from .trajectory_privacy import LOCAL_WARNING, local_observation, privacy_operation
 from .trajectory_requirements import requirements_fingerprint, validate_requirements
 
 _OPERATIONS = {
@@ -23,11 +24,16 @@ _OPERATIONS = {
 }
 
 
-def classify_observation(observation: Mapping[str, Any]) -> dict[str, Any]:
+@privacy_operation(LOCAL_WARNING)
+def classify_observation(
+    observation: Mapping[str, Any], *, redact_sensitive: bool = True
+) -> dict[str, Any]:
     """Group recorded operations structurally, without turning errors into Agent fault.
 
     Args:
         observation: Completed kuma.observe().export() data, validated using its existing contract.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     Returns:
         v1 inventory of exact trace/span/parent IDs, operation classes, recorded statuses and
         durations; unmapped operations are other. Counts describe retained spans only. Includes
@@ -37,7 +43,7 @@ def classify_observation(observation: Mapping[str, Any]) -> dict[str, Any]:
     Side Effects:
         None; no collector, Agent, tool, network or filesystem operation.
     """
-    safe = observation_contract.checked(observation_contract.export, observation)
+    safe = local_observation(observation, redact_sensitive=redact_sensitive)
     spans = []
     counts: Counter[str] = Counter()
     for item in safe["spans"]:
@@ -68,11 +74,13 @@ def classify_observation(observation: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+@privacy_operation(LOCAL_WARNING)
 def prepare_observation(
     observation: Mapping[str, Any],
     requirements: Mapping[str, Any],
     *,
     sample: str = "trajectory",
+    redact_sensitive: bool = True,
 ) -> dict[str, Any]:
     """Prepare actual observed spans with caller requirements and explicit capture gaps.
 
@@ -80,6 +88,8 @@ def prepare_observation(
         observation: Completed local export from existing kuma.observe; never an active session.
         requirements: Reviewed v1 task/tool/retry/budget document; full field guide in platform docs.
         sample: Review label, nonblank up to 200 characters, defaults to trajectory.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     Returns:
         kuma.trajectory_submission.v1 with detached bundle, requirements, content revision,
         recorded observation ID and structural inventory. Empty capture is represented by a
@@ -89,8 +99,8 @@ def prepare_observation(
     Side Effects:
         None; importing/preparing does not upload, evaluate, save or charge.
     """
-    safe = observation_contract.checked(observation_contract.export, observation)
-    profile = validate_requirements(requirements)
+    safe = local_observation(observation, redact_sensitive=redact_sensitive)
+    profile = validate_requirements(requirements, redact_sensitive=redact_sensitive)
     events = [
         {
             "event": "capture_summary",
@@ -112,21 +122,25 @@ def prepare_observation(
         sample=sample,
         tools=profile["tools"],
         limitations=gaps,
+        redact_sensitive=redact_sensitive,
     )
     return prepare_submission(
         bundle,
         profile,
         observation_id=safe["observation_id"],
-        inventory=classify_observation(safe),
+        inventory=classify_observation(safe, redact_sensitive=redact_sensitive),
+        redact_sensitive=redact_sensitive,
     )
 
 
+@privacy_operation(LOCAL_WARNING)
 def prepare_submission(
     bundle: Mapping[str, Any],
     requirements: Mapping[str, Any],
     *,
     observation_id: str | None = None,
     inventory: Mapping[str, Any] | None = None,
+    redact_sensitive: bool = True,
 ) -> dict[str, Any]:
     """Bind a native-event bundle to a specific requirements revision for explicit submission.
 
@@ -135,6 +149,8 @@ def prepare_submission(
         requirements: Reviewed v1 document; objective and tool catalog must match the bundle.
         observation_id: Optional existing obs_ ID for correlation; null for native-file imports.
         inventory: Optional classify_observation output, null for native events; descriptive only.
+        redact_sensitive: Strict bool, default True. False retains raw caller-owned
+            content after warning, without changing original source or requirement hashes.
     Returns:
         Detached v1 submission, with a content fingerprint for immutable evaluation provenance.
     Raises:
@@ -147,8 +163,8 @@ def prepare_submission(
     from .evidence.trace_tool_content import normalize_tool_content
     from .trajectory import encode_review
 
-    profile = validate_requirements(requirements)
-    safe = json.loads(encode_review(bundle))
+    profile = validate_requirements(requirements, redact_sensitive=redact_sensitive)
+    safe = json.loads(encode_review(bundle, redact_sensitive=redact_sensitive))
     if safe["task"] != profile["objective"] or safe["tools"] != profile["tools"]:
         raise ValidationError(
             "Bundle task and tools must match the requirements revision"
@@ -165,11 +181,14 @@ def prepare_submission(
             "schema_version": "kuma.trajectory_submission.v1",
             "bundle": safe,
             "requirements": profile,
-            "requirements_sha256": requirements_fingerprint(profile),
+            "requirements_sha256": requirements_fingerprint(
+                profile, redact_sensitive=redact_sensitive
+            ),
             "observation_id": observation_id,
             "inventory": inventory,
         },
         redact=True,
+        _redact_sensitive=redact_sensitive,
     )
     if status != "present":
         raise ValidationError("Submission must be corrected before use")

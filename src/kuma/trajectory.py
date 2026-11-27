@@ -9,12 +9,14 @@ from typing import Any
 from .capture_privacy import redact_capture_json
 from .errors import ValidationError
 from .evidence.trace_tool_content import normalize_tool_content
+from .trajectory_privacy import LOCAL_WARNING, privacy_operation
 
 SCHEMA_VERSION = "kuma.trajectory_review_bundle.v1"
 MAX_EVENTS = 10_000
 MAX_TOOLS = 256
 
 
+@privacy_operation(LOCAL_WARNING)
 def prepare_review(
     task: str,
     events: Sequence[Mapping[str, Any]],
@@ -22,8 +24,9 @@ def prepare_review(
     sample: str = "trajectory",
     tools: Sequence[Mapping[str, Any]] | None = None,
     limitations: Sequence[str] = (),
+    redact_sensitive: bool = True,
 ) -> dict[str, Any]:
-    """Detach and redact existing task/tool/event records for local Core review.
+    """Detach existing records under an explicit per-operation privacy policy for review.
 
     Args:
         task: Required original task text, 1..12000 characters after trimming.
@@ -39,6 +42,8 @@ def prepare_review(
             not supplied; an empty list explicitly declares no available tools.
         limitations: At most 32 known capture gaps as nonempty strings. Missing
             outputs, changed tool versions and partial logs belong here.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content after a no-content warning; it does not authorize upload.
     Returns:
         Detached ``kuma.trajectory_review_bundle.v1`` JSON. ``content_status``
         distinguishes present from redacted content; the original is unchanged.
@@ -46,12 +51,13 @@ def prepare_review(
         ValidationError: Invalid shape, graph, size or remaining sensitive content.
             Diagnostics never include source values. Nothing is silently truncated.
     Side Effects:
-        None. No filesystem, environment, API key, model or network access.
+        Raw opt-out emits a content-free warning; no filesystem, environment,
+        API key, model or network access.
     Security/Privacy:
         Reuses KUMA's existing finite-JSON and Evidence redaction/scanning boundary,
-        capped at 4 MiB and depth 32. There is no allow-sensitive override.
+        capped at 4 MiB and depth 32. Explicit raw mode does not waive these bounds.
         Detection covers recognized patterns, not all possible private information.
-        Review-specific projection also redacts known email, IPv4 and user-home
+        Default review projection also redacts known email, IPv4 and user-home
         spellings without changing general Case/Run Evidence privacy policy.
         Review prepared contents before sharing them outside your environment.
     """
@@ -77,10 +83,13 @@ def prepare_review(
             "limitations": list(limitations),
         },
         redact=True,
+        _redact_sensitive=redact_sensitive,
     )
     if status not in {"present", "redacted"}:
         raise ValidationError("Trajectory content could not be safely prepared")
-    payload, pii_changed = redact_capture_json(payload)
+    payload, pii_changed = (
+        redact_capture_json(payload) if redact_sensitive else (payload, False)
+    )
     if pii_changed:
         status = "redacted"
     bundle = {"schema_version": SCHEMA_VERSION, "content_status": status, **payload}
@@ -125,12 +134,15 @@ def _tools(tools: Sequence[Mapping[str, Any]] | None) -> None:
         names.add(name)
 
 
-def encode_review(bundle: Mapping[str, Any]) -> bytes:
+@privacy_operation(LOCAL_WARNING)
+def encode_review(bundle: Mapping[str, Any], *, redact_sensitive: bool = True) -> bytes:
     """Revalidate and serialize a prepared bundle as canonical UTF-8 JSON bytes.
 
     Args:
         bundle: A prepared v1 bundle. Content is checked and sanitized again so
             edits made after preparation cannot bypass the Evidence boundary.
+        redact_sensitive: Strict bool, default True. False preserves original values
+            after warning; structural validation and size limits remain unchanged.
     Returns:
         Sorted, compact UTF-8 JSON suitable for a caller-owned local file.
         Redacted status is retained when revalidation makes no further changes.
@@ -162,6 +174,7 @@ def encode_review(bundle: Mapping[str, Any]) -> bytes:
         sample=bundle["sample"],
         tools=bundle["tools"],
         limitations=bundle["limitations"],
+        redact_sensitive=redact_sensitive,
     )
     if bundle["content_status"] == "redacted":
         safe["content_status"] = "redacted"

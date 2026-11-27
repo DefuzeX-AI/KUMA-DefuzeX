@@ -10,7 +10,7 @@ that capture. You do not construct ATIF, convert events or create a requirements
 Install the extra matching your Agent, for example:
 
 ```sh
-python -m pip install --upgrade "kuma-defuzex[capture-langgraph]==0.5.0"
+python -m pip install --upgrade "kuma-defuzex[capture-langgraph]==0.7.0"
 ```
 
 Keep your Agent's normal model/tool configuration. Wrap its ordinary invocation:
@@ -283,9 +283,59 @@ behavior. No capture content or raw native errors are printed in CLI summaries.
 Context loss, hidden/unrecorded bodies, filtered fields and sampling are not proof
 that an Agent avoided tools or succeeded. Review the recorded scope and gaps.
 
+## Explicit original content
+
+KUMA 0.7.0 adds a per-operation raw-content option. This minor-version feature
+requires a deliberate upgrade; it does not automatically install or interrupt an
+Agent. The default remains protected: recognized sensitive values are redacted,
+preserving safe structure and recorded gaps. To retain bounded, allowlisted original
+values, opt out **before capture starts**:
+
+```python
+from kuma import capture, judge_capture
+
+with capture(task, framework="langgraph", redact_sensitive=False) as recorded:
+    answer = my_agent.invoke({"messages": [("user", task)]})
+
+document = recorded.export(redact_sensitive=False)
+review = judge_capture(recorded.capture_id, redact_sensitive=False)
+```
+
+The final line explicitly uploads and requests paid Judge. Original content can be
+saved as local plaintext, retained in private Core and sent to the configured model
+provider, including repair attempts. Only share content you are authorized to share.
+`redact_sensitive` accepts only a Boolean, defaults to `True`, and applies only to
+that operation. Each independent read, export, upload or Judge needs explicit `False`
+again. It is not a global setting or a tool exemption. Auth, owner, private-field,
+size, finite-JSON and charging boundaries stay unchanged.
+
+Each outer raw operation emits `kuma.RawContentWarning` before SDK retention,
+persistence or transport, without source values or secrets. Internal substeps do not
+duplicate it and no interactive confirmation is needed. Standard warning filters
+apply: warnings-as-errors stops before effects. An original Agent exception remains
+primary on exit. The SDK does not change the user's external exporters.
+
+Local raw wrappers carry `content_privacy: "raw"`. Default readers refuse them,
+rather than silently changing retained bytes or hashes. Already-redacted or upstream-
+dropped data cannot be recovered; there is no raw shadow backup, and existing gaps
+remain truthful. Logs, exceptions and CLI summaries stay protected in both modes.
+
+```sh
+kuma captures list --no-redact-sensitive
+kuma captures export cap_REPLACE_WITH_RECORDED_ID --output capture.json --no-redact-sensitive
+kuma captures judge cap_REPLACE_WITH_RECORDED_ID --output review.json --no-redact-sensitive
+```
+
+Warnings go to stderr; exported captures and saved reviews may contain originals.
+Media handling is independent (`--reject-media` selects legacy media rejection).
+Automatic keys include explicit raw policy; default and explicit `True` keep old keys.
+A manual direct key cannot be recovered under a changed policy. Experiment parent
+seeds produce new child keys when policy changes, which may request new paid reviews.
+There is no automatic less-protective retry.
+
 ## Capture privacy and operation provenance
 
-Capture/trajectory review additionally redacts recognized email addresses, IPv4
+By default, capture/trajectory review additionally redacts recognized email addresses, IPv4
 spellings and user-home paths before local persistence and review preparation.
 This matches the review service's known-PII boundary, not a promise to discover
 all personal data. Original Agent inputs and user exporters are not modified;

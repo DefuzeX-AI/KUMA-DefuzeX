@@ -67,9 +67,15 @@ class ObservationBuffer:
     are never retained. Counters are capped at the existing wire maximum.
     """
 
-    def __init__(self, limits: Any) -> None:
-        """Initialize empty capture bounded by validated TraceEvidenceLimits."""
+    def __init__(self, limits: Any, *, redact_sensitive: bool = True) -> None:
+        """Initialize empty capture bounded by validated TraceEvidenceLimits.
+
+        Args:
+            redact_sensitive: Strict bool, default True. False explicitly retains original
+                bounded content for this operation only; existing redaction cannot be undone.
+        """
         self.limits = limits
+        self.redact_sensitive = redact_sensitive
         self.spans: list[dict[str, Any]] = []
         self.observed = 0
         self.fields = 0
@@ -92,8 +98,14 @@ class ObservationBuffer:
         """
         self.observed = min(999_999_999, self.observed + 1)
         try:
-            mapped, drops, truncated, reasons = map_span(span, self.limits)
-            mapped, privacy_reasons = _redact_observed_span(mapped)
+            mapped, drops, truncated, reasons = map_span(
+                span, self.limits, redact_sensitive=self.redact_sensitive
+            )
+            mapped, privacy_reasons = (
+                _redact_observed_span(mapped)
+                if self.redact_sensitive
+                else (mapped, set())
+            )
             reasons.update(privacy_reasons)
         except SpanMappingError as error:
             self.loss(error.reason)

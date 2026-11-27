@@ -1,5 +1,46 @@
 # Agent execution review workspace
 
+## Explicit privacy policy (0.7.0)
+
+Capture, `prepare_review`, `prepare_atif`, `prepare_observation`,
+`prepare_submission`, requirement validation and `TrajectoryClient` operations accept
+`redact_sensitive: bool = True`. Default behavior remains protected. Explicit `False`
+retains bounded original domain content after a content-free `RawContentWarning`;
+it does not recover earlier redaction, disable authentication or enlarge size/shape
+limits. Preparation stays local. Upload/Judge may store originals in private Core
+and send them to the configured model provider. See the [capture lifecycle privacy
+guide](capture-lifecycle.md#explicit-original-content) for timing and persistence.
+
+```python
+workspace = client.trajectory()
+uploaded = workspace.upload(submission, redact_sensitive=False)
+review = workspace.evaluate(
+    uploaded["id"], idempotency_key="owned-review-001", redact_sensitive=False
+)
+stored = workspace.request("reviews.get", {"id": review["id"]},
+                           accept_media_omission=True, redact_sensitive=False)
+original_json = workspace.export("reviews", review["id"],
+                                 accept_media_omission=True, redact_sensitive=False)
+```
+
+Only explicit `False` is sent at command top level and included in request identity;
+omit/`True` retains old wire/hash semantics. Same direct key plus changed policy
+conflicts, never silently re-evaluates. `run_experiment` includes raw policy in its
+automatic child keys; changing it can start new paid reviews. Later reads and
+transitive reuse need an explicit opt-out again. Protected readers safely refuse raw
+artifacts; raw reads return owned original bytes, not a re-redacted representation.
+Stored payload and safe summary wrappers have consistent `content_privacy: "raw"`;
+the original submission/source/hash is not rewritten. Dataset, experiment, feedback
+and review lineage retains this marker. Summaries/logs/errors do not expose secrets.
+
+Classic Case/Run, cloud Observation and legacy `allow_sensitive` are unchanged.
+Media scope is an independent capability and still requires its own read flag.
+For standard OpenAI clients using the existing model gateway, pass
+`extra_body={"redact_sensitive": False}` only when intentionally sending originals.
+The gateway consumes this field before forwarding; it is not a model-provider
+parameter. Direct gateway responses expose a generic `X-Kuma-Content-Warning` header.
+KUMA adds no model client and does not change your Agent's input or external exporters.
+
 Available in KUMA 0.4.0, this capability is part of KUMA, not a second SDK. It connects local capture,
 task/tool requirements, stored traces, datasets, process Judge reports, human correction and
 version comparisons through the existing public Backend. The hosted trajectory Judge is enabled.

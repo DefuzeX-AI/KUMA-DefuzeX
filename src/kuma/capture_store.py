@@ -12,7 +12,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from . import observation_contract
 from .errors import ConfigurationError, ValidationError
 from .evidence.tracking._log_paths import open_verified_log
 from .repository._case_file_directory import pinned_case_directory
@@ -21,6 +20,12 @@ from .repository.observation_io import save_observation
 from .repository.privacy import scan_sensitive_json
 from .storage import resolve_storage_path
 from .trajectory_capture import classify_observation
+from .trajectory_privacy import (
+    LOCAL_WARNING,
+    checked_policy,
+    local_observation,
+    privacy_operation,
+)
 from .trajectory_requirements import validate_requirements
 
 MAX_CAPTURE_BYTES = 6 * 1024 * 1024
@@ -55,17 +60,32 @@ def encoded(value: Any) -> bytes:
     ).encode("utf-8")
 
 
-def validate_capture(value: Any) -> dict:
-    """Validate the persisted binding without inferring task success or restoring omitted data."""
+def validate_capture(value: Any, *, redact_sensitive: bool = True) -> dict:
+    """Validate the persisted binding without inferring task success or restoring omitted data.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
+    checked_policy(redact_sensitive)
+    extra = (
+        {"content_privacy"}
+        if isinstance(value, dict) and "content_privacy" in value
+        else set()
+    )
+    if extra and (redact_sensitive or value["content_privacy"] != "raw"):
+        raise ValidationError("Raw capture requires explicit redact_sensitive=False")
     if (
         not isinstance(value, dict)
-        or set(value) != CAPTURE_FIELDS
+        or set(value) != CAPTURE_FIELDS | extra
         or value["schema_version"] != "kuma.capture.v1"
     ):
         raise ValidationError("Invalid local capture document")
     capture_id(value["capture_id"])
-    validate_requirements(value["requirements"])
-    observation_contract.checked(observation_contract.export, value["observation"])
+    validate_requirements(value["requirements"], redact_sensitive=redact_sensitive)
+    local_observation(value["observation"], redact_sensitive=redact_sensitive)
+    if bool(extra) != (value["observation"].get("content_privacy") == "raw"):
+        raise ValidationError("Capture privacy lineage is inconsistent")
     integration = value["instrumentation"]
     if (
         not isinstance(integration, dict)
@@ -84,7 +104,9 @@ def validate_capture(value: Any) -> dict:
     ):
         raise ValidationError("Invalid capture integration metadata")
     raw = encoded(value)
-    if len(raw) > MAX_CAPTURE_BYTES or scan_sensitive_json(value, location="capture"):
+    if len(raw) > MAX_CAPTURE_BYTES or (
+        redact_sensitive and scan_sensitive_json(value, location="capture")
+    ):
         raise ValidationError("Capture exceeds its local size or privacy boundary")
     return json.loads(raw)
 
@@ -147,9 +169,16 @@ def capture_directory(
     )
 
 
-def save_capture(directory: Path, document: dict) -> Path:
-    """Atomically publish one closed validated capture without replacing previous data."""
-    safe = validate_capture(document)
+def save_capture(
+    directory: Path, document: dict, *, redact_sensitive: bool = True
+) -> Path:
+    """Atomically publish one closed validated capture without replacing previous data.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
+    safe = validate_capture(document, redact_sensitive=redact_sensitive)
     return save_observation(
         safe, directory / (safe["capture_id"] + ".json"), root=directory
     )
@@ -170,8 +199,15 @@ def load_capture(
     *,
     repo_path: str | os.PathLike = ".",
     storage_path: str | os.PathLike | None = None,
+    redact_sensitive: bool = True,
 ) -> tuple[dict, Path]:
-    """Read exactly one bounded, no-follow local capture; no network, keys or writes."""
+    """Read exactly one bounded, no-follow local capture; no network, keys or writes.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
+    checked_policy(redact_sensitive)
     identifier = capture_id(identifier)
     directory = capture_directory(repo_path, storage_path)
     failed = False
@@ -184,17 +220,19 @@ def load_capture(
         failed = True
     if failed:
         raise ConfigurationError("Capture is missing, unreadable or invalid")
-    safe = validate_capture(data)
+    safe = validate_capture(data, redact_sensitive=redact_sensitive)
     if safe["capture_id"] != identifier:
         raise ValidationError("Capture identity does not match its local file")
     return safe, directory
 
 
+@privacy_operation(LOCAL_WARNING)
 def list_captures(
     *,
     repo_path: str | os.PathLike = ".",
     storage_path: str | os.PathLike | None = None,
     limit: int = 20,
+    redact_sensitive: bool = True,
 ) -> list[dict]:
     """Read at most limit summaries, newest local file first; never emit task/body content.
 
@@ -202,6 +240,8 @@ def list_captures(
         repo_path: Existing original workspace path, default current directory; no scanning.
         storage_path: Original external parent or None for ~/.kuma-captures; must exist.
         limit: Integer 1..100, default 20; maximum summaries, not automatic pagination.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     Returns:
         List of metadata dicts sorted by file modification time then name, newest first.
         Each has capture_id, execution_status, capture_status, span_count, operation_counts
@@ -228,7 +268,10 @@ def list_captures(
     result = []
     for path in paths[:limit]:
         document, _ = load_capture(
-            path.stem, repo_path=repo_path, storage_path=storage_path
+            path.stem,
+            repo_path=repo_path,
+            storage_path=storage_path,
+            redact_sensitive=redact_sensitive,
         )
         observation = document["observation"]
         result.append(
@@ -237,7 +280,9 @@ def list_captures(
                 "execution_status": observation["execution_status"],
                 "capture_status": observation["capture_status"],
                 "span_count": len(observation["spans"]),
-                "operation_counts": classify_observation(observation)["counts"],
+                "operation_counts": classify_observation(
+                    observation, redact_sensitive=redact_sensitive
+                )["counts"],
                 "reasons": observation["reasons"],
             }
         )
@@ -282,11 +327,17 @@ def output_target(path: str | os.PathLike) -> Iterator[Any]:
     )
 
 
-def save_review(directory: Path, review: dict) -> str:
-    """Keep a safe paid/stopped response before optional output publication; no replacement."""
+def save_review(directory: Path, review: dict, *, redact_sensitive: bool = True) -> str:
+    """Keep a safe paid/stopped response before optional output publication; no replacement.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
     raw = encoded(review)
-    if len(raw) > 8 * 1024 * 1024 or scan_sensitive_json(
-        review, location="capture_review"
+    checked_policy(redact_sensitive)
+    if len(raw) > 8 * 1024 * 1024 or (
+        redact_sensitive and scan_sensitive_json(review, location="capture_review")
     ):
         raise ValidationError("Review exceeds its local privacy or size boundary")
     digest = hashlib.sha256(raw).hexdigest()

@@ -576,6 +576,7 @@ Record normal Agent execution and save locally; never implicitly upload or Judge
 | `tools` | list[dict] \| None | `None` | Optional complete v1 tool policies; None means unknown, [] declares no tools. No tool catalog is inferred from observed calls. |
 | `requirements` | dict \| None | `None` | Optional complete advanced v1 profile with objective equal to the original task; mutually exclusive with tools. No JSON file required. |
 | `limits` | TraceEvidenceLimits \| None | `None` | TraceEvidenceLimits or None for existing observation limits. Omissions and zero capture remain visible; no hidden whole-field truncation. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:capture:end -->
 
@@ -597,6 +598,7 @@ Load one durable ID and atomically export its task-bound document without overwr
 | `path` | str \| os.PathLike | Required | New destination path with an existing parent; existing targets are rejected. |
 | `repo_path` | str \| os.PathLike | `'.'` | Existing original workspace path, default current directory. |
 | `storage_path` | str \| os.PathLike \| None | `None` | Original disjoint external parent or None for ~/.kuma-captures. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:export_capture:end -->
 
@@ -621,6 +623,7 @@ Explicitly review a saved execution using one Kuma credential and the bound task
 | `requirements` | dict \| None | `None` | Optional richer v1 rules retaining the exact original task. |
 | `idempotency_key` | str \| None | `None` | Optional8..200 ASCII protocol key. None hashes immutable capture/submission content. Same input/key recovers the same review; selecting a fresh key deliberately requests a separate paid review. |
 | `accept_media_omission` | bool | `True` | Permit text-and-structure review without changing the original trace. False preserves legacy media rejection and automatic keys. True binds mode into automatic keys; explicit recovery keys must retain their original mode. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:judge_capture:end -->
 
@@ -641,6 +644,7 @@ Read at most limit summaries, newest local file first; never emit task/body cont
 | `repo_path` | str \| os.PathLike | `'.'` | Existing original workspace path, default current directory; no scanning. |
 | `storage_path` | str \| os.PathLike \| None | `None` | Original external parent or None for ~/.kuma-captures; must exist. |
 | `limit` | int | `20` | Integer 1..100, default 20; maximum summaries, not automatic pagination. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:list_captures:end -->
 
@@ -666,6 +670,7 @@ Construct a one-shot local capture; prefer the capture() factory.
 | `tools` | list[dict] \| None | `None` | Complete declared tool policies, None for unknown or [] for no tools. |
 | `requirements` | dict \| None | `None` | Advanced v1 rules matching the task; mutually exclusive with tools. |
 | `limits` | TraceEvidenceLimits \| None | `None` | TraceEvidenceLimits or None for observation defaults; at least 2048 bytes. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:CaptureSession:end -->
 
@@ -826,7 +831,7 @@ Return detached finalized capture data, including task, gaps and actual executio
 
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
-
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:CaptureSession.export:end -->
 
@@ -887,6 +892,7 @@ Execute one allowlisted workspace command using normal KUMA authentication.
 | `data` | Mapping[str, Any] | Required | Action-specific finite JSON fields; no owner, provider URL or credentials. |
 | `idempotency_key` | str \| None | `None` | Required for reviews.run, 8..200 ASCII letters/digits/._:-. Reuse unchanged to recover the same logical paid review; never reuse with new input. |
 | `accept_media_omission` | bool | `False` | Legacy low-level default. True explicitly permits scoped text-and-structure review and scoped artifact reads. Strict boolean; changing mode with a submitted manual key conflicts. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:TrajectoryClient.request:end -->
 
@@ -905,6 +911,7 @@ Explicitly save one caller requirements revision.
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
 | `requirements` | Mapping[str, Any] | Required | Complete v1 requirements mapping; validated locally before transport. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:TrajectoryClient.save_requirements:end -->
 
@@ -925,6 +932,7 @@ Retrieve an exact canonical JSON artifact without changing large integers or sou
 | `kind` | str | Required | requirements, traces, reviews, datasets, experiments or feedback. |
 | `identity` | str | Required | Owned document ID returned by the workspace. |
 | `accept_media_omission` | bool | `True` | Read immutable scoped reports without changing exported bytes. False keeps legacy semantics and rejects scoped artifacts; trace contents are unchanged. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:TrajectoryClient.export:end -->
 
@@ -946,6 +954,7 @@ Explicitly import a prepared submission with declared version/case/tags; never e
 | `agent_version` | str \| None | `None` | Optional caller build/model label up to 80 characters, not verified identity. |
 | `case_id` | str \| None | `None` | Optional stable caller test-case ID up to 128 characters; required for version matching. |
 | `tags` | list[str] \| None | `None` | Optional list of up to 32 labels of 1..120 characters, default empty. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:TrajectoryClient.upload:end -->
 
@@ -968,6 +977,7 @@ Upload existing ATIF without collecting or executing an Agent.
 | `agent_version` | str \| None | `None` | Optional caller build label, at most 80 characters. |
 | `case_id` | str \| None | `None` | Optional stable task identity, at most 128 characters. |
 | `tags` | list[str] \| None | `None` | Optional list of at most 32 metadata labels, each 1..120 characters. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:TrajectoryClient.upload_atif:end -->
 
@@ -989,6 +999,7 @@ Run the private process Judge on one owned stored trace, without running the Age
 | `idempotency_key` | str | Required | Required unchanged logical review identity; see request() for constraints. |
 | `limits` | Mapping[str, Any] \| None | `None` | Optional integer budgets: decisions 1..12 (default 6), tool_calls 1..24 (12), evidence_characters 1000..120000 (40000), seconds 1..900 (120), source_characters 1000..4194304 (4194304), chunk_characters 1000..350000 (240000). None leaves defaults to the service; deployment lease/timeout constraints may reduce accepted seconds. See docs/trajectory-platform.md. |
 | `accept_media_omission` | bool | `True` | Permit bounded text-and-structure review, preserving original media and marking it unreviewed. False retains legacy rejection; reuse the original mode when recovering a key. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:TrajectoryClient.evaluate:end -->
 
@@ -1011,6 +1022,7 @@ Review each frozen dataset trace sequentially and preserve failed/missing cases.
 | `idempotency_key` | str | Required | Required run identity; deterministic child keys recover completed trace reviews on explicit rerun. Changing name, dataset or limits changes children. |
 | `limits` | Mapping[str, Any] \| None | `None` | Optional per-trace budgets, forwarded unchanged to evaluate. |
 | `accept_media_omission` | bool | `True` | Permit scoped reviews. False retains legacy child-key derivation. True adds the mode to generated child keys; switching mode creates new logical child reviews and may incur another fee. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:TrajectoryClient.run_experiment:end -->
 
@@ -1039,6 +1051,7 @@ Detach and redact existing task/tool/event records for local Core review.
 | `sample` | str | `'trajectory'` | Nonempty review label, at most 200 characters; default trajectory. |
 | `tools` | Sequence[Mapping[str, Any]] \| None | `None` | Actual tools available during execution, at most 256 objects with distinct nonempty ``name`` fields. Include descriptions, parameter schemas, prerequisites and availability changes when known. None means not supplied; an empty list explicitly declares no available tools. |
 | `limitations` | Sequence[str] | `()` | At most 32 known capture gaps as nonempty strings. Missing outputs, changed tool versions and partial logs belong here. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:prepare_review:end -->
 
@@ -1059,6 +1072,7 @@ Revalidate and serialize a prepared bundle as canonical UTF-8 JSON bytes.
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
 | `bundle` | Mapping[str, Any] | Required | A prepared v1 bundle. Content is checked and sanitized again so edits made after preparation cannot bypass the Evidence boundary. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:encode_review:end -->
 
@@ -1077,6 +1091,7 @@ Group recorded operations structurally, without turning errors into Agent fault.
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
 | `observation` | Mapping[str, Any] | Required | Completed kuma.observe().export() data, validated using its existing contract. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:classify_observation:end -->
 
@@ -1097,6 +1112,7 @@ Prepare actual observed spans with caller requirements and explicit capture gaps
 | `observation` | Mapping[str, Any] | Required | Completed local export from existing kuma.observe; never an active session. |
 | `requirements` | Mapping[str, Any] | Required | Reviewed v1 task/tool/retry/budget document; full field guide in platform docs. |
 | `sample` | str | `'trajectory'` | Review label, nonblank up to 200 characters, defaults to trajectory. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:prepare_observation:end -->
 
@@ -1118,6 +1134,7 @@ Bind a native-event bundle to a specific requirements revision for explicit subm
 | `requirements` | Mapping[str, Any] | Required | Reviewed v1 document; objective and tool catalog must match the bundle. |
 | `observation_id` | str \| None | `None` | Optional existing obs_ ID for correlation; null for native-file imports. |
 | `inventory` | Mapping[str, Any] \| None | `None` | Optional classify_observation output, null for native events; descriptive only. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:prepare_submission:end -->
 
@@ -1136,6 +1153,7 @@ Partition known ATIF 1.0..1.8 input into sanitized source-addressed records.
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
 | `document` | Mapping[str, Any] | Required | Caller-owned ATIF 1.0..1.8 JSON with optional root IDs, ordered steps and optional nested subagent_trajectories. Pre-1.7 nodes require string sessions; 1.7/1.8 permit absent/null sessions. Embedded child IDs must be nonempty and sibling-unique. Unknown fields and artifact references remain data. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:atif_events:end -->
 
@@ -1158,6 +1176,7 @@ Prepare ATIF as a normal public review bundle with exact source coordinates.
 | `sample` | str | `'trajectory'` | Nonblank review label up to 200 characters, default trajectory. |
 | `tools` | list[dict[str, Any]] \| None | `None` | Actual declared tools, None for unknown, empty list for explicitly no tools. |
 | `limitations` | list[str] \| tuple[str, ...] | `()` | Up to 32 caller-known capture limits. Format notes use remaining slots; Core independently preserves source-format and coordinate semantics. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:prepare_atif:end -->
 
@@ -1194,6 +1213,7 @@ Validate and detach a reviewed requirements document without changing caller pol
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
 | `value` | Mapping[str, Any] | Required | Exact v1 template shape. Required nonblank name/version/objective and 1..16 success criteria; task_type may be empty (unclassified); unknown tools/reference and each unknown budget are null. See docs/trajectory-platform.md for every field. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:validate_requirements:end -->
 
@@ -1212,6 +1232,7 @@ Return SHA-256 of canonical validated requirements; edits produce a different re
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
 | `value` | Mapping[str, Any] | Required | Reviewed requirements accepted by validate_requirements. |
+| `redact_sensitive` | bool | `True` | Per-operation privacy policy. False explicitly permits original bounded content after a warning; does not restore prior redaction or change later independent operations. |
 
 <!-- api-parameters:requirements_fingerprint:end -->
 

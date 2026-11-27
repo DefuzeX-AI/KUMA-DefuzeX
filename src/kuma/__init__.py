@@ -74,6 +74,7 @@ from .repository.tool_capability_io import (
 )
 from .requests import RequestRecord, list_requests, resume_request, show_request
 from .serialization import to_json
+from .trajectory_privacy import RawContentWarning
 from .updates import check_for_updates
 
 __all__ = [
@@ -108,6 +109,7 @@ __all__ = [
     "ObservationSession",
     "PermissionDeniedError",
     "ProviderError",
+    "RawContentWarning",
     "RepoStateMismatchError",
     "RequestRecord",
     "ResolvedStrategyGroup",

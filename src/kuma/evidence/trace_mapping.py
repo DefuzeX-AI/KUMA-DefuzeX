@@ -90,10 +90,17 @@ def json_size(value: Any) -> int:
     )
 
 
-def _safe_text(value: Any, limit: int) -> tuple[str, bool]:
-    """Normalize Unicode, redact detected secrets, and truncate to the text limit."""
+def _safe_text(
+    value: Any, limit: int, *, redact_sensitive: bool = True
+) -> tuple[str, bool]:
+    """Normalize Unicode, redact detected secrets, and truncate to the text limit.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
     text = str(value).encode("utf-8", "surrogatepass").decode("utf-8", "replace")
-    if scan_sensitive_text(text, location="trace"):
+    if redact_sensitive and scan_sensitive_text(text, location="trace"):
         return "[redacted]", True
     if len(text) > limit:
         return text[:limit], True
@@ -107,7 +114,7 @@ def _safe_value(value: Any, limit: int) -> tuple[Any | None, bool]:
 
 
 def _safe_value_with_drops(
-    value: Any, limit: int
+    value: Any, limit: int, *, redact_sensitive: bool = True
 ) -> tuple[Any | None, bool, int, set[str]]:
     """Map one value while counting sequence members omitted by normalization.
 
@@ -118,6 +125,8 @@ def _safe_value_with_drops(
     Args:
         value: OTel attribute value to normalize.
         limit: Maximum retained characters for each text value.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
 
     Returns:
         The safe JSON value (or ``None``), whether text/sequence data was
@@ -141,7 +150,7 @@ def _safe_value_with_drops(
             else (None, False, 1, {"trace_attribute_invalid"})
         )
     if isinstance(value, str):
-        safe, truncated = _safe_text(value, limit)
+        safe, truncated = _safe_text(value, limit, redact_sensitive=redact_sensitive)
         filtered = truncated and safe == "[redacted]"
         return (
             safe,
@@ -156,7 +165,7 @@ def _safe_value_with_drops(
         reasons = {"trace_attribute_limit"} if dropped else set()
         for child in value[:16]:
             safe, child_truncated, child_dropped, child_reasons = (
-                _safe_value_with_drops(child, limit)
+                _safe_value_with_drops(child, limit, redact_sensitive=redact_sensitive)
             )
             if safe is not None:
                 values.append(safe)
@@ -189,6 +198,7 @@ def _safe_attributes(
     resource: bool = False,
     tool_content_status: dict[str, str] | None = None,
     managed_keys: set[str] | None = None,
+    redact_sensitive: bool = True,
 ) -> tuple[dict[str, Any], int, bool, set[str]]:
     """Filter all observed attributes before bounding retained allowlisted values.
 
@@ -196,6 +206,10 @@ def _safe_attributes(
     entries supplied by an instrumentation library. Every observed exclusion is
     counted and receives either an allowlist, privacy-filter, limit, or invalid
     reason without retaining its key or value.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     """
     if attributes is None:
         return {}, 0, False, set()
@@ -233,6 +247,7 @@ def _safe_attributes(
             resource=resource,
             retain=len(result) < limits.max_attributes,
             tool_content_status=tool_content_status,
+            redact_sensitive=redact_sensitive,
         )
         dropped += item_dropped
         reasons.update(item_reasons)
@@ -302,8 +317,14 @@ def _safe_attribute(
     resource: bool,
     retain: bool,
     tool_content_status: dict[str, str] | None = None,
+    redact_sensitive: bool = True,
 ) -> tuple[str | None, Any | None, bool, int, set[str]]:
-    """Classify and optionally retain one attribute without exposing raw values."""
+    """Classify and optionally retain one attribute without exposing raw values.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
     key = _normalized_attribute_key(raw_key)
     if key is None:
         return None, None, True, 1, {"trace_attribute_invalid"}
@@ -317,14 +338,20 @@ def _safe_attribute(
     if key in TOOL_METADATA_KEYS and tool_content_status is None:
         return None, None, False, 1, {"trace_attribute_not_allowlisted"}
     if key in TOOL_CONTENT_KEYS:
-        return _safe_tool_attribute(key, raw_value, retain, tool_content_status)
+        return _safe_tool_attribute(
+            key,
+            raw_value,
+            retain,
+            tool_content_status,
+            redact_sensitive=redact_sensitive,
+        )
     if not retain:
         return None, None, True, 1, {"trace_attribute_limit"}
     if key in TOOL_METADATA_KEYS and not isinstance(raw_value, str):
         return None, None, False, 1, {"trace_attribute_invalid"}
     try:
         value, value_truncated, value_dropped, value_reasons = _safe_value_with_drops(
-            raw_value, limits.max_text_length
+            raw_value, limits.max_text_length, redact_sensitive=redact_sensitive
         )
     except Exception:
         value, value_truncated, value_dropped, value_reasons = (
@@ -346,18 +373,29 @@ def _safe_attribute(
 
 
 def _safe_tool_attribute(
-    key: str, raw_value: Any, retain: bool, tool_content_status: dict[str, str] | None
+    key: str,
+    raw_value: Any,
+    retain: bool,
+    tool_content_status: dict[str, str] | None,
+    *,
+    redact_sensitive: bool = True,
 ) -> tuple[str | None, Any, bool, int, set[str]]:
     """Retain one whole tool body and update explicit field omission status.
 
     The allowlist boundary supplies known body keys. No truncation or execution
     inference occurs; attribute-count exhaustion is also recorded separately.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     """
     field = TOOL_CONTENT_KEYS[key]
     if tool_content_status is None:
         return None, None, False, 1, {"trace_attribute_not_allowlisted"}
     value, status = (
-        normalize_tool_content(raw_value, redact=True)
+        normalize_tool_content(
+            raw_value, redact=True, _redact_sensitive=redact_sensitive
+        )
         if retain
         else (None, "size_limit")
     )
@@ -409,9 +447,14 @@ def _private_attribute_key(key: str) -> bool:
 
 
 def _map_events(
-    events: Any, limits: TraceEvidenceLimits
+    events: Any, limits: TraceEvidenceLimits, *, redact_sensitive: bool = True
 ) -> tuple[list[dict[str, Any]], int, bool, set[str]]:
-    """Map at most the configured number of events and account for omissions."""
+    """Map at most the configured number of events and account for omissions.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
     mapped: list[dict[str, Any]] = []
     dropped = 0
     truncated = False
@@ -441,7 +484,7 @@ def _map_events(
             break
         try:
             event_data, count, event_truncated, event_reasons = _map_event(
-                event, limits
+                event, limits, redact_sensitive=redact_sensitive
             )
         except Exception:
             dropped += 1
@@ -473,12 +516,19 @@ def _event_limit_drop_count(events: Any, retained_count: int) -> int:
 
 
 def _map_event(
-    event: Any, limits: TraceEvidenceLimits
+    event: Any, limits: TraceEvidenceLimits, *, redact_sensitive: bool = True
 ) -> tuple[dict[str, Any], int, bool, set[str]]:
-    """Normalize one event name, timestamp, and allowlisted attributes."""
-    name, name_truncated = _safe_text(event.name, limits.max_text_length)
+    """Normalize one event name, timestamp, and allowlisted attributes.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
+    name, name_truncated = _safe_text(
+        event.name, limits.max_text_length, redact_sensitive=redact_sensitive
+    )
     attributes, dropped, truncated, reasons = _safe_attributes(
-        getattr(event, "attributes", None), limits
+        getattr(event, "attributes", None), limits, redact_sensitive=redact_sensitive
     )
     if name_truncated:
         reasons.add("trace_value_truncated")
@@ -510,13 +560,15 @@ def _hex_identifier(value: Any, width: int, label: str) -> str:
 
 
 def _span_core(
-    span: Any, limits: TraceEvidenceLimits
+    span: Any, limits: TraceEvidenceLimits, *, redact_sensitive: bool = True
 ) -> tuple[dict[str, Any], bool, set[str]]:
     """Normalize required span identity, topology, timing, kind, and status.
 
     Args:
         span: Ended OTel-readable span object from the provider callback.
         limits: Text/resource limits governing safe name projection.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
 
     Returns:
         Core span mapping, whether a value was truncated, and stable degradation
@@ -552,7 +604,9 @@ def _span_core(
         raise SpanMappingError("trace_span_timing_invalid") from exc
     reasons: set[str] = set()
     try:
-        name, truncated = _safe_text(span.name, limits.max_text_length)
+        name, truncated = _safe_text(
+            span.name, limits.max_text_length, redact_sensitive=redact_sensitive
+        )
     except Exception:
         name, truncated = "[invalid]", True
         reasons.add("trace_value_invalid")
@@ -598,16 +652,25 @@ def _enum_name(value: Any, default: str) -> str:
 
 
 def _map_scope(
-    span: Any, limits: TraceEvidenceLimits
+    span: Any, limits: TraceEvidenceLimits, *, redact_sensitive: bool = True
 ) -> tuple[dict[str, str], bool, set[str]]:
-    """Map bounded instrumentation scope name and version."""
+    """Map bounded instrumentation scope name and version.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
     try:
         scope = getattr(span, "instrumentation_scope", None)
         name, name_truncated = _safe_text(
-            getattr(scope, "name", ""), limits.max_text_length
+            getattr(scope, "name", ""),
+            limits.max_text_length,
+            redact_sensitive=redact_sensitive,
         )
         version, version_truncated = _safe_text(
-            getattr(scope, "version", "") or "", limits.max_text_length
+            getattr(scope, "version", "") or "",
+            limits.max_text_length,
+            redact_sensitive=redact_sensitive,
         )
     except Exception:
         return {"name": "", "version": ""}, True, {"trace_scope_invalid"}
@@ -619,7 +682,7 @@ def _map_scope(
 
 
 def map_span(
-    span: Any, limits: TraceEvidenceLimits
+    span: Any, limits: TraceEvidenceLimits, *, redact_sensitive: bool = True
 ) -> tuple[dict[str, Any], int, bool, set[str]]:
     """Convert an ended OTel span into bounded, privacy-filtered observations.
 
@@ -627,6 +690,8 @@ def map_span(
         span: Actual readable span from the in-process provider callback.
         limits: Capture attribute/event/metadata budgets; tool bodies have a
             separate 4 MiB canonical JSON cap, not the metadata text limit.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
 
     Returns:
         Span mapping, observed omitted-field count, truncation flag and stable
@@ -640,7 +705,9 @@ def map_span(
         Reads provider objects only. The caller accounts for omissions and
         chooses complete/partial/failed capture status; no tool or I/O runs.
     """
-    mapped, core_truncated, core_reasons = _span_core(span, limits)
+    mapped, core_truncated, core_reasons = _span_core(
+        span, limits, redact_sensitive=redact_sensitive
+    )
     span_attributes, attribute_field_reasons = _optional_span_field(
         span, "attributes", "trace_attribute_invalid"
     )
@@ -663,9 +730,12 @@ def map_span(
         limits,
         tool_content_status=tool_status,
         managed_keys=model_keys,
+        redact_sensitive=redact_sensitive,
     )
     if model_keys is not None:
-        content, model_drops, model_reasons = map_model_content(span_attributes)
+        content, model_drops, model_reasons = map_model_content(
+            span_attributes, redact_sensitive=redact_sensitive
+        )
         mapped["model_content"] = content
         dropped += model_drops
         reasons.update(model_reasons)
@@ -677,7 +747,7 @@ def map_span(
         span, "events", "trace_event_invalid"
     )
     events, event_dropped, event_truncated, event_reasons = _map_events(
-        event_source, limits
+        event_source, limits, redact_sensitive=redact_sensitive
     )
     try:
         resource_attributes = getattr(
@@ -687,9 +757,11 @@ def map_span(
         resource_attributes = None
         reasons.add("trace_attribute_invalid")
     resource, resource_dropped, resource_truncated, resource_reasons = _safe_attributes(
-        resource_attributes, limits, resource=True
+        resource_attributes, limits, resource=True, redact_sensitive=redact_sensitive
     )
-    scope, scope_truncated, scope_reasons = _map_scope(span, limits)
+    scope, scope_truncated, scope_reasons = _map_scope(
+        span, limits, redact_sensitive=redact_sensitive
+    )
     reasons.update(core_reasons)
     reasons.update(source_reasons)
     reasons.update(attribute_field_reasons)

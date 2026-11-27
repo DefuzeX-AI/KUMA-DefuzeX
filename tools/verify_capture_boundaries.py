@@ -8,13 +8,14 @@ import json
 import os
 import tempfile
 import unittest
+import warnings
 from argparse import Namespace
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from kuma import capture, judge_capture
+from kuma import RawContentWarning, capture, judge_capture
 from kuma.capture_cli import (
     _rules,
     cmd_capture_export,
@@ -44,12 +45,6 @@ wiring = importlib.import_module("kuma.capture_instrumentation")
 
 
 class ModelContentBoundaryTests(unittest.TestCase):
-    def test_media_mode_rejects_coercion_before_capture_or_transport(self):
-        core = importlib.import_module("kuma.capture")
-        for value in (None, 0, 1, "true"):
-            with self.subTest(value=value), self.assertRaises(ValidationError):
-                core._review_inputs({}, None, None, accept_media_omission=value)
-
     def test_indexed_metadata_is_not_a_body(self):
         from kuma.evidence.trace_model_content import map_model_content
 
@@ -70,6 +65,129 @@ class ModelContentBoundaryTests(unittest.TestCase):
 
 
 class CaptureBoundaryTests(unittest.TestCase):
+    def test_media_mode_rejects_coercion_before_capture_or_transport(self):
+        for value in (None, 0, 1, "true"):
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                core._review_inputs({}, None, None, accept_media_omission=value)
+
+    def test_explicit_raw_warning_lifecycle_persistence_and_cli(self):
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+
+        provider = TracerProvider(resource=Resource({}), shutdown_on_exit=False)
+        self.addCleanup(provider.shutdown)
+        tracer = provider.get_tracer("raw-synthetic")
+        with warnings.catch_warnings(record=True) as notices:
+            warnings.simplefilter("always")
+            with (
+                capture(
+                    "Inspect synthetic@example.invalid",
+                    tracer_provider=provider,
+                    redact_sensitive=False,
+                    **self.options,
+                ) as session,
+                tracer.start_as_current_span(
+                    "model",
+                    attributes={
+                        "gen_ai.operation.name": "chat",
+                        "input.value": '"synthetic@example.invalid"',
+                        "output.value": '"done"',
+                    },
+                ),
+            ):
+                pass
+        self.assertEqual(len(notices), 1)
+        self.assertNotIn("synthetic@example.invalid", str(notices[0].message))
+        with self.assertRaises(ValidationError):
+            session.export()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RawContentWarning)
+            raw = session.export(redact_sensitive=False)
+            self.assertEqual(
+                load_capture(
+                    session.capture_id, redact_sensitive=False, **self.options
+                )[0],
+                raw,
+            )
+            forged = copy.deepcopy(raw)
+            forged["observation"].pop("content_privacy")
+            with self.assertRaises(ValidationError):
+                validate_capture(forged, redact_sensitive=False)
+            forged["content_privacy"] = "protected"
+            with self.assertRaises(ValidationError):
+                validate_capture(forged, redact_sensitive=False)
+            for flag in (None, 0, "false"):
+                with self.subTest(flag=flag), self.assertRaises(ValidationError):
+                    capture("Inspect", redact_sensitive=flag, **self.options)
+            _, key = core._review_inputs(raw, None, None, redact_sensitive=False)
+            self.assertEqual(
+                core._review_inputs(raw, None, None, redact_sensitive=False)[1], key
+            )
+            self.assertEqual(
+                core._review_inputs(
+                    raw, None, "manual-key-123", redact_sensitive=False
+                )[1],
+                "manual-key-123",
+            )
+            client = Mock()
+            submission, _ = core._review_inputs(raw, None, None, redact_sensitive=False)
+            client.trajectory.return_value.upload.return_value = {"id": "synthetic-id"}
+            review = {"requirements_sha256": submission["requirements_sha256"]}
+            client.trajectory.return_value.evaluate.return_value = review
+            with patch.object(core, "save_review") as saved:
+                self.assertEqual(
+                    judge_capture(
+                        session.capture_id,
+                        client=client,
+                        redact_sensitive=False,
+                        **self.options,
+                    ),
+                    review,
+                )
+                saved.assert_called_once_with(
+                    self.directory, review, redact_sensitive=False
+                )
+            client.trajectory.return_value.evaluate.return_value = {
+                "requirements_sha256": "wrong"
+            }
+            with self.assertRaises(core.ProviderError):
+                judge_capture(
+                    session.capture_id,
+                    client=client,
+                    redact_sensitive=False,
+                    **self.options,
+                )
+            with redirect_stdout(io.StringIO()) as output:
+                cmd_capture_list(
+                    Namespace(limit=20, no_redact_sensitive=True, **self.options)
+                )
+            self.assertNotIn("synthetic@example.invalid", output.getvalue())
+            destination = self.root / "raw-export.json"
+            cmd_capture_export(
+                Namespace(
+                    capture_id=session.capture_id,
+                    output=destination,
+                    no_redact_sensitive=True,
+                    **self.options,
+                )
+            )
+            self.assertEqual(json.loads(destination.read_text()), raw)
+
+    def test_raw_cli_warning_precedes_rules_and_output(self):
+        from kuma.cli import build_parser
+
+        parser = build_parser()
+        self.assertTrue(
+            parser.parse_args(
+                ["captures", "list", "--no-redact-sensitive"]
+            ).no_redact_sensitive
+        )
+        with warnings.catch_warnings(), patch("kuma.capture_cli._rules") as rules:
+            warnings.simplefilter("error", RawContentWarning)
+            with self.assertRaises(RawContentWarning):
+                cmd_capture_judge(Namespace(no_redact_sensitive=True))
+            rules.assert_not_called()
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

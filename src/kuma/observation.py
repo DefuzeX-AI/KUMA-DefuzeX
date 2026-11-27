@@ -22,6 +22,7 @@ from .evidence.observation_capture import ObservationBuffer
 from .evidence.observation_otel import ACTIVE_OBSERVATION, attach, span_key
 from .evidence.trace import TraceEvidenceLimits
 from .repository.privacy import scan_sensitive_text
+from .trajectory_privacy import checked_policy, privacy_operation
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -51,6 +52,9 @@ class ObservationSession:
     User instrumentation/exporters keep their own behavior and ownership.
     """
 
+    @privacy_operation(
+        "Original content is retained in local observation memory; an explicit save creates plaintext."
+    )
     def __init__(
         self,
         *,
@@ -58,12 +62,18 @@ class ObservationSession:
         external_run_id: str | None = None,
         external_invocation_id: str | None = None,
         limits: TraceEvidenceLimits | None = None,
+        redact_sensitive: bool = True,
     ) -> None:
         """Prepare an inactive session; arguments and guarantees match ``observe``.
 
         Construction validates only local options and creates an opaque UUID;
         provider attachment is deferred until entry. No files or keys are read.
+
+        Args:
+            redact_sensitive: Strict bool, default True. False explicitly retains original
+                bounded content for this operation only; existing redaction cannot be undone.
         """
+        self._redact_sensitive = checked_policy(redact_sensitive)
         chosen = TraceEvidenceLimits() if limits is None else limits
         if not isinstance(chosen, TraceEvidenceLimits) or chosen.max_total_bytes < 2048:
             raise ConfigurationError("Observation limits require at least 2048 bytes")
@@ -79,7 +89,7 @@ class ObservationSession:
         }
         self._provider = tracer_provider
         self._processor = None
-        self._buffer = ObservationBuffer(chosen)
+        self._buffer = ObservationBuffer(chosen, redact_sensitive=redact_sensitive)
         self._lock = threading.RLock()
         self._pending: set[tuple[int, int]] = set()
         self._state = "new"
@@ -152,6 +162,8 @@ class ObservationSession:
                 self._buffer.loss("trace_capture_failed")
                 self._result = self._buffer._export(self._metadata)
             self._buffer.spans.clear()
+            if not self._redact_sensitive:
+                self._result["content_privacy"] = "raw"
         if self._processor is not None and self._buffer.observed == 0:
             # Warning filters/handlers cannot replace the Agent outcome; the
             # export retains its existing gap status even if display fails.
@@ -246,8 +258,11 @@ class ObservationSession:
                         count=int(self._buffer.observed == observed_before),
                     )
 
-    def export(self) -> dict[str, Any]:
-        """Return a detached, redacted plain JSON observation after context exit.
+    @privacy_operation(
+        "Original content is returned as local data; saving it creates plaintext."
+    )
+    def export(self, *, redact_sensitive: bool = True) -> dict[str, Any]:
+        """Return detached recorded JSON after exit, requiring explicit opt-out for raw data.
 
         Returns:
             Closed ``kuma.observation.v1`` document, at most 5 MiB canonical JSON.
@@ -256,10 +271,18 @@ class ObservationSession:
             ConfigurationError: The context has not finished.
         Postconditions:
             Mutating the result cannot change stored capture or subsequent exports.
+
+        Args:
+            redact_sensitive: Strict bool, default True. False explicitly retains original
+                bounded content for this operation only; existing redaction cannot be undone.
         """
         with self._lock:
             if self._result is None:
                 raise ConfigurationError("Finish the observation before exporting it")
+            if not self._redact_sensitive and redact_sensitive:
+                raise ValidationError(
+                    "Raw observation requires explicit redact_sensitive=False"
+                )
             return copy.deepcopy(self._result)
 
     def render_text(self) -> str:
@@ -269,7 +292,12 @@ class ObservationSession:
         Times are recorded span duration, not inferred queue/model billing time.
         Missing capture is unknown, not proof that no tools ran. Requires exit.
         """
-        data = self.export()
+        from .capture_privacy import redact_capture_json
+
+        with self._lock:
+            if self._result is None:
+                raise ConfigurationError("Finish the observation before rendering it")
+            data, _ = redact_capture_json(self._result)
         lines = [
             f"Observation {data['observation_id']}",
             f"Execution: {data['execution_status']}; evaluation: not_performed",
@@ -286,8 +314,13 @@ class ObservationSession:
             lines.append("Gaps: " + ", ".join(data["reasons"]))
         return "\n".join(lines)
 
+    @privacy_operation("Original observation content will be saved as local plaintext.")
     def save(
-        self, path: str | os.PathLike[str], *, root: str | os.PathLike[str]
+        self,
+        path: str | os.PathLike[str],
+        *,
+        root: str | os.PathLike[str],
+        redact_sensitive: bool = True,
     ) -> Path:
         """Atomically save the finished export in an explicitly authorized directory.
 
@@ -296,6 +329,8 @@ class ObservationSession:
                 Existing files are never overwritten; parent must already exist.
             root: Existing local directory authorizing writes. Links, mount escapes
                 and reparse paths fail closed; no repository scanning occurs.
+            redact_sensitive: Strict bool, default True. False explicitly retains original
+                bounded content for this operation only; existing redaction cannot be undone.
         Returns:
             Absolute published path containing exactly ``export()`` as JSON.
         Raises:
@@ -306,15 +341,21 @@ class ObservationSession:
         """
         from .repository.observation_io import save_observation
 
-        return save_observation(self.export(), path, root=root)
+        return save_observation(
+            self.export(redact_sensitive=redact_sensitive), path, root=root
+        )
 
 
+@privacy_operation(
+    "Original content is retained in local observation memory; an explicit save creates plaintext."
+)
 def observe(
     *,
     tracer_provider: Any = None,
     external_run_id: str | None = None,
     external_invocation_id: str | None = None,
     limits: TraceEvidenceLimits | None = None,
+    redact_sensitive: bool = True,
 ) -> ObservationSession:
     """Create an opt-in local observation context, without a KUMA Run or account.
 
@@ -329,6 +370,8 @@ def observe(
         limits: Existing TraceEvidenceLimits, or defaults. max_total_bytes must be
             at least 2048. Export additionally has a hard 5 MiB aggregate cap and
             10000 span cap; body/attribute/privacy limits remain enforced.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     Returns:
         One-shot ObservationSession supporting ``with`` and ``async with``.
     Raises:
@@ -350,4 +393,5 @@ def observe(
         external_run_id=external_run_id,
         external_invocation_id=external_invocation_id,
         limits=limits,
+        redact_sensitive=redact_sensitive,
     )
