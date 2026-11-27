@@ -310,6 +310,11 @@ def _scoped_review(result: dict, payload: dict, *, accept_media_omission: bool) 
     Shared by run/get and decoded export; immutable bytes and raw model audit are
     never changed. Missing or contradictory scope is rejected before presentation.
     """
+    if isinstance(payload.get("report"), dict):
+        _require(
+            ("media_omission" in payload.get("coverage", {}))
+            == ("media_omission" in payload["report"].get("coverage", {}))
+        )
     if "coverage" in payload:
         _require(
             ("review_scope" in payload) == ("media_omission" in payload["coverage"])
