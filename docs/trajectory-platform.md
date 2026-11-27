@@ -5,6 +5,18 @@ task/tool requirements, stored traces, datasets, process Judge reports, human co
 version comparisons through the existing public Backend. The hosted trajectory Judge is enabled.
 Self-hosted use requires compatible enabled services; clients never configure private storage.
 
+### Unsupported inline media
+
+When the service identifies unsupported inline image data, review preflight
+returns `review_status="stopped"`, `reason="unsupported_inline_media"`,
+`attempts=[]`, and `report=None`, before model work or a review charge. This is
+an unsupported review input, not an Agent failure or a visual verdict. Original
+uploaded traces remain readable/exportable; no media is silently stripped or
+marked delivered. A normal text-only review is unchanged. External references
+are not fetched, and unrecognized media formats are not proof of visual review.
+Check `review_status` and `reason` before consuming a report; these responses
+are also readable by SDK 0.5.4 without a new request capability.
+
 No separate storage or model key belongs in your Agent. `KumaClient().trajectory()` reuses your Kuma
 credential. Local capture and preparation never upload automatically. Your ordinary Agent
 model/tool credentials remain your application's responsibility.
@@ -30,7 +42,7 @@ review = workspace.evaluate(capture["id"], idempotency_key="my-agent-run-001-rev
 print(review["review_status"])
 ```
 
-`trace.json` is an existing ATIF-v1.7 or ATIF-v1.8 export. `requirements.json` describes the original task and
+`trace.json` is an existing ATIF-v1.0 through ATIF-v1.8 export. `requirements.json` describes the original task and
 known tool rules using the template below. Unknown information stays null/empty rather than being
 invented. Local preparation and upload do not run Judge. `evaluate` is an explicit fixed-fee
 operation; only validated completed reviews settle the account's configured Judge fee. Inspect
@@ -125,7 +137,7 @@ Native bundles contain 1–10,000 ordered events; missing turns stay unknown.
 ### Existing App ATIF exports
 
 `workspace.upload_atif(document, requirements, agent_version=None, case_id=None, tags=None)`
-prepares and explicitly uploads an in-memory `ATIF-v1.7` or `ATIF-v1.8` JSON object. `requirements` is the
+prepares and explicitly uploads an in-memory `ATIF-v1.0` through `ATIF-v1.8` JSON object. `requirements` is the
 complete validated profile described above; optional labels have the same bounds as `upload`.
 It returns the normal trace receipt, requires `sdk:observe`, and does not call Judge or execute
 an Agent. Invalid input raises `ValidationError` before transport; network errors use the normal
@@ -139,11 +151,14 @@ format notes use remaining slots. The helper returns a detached v1 bundle, perfo
 redacts recognized sensitive patterns and raises `ValidationError` for invalid/oversized input.
 
 Full trajectory metadata and original steps are retained as portable records, including nested
-subagents, unknown fields and exact JSON integers. Root `trajectory_id` and every `session_id`
-may be absent or null; those states are preserved, not filled with fabricated values. Embedded
+subagents, unknown fields and exact JSON integers. Root `trajectory_id` may be absent or null.
+Versions 1.0..1.6 require an existing string `session_id`, including empty/whitespace strings;
+versions 1.7/1.8 additionally permit absent/null sessions. Those states are preserved, never
+filled from a parent or converted into a document identity. Embedded
 children must have nonempty IDs unique within the same parent's array; different parents may
 reuse an ID. Sessions may repeat across siblings and are not reference-matching keys. Each
-node retains its actual 1.7/1.8 version, including mixed-version documents. Positive, unique
+node retains its actual 1.0..1.8 version, including mixed-version documents; each node obeys
+its own version's session requirement. Positive, unique
 integer step IDs retain source order; historical nonsequential IDs remain supported. Four-MiB/depth-32 preparation and
 the 10,000-record limit apply; transport overhead also counts toward submission limits. Hashes
 refer to sanitized original content. External artifact references are retained but never opened.
@@ -156,8 +171,11 @@ The coordinate is `atif-derived:` plus SHA256 of canonical UTF-8 JSON
 location, not a recorded execution/session ID. Original `record` IDs and reference values
 remain unchanged. Parent/turn coordinates use the same mode. Explicit globally unique IDs
 keep the old envelopes without this origin field. Core independently verifies coordinates
-against reconstructed sanitized source. Only common 1.7/1.8 input is supported, not every
-historical version or external media resolution. Compatible server support is required for
+against reconstructed sanitized source. Only these nine known versions' common record shapes
+are supported, not arbitrary future versions or external media resolution. Legacy session-only
+references remain exactly as recorded: KUMA does not apply newer reference-resolution rules,
+rewrite them to modern IDs, infer causality, or fetch their targets. This is lossless partitioning,
+not a full Harbor schema validator or format migration. Compatible server support is required for
 new formats/derived coordinates; older servers may reject them rather than silently rewrite.
 
 Report locations add `source_pointer` (original JSON pointer), `trajectory_id`, nullable

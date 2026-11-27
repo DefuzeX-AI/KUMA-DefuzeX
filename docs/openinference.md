@@ -35,8 +35,22 @@ then supported indexed `llm.input_messages.N.message.*` /
 `llm.output_messages.N.message.*` attributes. Indexed messages preserve their
 actual keys/indexes rather than filling gaps. Supported indexed fields are
 `role`, `content`, `name`, `tool_call_id`, `function_call_name`, and
-`function_call_arguments_json`, with indexes 0..127. Reasoning, images, arbitrary
-metadata and unknown extensions are not blanket-allowlisted.
+`function_call_arguments_json`. Responses indexed text uses
+`message.contents.N.message_content.text` (with its optional `type`). Chat tool
+proposals use `message.tool_calls.N.tool_call.function.name` / `.arguments` and
+their `.id`; Responses proposals use `tool_call.function.name` / `.arguments`
+and `tool_call.id` directly under the message index. Each index is 0..127.
+These shapes are exercised with OpenInference OpenAI 0.1.77 and the real OpenAI
+Responses parser. Proposal content is never proof of tool execution. Plaintext
+reasoning summaries can occur in recorded text; encrypted reasoning, indexed
+image URLs, arbitrary metadata and unknown extensions are not blanket-allowed.
+
+Indexed `role`, `name`, call IDs or content-type labels alone do **not** establish
+a recorded body: that direction becomes `not_recorded`, without a `value`, and
+capture includes `trace_model_content_not_recorded`. An explicit content field
+can legitimately contain an empty string or JSON null; function proposals need
+not contain conversational text. Native/generic explicit values keep their
+existing semantics. Previously stored captures are not rewritten or rehashed.
 
 JSON-encoded strings are decoded at most once by the shared content normalizer;
 ordinary text remains text. Malformed JSON-looking text is not represented as a
@@ -76,6 +90,12 @@ Redacted content is not a whole dropped body. Missing content is unknown, not
 evidence that no tool was called. Metadata truncation, unsupported fields,
 redaction and invalid/oversized omissions have distinct stable reason codes.
 The existing aggregate drop count is not a fabricated per-category count.
+`trace_attribute_limit` can originate from the SDK's retained metadata limit or
+an upstream OTel dropped-attribute counter. It does not identify the configured
+upstream limit or explain which historical body disappeared. KUMA does not
+override user providers or remove their limits. Capture counts cover observed
+events only: one model span is not proof of an entire Agent workflow, and an
+unbound thread or an event outside the window may be invisible.
 Full retained topology can coexist with partial content; neither implies Judge
 pass or independent proof of execution.
 

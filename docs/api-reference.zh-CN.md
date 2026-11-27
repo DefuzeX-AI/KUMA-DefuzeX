@@ -960,7 +960,7 @@ Upload existing ATIF without collecting or executing an Agent.
 
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
-| `document` | Mapping[str, Any] | Required | ATIF 1.7/1.8 source JSON; recorded metadata is preserved. Optional root/session IDs remain absent or null. Missing root IDs or cross-scope repeated IDs use explicitly marked derived coordinates. |
+| `document` | Mapping[str, Any] | Required | ATIF 1.0..1.8 source JSON; recorded metadata is preserved. Pre-1.7 nodes require string sessions (including empty text); 1.7/1.8 sessions may be absent/null. Missing root IDs or cross-scope repeated IDs use explicitly marked derived coordinates. References remain inert, never migrated. |
 | `requirements` | Mapping[str, Any] | Required | Actual reviewed v1 requirements; unknown tools stay null. |
 | `agent_version` | str \| None | `None` | Optional caller build label, at most 80 characters. |
 | `case_id` | str \| None | `None` | Optional stable task identity, at most 128 characters. |
@@ -1124,13 +1124,13 @@ Bind a native-event bundle to a specific requirements revision for explicit subm
 
 ### atif_events
 
-Partition common ATIF 1.7/1.8 input into sanitized source-addressed records.
+Partition known ATIF 1.0..1.8 input into sanitized source-addressed records.
 
 <!-- api-parameters:atif_events:start -->
 
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
-| `document` | Mapping[str, Any] | Required | Caller-owned ATIF 1.7/1.8 JSON with optional root/session IDs, ordered steps and optional nested subagent_trajectories. Embedded child IDs must be nonempty and sibling-unique. Unknown fields and artifact references remain data. |
+| `document` | Mapping[str, Any] | Required | Caller-owned ATIF 1.0..1.8 JSON with optional root IDs, ordered steps and optional nested subagent_trajectories. Pre-1.7 nodes require string sessions; 1.7/1.8 permit absent/null sessions. Embedded child IDs must be nonempty and sibling-unique. Unknown fields and artifact references remain data. |
 
 <!-- api-parameters:atif_events:end -->
 
@@ -1149,7 +1149,7 @@ Prepare ATIF as a normal public review bundle with exact source coordinates.
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
 | `task` | str | Required | Actual caller-provided task/review scope, 1..12000 characters; never inferred. |
-| `document` | Mapping[str, Any] | Required | ATIF 1.7/1.8 source object, bounded by existing four-MiB/depth-32 preparation. |
+| `document` | Mapping[str, Any] | Required | ATIF 1.0..1.8 source object, bounded by existing four-MiB/depth-32 preparation. Pre-1.7 sessions must be strings; no reference resolution or migration occurs. |
 | `sample` | str | `'trajectory'` | Nonblank review label up to 200 characters, default trajectory. |
 | `tools` | list[dict[str, Any]] \| None | `None` | Actual declared tools, None for unknown, empty list for explicitly no tools. |
 | `limitations` | list[str] \| tuple[str, ...] | `()` | Up to 32 caller-known capture limits. Format notes use remaining slots; Core independently preserves source-format and coordinate semantics. |

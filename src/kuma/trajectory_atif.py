@@ -12,7 +12,7 @@ from .errors import ValidationError
 from .evidence.trace_tool_content import normalize_tool_content
 from .trajectory import prepare_review
 
-ATIF_VERSIONS = ("ATIF-v1.7", "ATIF-v1.8")
+ATIF_VERSIONS = tuple(f"ATIF-v1.{minor}" for minor in range(9))
 
 
 def _digest(value: Any) -> str:
@@ -29,12 +29,14 @@ def _digest(value: Any) -> str:
 
 
 def atif_events(document: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Partition common ATIF 1.7/1.8 input into sanitized source-addressed records.
+    """Partition known ATIF 1.0..1.8 input into sanitized source-addressed records.
 
     Args:
-        document: Caller-owned ATIF 1.7/1.8 JSON with optional root/session IDs,
+        document: Caller-owned ATIF 1.0..1.8 JSON with optional root IDs,
             ordered steps and optional nested subagent_trajectories. Embedded
             child IDs must be nonempty and unique within their parent's list.
+            Versions 1.0..1.6 require recorded string session_id; 1.7/1.8 also
+            permit absence/null. Legacy session-only references remain inert data.
     Returns:
         Detached event list preserving every source field. JSON pointers address original nodes;
         event order is source traversal, not invented global execution chronology. User-step
@@ -150,11 +152,14 @@ def _node(node: Any, *, embedded: bool) -> None:
     The partitioner's layout pass supplies embedded=True only for actual children.
     Optional IDs retain absence/null; trajectory IDs must be bounded nonblank text.
     Session metadata retains any recorded string, including empty/whitespace text.
-    Common 1.7/1.8 metadata and unique positive integer steps are required.
+    Known 1.0..1.8 metadata and unique positive integer steps are required;
+    pre-1.7 nodes require recorded string sessions, never inferred from parents.
     Raises safe ValidationError on malformed source, with no mutation or I/O.
     """
     if not isinstance(node, dict) or node.get("schema_version") not in ATIF_VERSIONS:
-        raise ValidationError("Only ATIF-v1.7 and ATIF-v1.8 trajectories are supported")
+        raise ValidationError(
+            "Only ATIF-v1.0 through ATIF-v1.8 trajectories are supported"
+        )
     identity = node.get("trajectory_id")
     if (identity is None and embedded) or (
         identity is not None
@@ -165,7 +170,8 @@ def _node(node: Any, *, embedded: bool) -> None:
         raise ValidationError("ATIF trajectory ID is invalid or missing on a child")
     session = node.get("session_id")
     if not isinstance(node.get("agent"), dict) or (
-        session is not None and not isinstance(session, str)
+        (session is not None or node["schema_version"] in ATIF_VERSIONS[:7])
+        and not isinstance(session, str)
     ):
         raise ValidationError("ATIF agent or optional session metadata is invalid")
     steps, children = node.get("steps"), node.get("subagent_trajectories")
@@ -207,7 +213,8 @@ def prepare_atif(
 
     Args:
         task: Actual caller-provided task/review scope, 1..12000 characters; never inferred.
-        document: ATIF 1.7/1.8 source object, bounded by existing four-MiB/depth-32 preparation.
+        document: ATIF 1.0..1.8 source object, bounded by existing four-MiB/depth-32 preparation.
+            Pre-1.7 sessions must be recorded strings; references are not resolved or migrated.
         sample: Nonblank review label up to 200 characters, default trajectory.
         tools: Actual declared tools, None for unknown, empty list for explicitly no tools.
         limitations: Up to 32 caller-known capture limits. Format notes use remaining slots;

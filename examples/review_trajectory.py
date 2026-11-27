@@ -13,6 +13,7 @@ from pathlib import Path
 
 from kuma import KumaClient
 from kuma.errors import KumaError, ValidationError
+from kuma.trajectory_atif import ATIF_VERSIONS
 from kuma.trajectory_capture import prepare_observation, prepare_submission
 from kuma.trajectory_requirements import requirements_template, validate_requirements
 
@@ -39,7 +40,7 @@ def save_json(path: Path, value: dict) -> None:
 def upload_trace(workspace, source: dict, profile: dict) -> dict:
     """Submit one recognized recorded format without opening references or running an Agent."""
     schema = source.get("schema_version")
-    if schema in ("ATIF-v1.7", "ATIF-v1.8"):
+    if schema in ATIF_VERSIONS:
         return workspace.upload_atif(source, profile)
     if schema == "kuma.trajectory_review_bundle.v1":
         return workspace.upload(prepare_submission(source, profile))
