@@ -7,11 +7,12 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from .capture_privacy import redact_capture_json
 from .errors import ValidationError
 from .evidence.trace_tool_content import normalize_tool_content
 from .trajectory import prepare_review
 
-ATIF_VERSION = "ATIF-v1.8"
+ATIF_VERSIONS = ("ATIF-v1.7", "ATIF-v1.8")
 
 
 def _digest(value: Any) -> str:
@@ -28,15 +29,18 @@ def _digest(value: Any) -> str:
 
 
 def atif_events(document: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Partition a finite ATIF 1.8 document into lossless, source-addressed records.
+    """Partition common ATIF 1.7/1.8 input into sanitized source-addressed records.
 
     Args:
-        document: Caller-owned JSON trajectory with unique trajectory IDs, ordered steps and
-            optional nested subagent_trajectories. Unknown fields and artifact references stay data.
+        document: Caller-owned ATIF 1.7/1.8 JSON with optional root/session IDs,
+            ordered steps and optional nested subagent_trajectories. Embedded
+            child IDs must be nonempty and unique within their parent's list.
     Returns:
         Detached event list preserving every source field. JSON pointers address original nodes;
         event order is source traversal, not invented global execution chronology. User-step
         boundaries supply explicitly derived turn IDs within each execution only.
+        Missing root IDs or cross-scope repeated IDs use deterministic coordinates
+        with trajectory_id_origin=source_pointer_sha256, never recorded identities.
     Raises:
         ValidationError: Invalid, oversized, nonfinite/deep, sensitive or ambiguous source.
     Side Effects:
@@ -47,24 +51,31 @@ def atif_events(document: Mapping[str, Any]) -> list[dict[str, Any]]:
     clean, status = normalize_tool_content(dict(document), redact=True)
     if status not in {"present", "redacted"} or not isinstance(clean, dict):
         raise ValidationError("ATIF source cannot be safely prepared")
+    clean, _ = redact_capture_json(clean)
     digest = _digest(clean)
+    layout, derived = _layout(clean)
+    coordinates = {
+        pointer: "atif-derived:" + _digest(["kuma.atif.coordinate.v1", digest, pointer])
+        if derived
+        else node["trajectory_id"]
+        for node, pointer, _ in layout
+    }
     events: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    pending = [(clean, "", None)]
-    while pending:
-        node, pointer, parent = pending.pop()
-        _node(node, seen)
-        identity = node["trajectory_id"]
+    for node, pointer, parent_pointer in layout:
+        identity = coordinates[pointer]
+        parent = coordinates[parent_pointer] if parent_pointer is not None else None
         children = node.get("subagent_trajectories")
         meta = {
             k: v for k, v in node.items() if k not in {"steps", "subagent_trajectories"}
         }
         base = {
-            "source_format": ATIF_VERSION,
+            "source_format": node["schema_version"],
             "source_sha256": digest,
             "trajectory_id": identity,
             "parent_trajectory_id": parent,
         }
+        if derived:
+            base["trajectory_id_origin"] = "source_pointer_sha256"
         events.append(
             {
                 **base,
@@ -93,36 +104,69 @@ def atif_events(document: Mapping[str, Any]) -> list[dict[str, Any]]:
                     "turn_origin": "ordered_atif_user_step" if turn else None,
                 }
             )
-        for index in range(len(children or []) - 1, -1, -1):
-            pending.append(
-                (
-                    children[index],
-                    pointer + "/subagent_trajectories/" + str(index),
-                    identity,
-                )
-            )
-        if len(events) + len(pending) > 10000:
-            raise ValidationError("ATIF partition exceeds 10000 records")
     return events
 
 
-def _node(node: Any, seen: set[str]) -> None:
-    """Reject ambiguous execution/step coordinates without interpreting captured content."""
-    if not isinstance(node, dict) or node.get("schema_version") != ATIF_VERSION:
-        raise ValidationError("Only ATIF-v1.8 trajectory objects are supported")
+def _layout(document: dict) -> tuple[list[tuple[dict, str, str | None]], bool]:
+    """Validate source-local identities and select one unambiguous coordinate mode.
+
+    Called after finite-JSON/privacy preparation and before partitioning. Returns
+    preorder nodes with original and parent pointers plus whether all envelope
+    coordinates must be derived. Root absence/null or global repetition selects
+    derived mode; recorded metadata is never filled or changed. Sibling duplicates,
+    missing embedded IDs and more than 10000 records raise safe ValidationError.
+    No references are resolved and no I/O or caller mutation occurs.
+    """
+    pending = [(document, "", None)]
+    layout, seen = [], set()
+    derived, records = False, 0
+    while pending:
+        node, pointer, parent = pending.pop()
+        _node(node, embedded=parent is not None)
+        identity = node.get("trajectory_id")
+        derived = derived or identity is None or identity in seen
+        seen.add(identity)
+        layout.append((node, pointer, parent))
+        records += 1 + len(node["steps"])
+        children = node.get("subagent_trajectories") or []
+        sibling_ids = []
+        for child in children:
+            _node(child, embedded=True)
+            sibling_ids.append(child["trajectory_id"])
+        if len(set(sibling_ids)) != len(sibling_ids):
+            raise ValidationError("ATIF sibling trajectory IDs must be unique")
+        pending.extend(
+            (children[i], pointer + "/subagent_trajectories/" + str(i), pointer)
+            for i in range(len(children) - 1, -1, -1)
+        )
+        if records + len(pending) > 10000:
+            raise ValidationError("ATIF partition exceeds 10000 records")
+    return layout, derived
+
+
+def _node(node: Any, *, embedded: bool) -> None:
+    """Validate one recorded node without inventing session or execution identity.
+
+    The partitioner's layout pass supplies embedded=True only for actual children.
+    Optional IDs retain absence/null; explicit non-null IDs must be bounded text.
+    Common 1.7/1.8 metadata and unique positive integer steps are required.
+    Raises safe ValidationError on malformed source, with no mutation or I/O.
+    """
+    if not isinstance(node, dict) or node.get("schema_version") not in ATIF_VERSIONS:
+        raise ValidationError("Only ATIF-v1.7 and ATIF-v1.8 trajectories are supported")
     identity = node.get("trajectory_id")
-    if (
-        not isinstance(identity, str)
-        or not identity.strip()
-        or len(identity) > 256
-        or identity in seen
+    if (identity is None and embedded) or (
+        identity is not None
+        and (
+            not isinstance(identity, str) or not identity.strip() or len(identity) > 256
+        )
     ):
-        raise ValidationError("ATIF trajectory identities must be unique nonempty text")
-    seen.add(identity)
-    if not isinstance(node.get("agent"), dict) or not isinstance(
-        node.get("session_id"), str
+        raise ValidationError("ATIF trajectory ID is invalid or missing on a child")
+    session = node.get("session_id")
+    if not isinstance(node.get("agent"), dict) or (
+        session is not None and (not isinstance(session, str) or not session.strip())
     ):
-        raise ValidationError("ATIF agent and session metadata are required")
+        raise ValidationError("ATIF agent or optional session metadata is invalid")
     steps, children = node.get("steps"), node.get("subagent_trajectories")
     if (
         not isinstance(steps, list)
@@ -162,7 +206,7 @@ def prepare_atif(
 
     Args:
         task: Actual caller-provided task/review scope, 1..12000 characters; never inferred.
-        document: ATIF-v1.8 source object, bounded by existing four-MiB/depth-32 preparation.
+        document: ATIF 1.7/1.8 source object, bounded by existing four-MiB/depth-32 preparation.
         sample: Nonblank review label up to 200 characters, default trajectory.
         tools: Actual declared tools, None for unknown, empty list for explicitly no tools.
         limitations: Up to 32 caller-known capture limits. Format notes use remaining slots;
@@ -190,6 +234,7 @@ def prepare_atif(
         limitations=[*limitations, *notes[: 32 - len(limitations)]],
     )
     clean, _ = normalize_tool_content(dict(document), redact=True)
+    clean, _ = redact_capture_json(clean)
     if clean != dict(document):
         result["content_status"] = "redacted"
     return result

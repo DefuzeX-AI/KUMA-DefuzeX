@@ -30,7 +30,7 @@ review = workspace.evaluate(capture["id"], idempotency_key="my-agent-run-001-rev
 print(review["review_status"])
 ```
 
-`trace.json` is an existing ATIF-v1.8 export. `requirements.json` describes the original task and
+`trace.json` is an existing ATIF-v1.7 or ATIF-v1.8 export. `requirements.json` describes the original task and
 known tool rules using the template below. Unknown information stays null/empty rather than being
 invented. Local preparation and upload do not run Judge. `evaluate` is an explicit fixed-fee
 operation; only validated completed reviews settle the account's configured Judge fee. Inspect
@@ -125,7 +125,7 @@ Native bundles contain 1–10,000 ordered events; missing turns stay unknown.
 ### Existing App ATIF exports
 
 `workspace.upload_atif(document, requirements, agent_version=None, case_id=None, tags=None)`
-prepares and explicitly uploads an in-memory `ATIF-v1.8` JSON object. `requirements` is the
+prepares and explicitly uploads an in-memory `ATIF-v1.7` or `ATIF-v1.8` JSON object. `requirements` is the
 complete validated profile described above; optional labels have the same bounds as `upload`.
 It returns the normal trace receipt, requires `sdk:observe`, and does not call Judge or execute
 an Agent. Invalid input raises `ValidationError` before transport; network errors use the normal
@@ -139,13 +139,30 @@ format notes use remaining slots. The helper returns a detached v1 bundle, perfo
 redacts recognized sensitive patterns and raises `ValidationError` for invalid/oversized input.
 
 Full trajectory metadata and original steps are retained as portable records, including nested
-subagents, unknown fields and exact JSON integers. ATIF input must have unique trajectory IDs
-and positive, unique integer step IDs within each trajectory. Four-MiB/depth-32 preparation and
+subagents, unknown fields and exact JSON integers. Root `trajectory_id` and every `session_id`
+may be absent or null; those states are preserved, not filled with fabricated values. Embedded
+children must have nonempty IDs unique within the same parent's array; different parents may
+reuse an ID. Sessions may repeat across siblings and are not reference-matching keys. Each
+node retains its actual 1.7/1.8 version, including mixed-version documents. Positive, unique
+integer step IDs retain source order; historical nonsequential IDs remain supported. Four-MiB/depth-32 preparation and
 the 10,000-record limit apply; transport overhead also counts toward submission limits. Hashes
 refer to sanitized original content. External artifact references are retained but never opened.
 
+When the root ID is absent/null or recorded IDs repeat across parent scopes, every envelope
+uses a deterministic internal coordinate and `trajectory_id_origin="source_pointer_sha256"`.
+The coordinate is `atif-derived:` plus SHA256 of canonical UTF-8 JSON
+`["kuma.atif.coordinate.v1", sanitized_source_sha256, original_node_pointer]`
+(unescaped Unicode, sorted keys, compact separators, finite numbers only). It is a source
+location, not a recorded execution/session ID. Original `record` IDs and reference values
+remain unchanged. Parent/turn coordinates use the same mode. Explicit globally unique IDs
+keep the old envelopes without this origin field. Core independently verifies coordinates
+against reconstructed sanitized source. Only common 1.7/1.8 input is supported, not every
+historical version or external media resolution. Compatible server support is required for
+new formats/derived coordinates; older servers may reject them rather than silently rewrite.
+
 Report locations add `source_pointer` (original JSON pointer), `trajectory_id`, nullable
-`parent_trajectory_id`, nullable `atif_step_id` and nullable `turn_origin`. A turn derives only
+`parent_trajectory_id`, nullable `atif_step_id` and nullable `turn_origin`. Derived coordinates
+also carry `trajectory_id_origin="source_pointer_sha256"`; native locations omit it. A turn derives only
 from ordered user steps within that trajectory (`ordered_atif_user_step`); otherwise it is
 unknown. `event_index` remains the zero-based portable-record index. Traversal order across
 concurrent subagents does not establish causality.

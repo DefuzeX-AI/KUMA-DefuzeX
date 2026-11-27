@@ -6,7 +6,22 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
-## 0.5.3 candidate
+## 0.5.4 candidate
+
+This optional patch supports common ATIF 1.7 and 1.8 trajectory input, including
+absent/null standalone IDs and sessions. Embedded child IDs remain required and
+sibling-unique; shared sessions and repeated IDs under different parents are valid.
+When necessary, explicitly marked deterministic source coordinates disambiguate
+portable records without inventing recorded execution IDs. Original versions,
+metadata absence/null, references and source order are preserved. Recognized PII
+is redacted before the sanitized original fingerprint is computed.
+
+Existing explicit globally unique 1.8 coordinates remain unchanged. External
+references are not fetched and no Harbor runtime dependency or automatic Judge
+call is added. New formats/derived coordinates require compatible server support.
+This candidate is not evidence of publication or deployment.
+
+## 0.5.3
 
 This optional patch adds explicit `session.bind(callback)` to capture and observe
 for synchronous worker/executor/server callbacks. Every invocation gets its own
@@ -18,7 +33,7 @@ Final Judge message fitting remains a service responsibility, separate from
 upload limits. The SDK retains the public budget-omission gap and provides a
 plain-English notice without equating it with Agent failure. Only optional model
 bodies may be omitted from the private Judge view; mandatory content can still
-exceed the limit. This candidate note does not claim deployment or availability.
+exceed the limit. See the immutable 0.5.3 Release for published artifacts.
 No automatic paid retry or client-side estimate of private prompt overhead is added.
 
 ## 0.5.2

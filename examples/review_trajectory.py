@@ -39,7 +39,7 @@ def save_json(path: Path, value: dict) -> None:
 def upload_trace(workspace, source: dict, profile: dict) -> dict:
     """Submit one recognized recorded format without opening references or running an Agent."""
     schema = source.get("schema_version")
-    if schema == "ATIF-v1.8":
+    if schema in ("ATIF-v1.7", "ATIF-v1.8"):
         return workspace.upload_atif(source, profile)
     if schema == "kuma.trajectory_review_bundle.v1":
         return workspace.upload(prepare_submission(source, profile))
