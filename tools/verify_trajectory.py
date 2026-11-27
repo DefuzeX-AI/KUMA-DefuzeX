@@ -132,6 +132,33 @@ def backend(replies, *, parent=False):
 
 
 class TrajectoryProtocolTests(unittest.TestCase):
+    def test_historical_common_versions_and_future_rejection(self):
+        for minor in range(9):
+            source = {
+                "schema_version": f"ATIF-v1.{minor}",
+                "session_id": "",
+                "agent": {"name": "Synthetic", "version": "1"},
+                "steps": [{"step_id": 17, "source": "user", "message": "Recorded."}],
+            }
+            before = copy.deepcopy(source)
+            bundle = prepare_atif(profile()["objective"], source)
+            self.assertEqual(source, before)
+            self.assertEqual(
+                bundle["events"][0]["record"]["schema_version"],
+                source["schema_version"],
+            )
+            self.assertEqual(bundle["events"][0]["record"]["session_id"], "")
+            self.assertEqual(
+                bundle["events"][0]["trajectory_id_origin"], "source_pointer_sha256"
+            )
+            if minor < 7:
+                source.pop("session_id")
+                with self.assertRaises(ValidationError):
+                    prepare_atif(profile()["objective"], source)
+        source["schema_version"] = "ATIF-v1.9"
+        with self.assertRaises(ValidationError):
+            prepare_atif(profile()["objective"], source)
+
     def source(self):
         return json.loads((FIXTURES / "atif.json").read_text(encoding="utf-8"))
 

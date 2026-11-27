@@ -6,7 +6,21 @@ main before receiving its own immutable version tag and GitHub Release. This doc
 not evidence that the candidate has shipped. Never move an existing tag or append
 new functionality to an old release as a substitute for a new version.
 
-## 0.5.4 candidate
+## 0.5.5 candidate
+
+This optional patch preserves known ATIF 1.0 through 1.8 source versions and
+legacy session/reference semantics without migrating recorded facts. Future
+versions remain unsupported. It also distinguishes indexed model role metadata
+from actual content, preserving bounded Responses text and function proposals,
+including explicit empty/null values. Missing upstream observations remain
+unknown; no capture claims to discover invisible work or repair historical data.
+
+Compatible hosted services stop unsupported inline-image reviews before model
+work, rather than reporting a visual judgment from text. The old stopped wire
+remains readable; no new request flag, fee, or automatic retry is introduced.
+This candidate is not evidence of publication or deployment.
+
+## 0.5.4
 
 This optional patch supports common ATIF 1.7 and 1.8 trajectory input, including
 absent/null standalone IDs and sessions. Embedded child IDs remain required and

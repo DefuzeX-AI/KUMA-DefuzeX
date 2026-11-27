@@ -43,6 +43,26 @@ store_module = importlib.import_module("kuma.capture_store")
 wiring = importlib.import_module("kuma.capture_instrumentation")
 
 
+class ModelContentBoundaryTests(unittest.TestCase):
+    def test_indexed_metadata_is_not_a_body(self):
+        from kuma.evidence.trace_model_content import map_model_content
+
+        content, _, reasons = map_model_content(
+            {"llm.output_messages.0.message.role": "assistant"}
+        )
+        self.assertEqual(content["output"], {"status": "not_recorded"})
+        self.assertIn("trace_model_content_not_recorded", reasons)
+        for attributes in (
+            {"output.value": "null"},
+            {"gen_ai.output.messages": ""},
+            {"llm.output_messages.0.message.contents.0.message_content.text": ""},
+            {"llm.output_messages.0.tool_call.function.name": "lookup"},
+        ):
+            with self.subTest(attributes=attributes):
+                content, _, _ = map_model_content(attributes)
+                self.assertEqual(content["output"]["status"], "present")
+
+
 class CaptureBoundaryTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

@@ -343,8 +343,10 @@ class TrajectoryClient:
         """Upload existing ATIF without collecting or executing an Agent.
 
         Args:
-            document: ATIF 1.7/1.8 source JSON; original recorded metadata is preserved.
-                Optional root/session IDs remain absent or null. Missing root IDs or
+            document: ATIF 1.0..1.8 source JSON; original recorded metadata is preserved.
+                Versions before 1.7 require a recorded string session_id; references
+                remain inert and are never upgraded or resolved.
+                Optional root IDs and 1.7/1.8 sessions retain absence/null. Missing root IDs or
                 cross-scope repeated IDs use explicitly marked derived coordinates.
             requirements: Actual reviewed v1 requirements; unknown tools stay null.
             agent_version: Optional caller build label, at most 80 characters.

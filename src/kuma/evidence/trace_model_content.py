@@ -21,8 +21,13 @@ MODEL_STATES = frozenset(
     }
 )
 _MESSAGE = re.compile(
-    r"llm\.(input|output)_messages\.(0|[1-9][0-9]{0,2})\.message\."
-    r"(role|content|name|tool_call_id|function_call_name|function_call_arguments_json)"
+    r"llm\.(input|output)_messages\.(0|[1-9][0-9]{0,2})\."
+    r"(message\.(?:role|content|name|tool_call_id|function_call_name|"
+    r"function_call_arguments_json|"
+    r"contents\.(0|[1-9][0-9]{0,2})\.message_content\.(?:text|type)|"
+    r"tool_calls\.(0|[1-9][0-9]{0,2})\.tool_call\."
+    r"(?:id|function\.name|function\.arguments))|"
+    r"tool_call\.(?:id|function\.name|function\.arguments))"
 )
 
 
@@ -32,8 +37,9 @@ def model_source_keys(attributes: Mapping[str, Any]) -> set[str]:
     Args:
         attributes: Ended model-span attributes, already checked as a mapping.
     Returns:
-        Keys owned by model-content normalization. Unknown message extensions,
-        images, reasoning and arbitrary metadata remain allowlist exclusions.
+        Keys owned by model-content normalization, including indexed text and
+        function proposals from Responses/chat messages. Image URLs, encrypted
+        reasoning and unknown extensions remain exclusions; no URL is fetched.
     Security/Privacy:
         Only key names are examined. No value coercion, network or tool calls.
     """
@@ -69,23 +75,36 @@ def model_source_keys(attributes: Mapping[str, Any]) -> set[str]:
 def _source_value(attributes: Mapping[str, Any], direction: str) -> tuple[Any, str]:
     """Select native, generic or indexed recorded content in deterministic order.
 
-    Missing means unknown, not an empty model response. Indexed messages retain
-    their recorded indexes/fields rather than filling gaps or inventing roles.
+    Missing means unknown, not an empty model response. Indexed role/name/call
+    identifiers alone are structural metadata, not a recorded body. An explicit
+    content field (including null or empty text) or function proposal is content.
+    Native/generic values remain authoritative, including explicit null/empty.
+    Indexed messages retain recorded indexes rather than inventing roles.
     The finite graph/size/redaction boundary runs on the selected actual values.
     """
     for key in (f"gen_ai.{direction}.messages", f"{direction}.value"):
         if key in attributes:
             return attributes[key], "present"
     selected = {}
+    has_content = False
     for key in model_source_keys(attributes):
         match = _MESSAGE.fullmatch(key)
         if match and match[1] == direction:
-            if int(match[2]) >= 128:
+            if any(
+                int(index) >= 128
+                for index in (match[2], match[4], match[5])
+                if index is not None
+            ):
                 return None, "size_limit"
             selected[key] = attributes[key]
+            has_content |= match[3] in {
+                "message.content",
+                "message.function_call_name",
+                "message.function_call_arguments_json",
+            } or match[3].endswith((".text", ".function.name", ".function.arguments"))
     return (
         (dict(sorted(selected.items())), "present")
-        if selected
+        if has_content
         else (None, "not_recorded")
     )
 
