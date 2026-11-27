@@ -68,6 +68,7 @@ jobs:
       - run: python tools/verify_agent_integration_demo.py
       - run: python tools/verify_evidence_capacity.py
       - run: python tools/verify_executed_strategy_group.py
+      - run: python tools/verify_empty_workspace_context.py
       - run: python tools/verify_cli_atomic_output.py
       - run: python tools/verify_transport_failures.py
       - run: python tools/verify_judge_busy.py
@@ -98,6 +99,7 @@ jobs:
       - run: python tools/verify_agent_integration_demo.py
       - run: python tools/verify_evidence_capacity.py
       - run: python tools/verify_executed_strategy_group.py
+      - run: python tools/verify_empty_workspace_context.py
       - run: python tools/verify_cli_atomic_output.py
       - run: python tools/verify_transport_failures.py
       - run: python tools/verify_judge_busy.py
@@ -126,6 +128,7 @@ jobs:
       - run: python tools/verify_agent_integration_demo.py
       - run: python tools/verify_evidence_capacity.py
       - run: python tools/verify_executed_strategy_group.py
+      - run: python tools/verify_empty_workspace_context.py
       - run: python tools/verify_cli_atomic_output.py
       - run: python tools/verify_transport_failures.py
       - run: python tools/verify_judge_busy.py
