@@ -172,6 +172,17 @@ class TrajectoryProtocolTests(unittest.TestCase):
                 if explicit_null:
                     self.assertIsNone(record["session_id"])
 
+    def test_atif_empty_session_metadata_remains_recorded(self):
+        for version in ("ATIF-v1.7", "ATIF-v1.8"):
+            for session in ("", "   ", "\t\n", None):
+                original = self.source()
+                original.update(schema_version=version, session_id=session)
+                before = copy.deepcopy(original)
+                bundle = prepare_atif(profile()["objective"], original)
+                self.assertEqual(original, before)
+                self.assertEqual(bundle["events"][0]["record"]["session_id"], session)
+                self.assertNotIn("trajectory_id_origin", bundle["events"][0])
+
     def test_one_key_covers_upload_and_explicit_same_key_review_requests(self):
         capture = receipt("traces")
         reviewed = review_payload(capture["id"])

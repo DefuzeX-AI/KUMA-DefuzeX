@@ -148,7 +148,8 @@ def _node(node: Any, *, embedded: bool) -> None:
     """Validate one recorded node without inventing session or execution identity.
 
     The partitioner's layout pass supplies embedded=True only for actual children.
-    Optional IDs retain absence/null; explicit non-null IDs must be bounded text.
+    Optional IDs retain absence/null; trajectory IDs must be bounded nonblank text.
+    Session metadata retains any recorded string, including empty/whitespace text.
     Common 1.7/1.8 metadata and unique positive integer steps are required.
     Raises safe ValidationError on malformed source, with no mutation or I/O.
     """
@@ -164,7 +165,7 @@ def _node(node: Any, *, embedded: bool) -> None:
         raise ValidationError("ATIF trajectory ID is invalid or missing on a child")
     session = node.get("session_id")
     if not isinstance(node.get("agent"), dict) or (
-        session is not None and (not isinstance(session, str) or not session.strip())
+        session is not None and not isinstance(session, str)
     ):
         raise ValidationError("ATIF agent or optional session metadata is invalid")
     steps, children = node.get("steps"), node.get("subagent_trajectories")
