@@ -147,6 +147,42 @@ class TrajectoryProtocolTests(unittest.TestCase):
         self.assertEqual(bundle["events"][5]["trajectory_id"], "child-a")
         self.assertTrue(all("source_pointer" in event for event in bundle["events"]))
 
+    def test_atif_common_versions_preserve_optional_identity_states(self):
+        for version in ("ATIF-v1.7", "ATIF-v1.8"):
+            for explicit_null in (False, True):
+                original = self.source()
+                original["schema_version"] = version
+                for key in ("trajectory_id", "session_id"):
+                    if explicit_null:
+                        original[key] = None
+                    else:
+                        del original[key]
+                before = copy.deepcopy(original)
+                bundle = prepare_atif(profile()["objective"], original)
+                self.assertEqual(original, before)
+                self.assertEqual(bundle["events"][0]["source_format"], version)
+                self.assertTrue(
+                    all(
+                        event["trajectory_id_origin"] == "source_pointer_sha256"
+                        for event in bundle["events"]
+                    )
+                )
+                record = bundle["events"][0]["record"]
+                self.assertEqual("session_id" in record, explicit_null)
+                if explicit_null:
+                    self.assertIsNone(record["session_id"])
+
+    def test_atif_empty_session_metadata_remains_recorded(self):
+        for version in ("ATIF-v1.7", "ATIF-v1.8"):
+            for session in ("", "   ", "\t\n", None):
+                original = self.source()
+                original.update(schema_version=version, session_id=session)
+                before = copy.deepcopy(original)
+                bundle = prepare_atif(profile()["objective"], original)
+                self.assertEqual(original, before)
+                self.assertEqual(bundle["events"][0]["record"]["session_id"], session)
+                self.assertNotIn("trajectory_id_origin", bundle["events"][0])
+
     def test_one_key_covers_upload_and_explicit_same_key_review_requests(self):
         capture = receipt("traces")
         reviewed = review_payload(capture["id"])

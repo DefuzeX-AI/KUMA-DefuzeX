@@ -30,7 +30,7 @@ in seconds and does not change the parent client's timeout. Construction has no 
 review requests require an idempotency key and can consume the configured existing Judge fee.
 See [trajectory workspace](trajectory-platform.md) for complete requirements, capture/import,
 batch, feedback, comparison and export contracts. Hosted use requires compatible enabled services.
-Existing `ATIF-v1.8` JSON can be submitted with `TrajectoryClient.upload_atif(document,
+Existing `ATIF-v1.7` or `ATIF-v1.8` JSON can be submitted with `TrajectoryClient.upload_atif(document,
 requirements, agent_version=None, case_id=None, tags=None)` using the same Kuma credential.
 It performs one explicit upload; only a separate `evaluate` invokes Judge. The trajectory guide
 documents original source pointers, report v4 and exact delivery/segment coverage.
@@ -966,7 +966,7 @@ Upload existing ATIF without collecting or executing an Agent.
 
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
-| `document` | Mapping[str, Any] | Required | ATIF-v1.8 source JSON; original values and coordinates remain unchanged. |
+| `document` | Mapping[str, Any] | Required | ATIF 1.7/1.8 source JSON; recorded metadata is preserved. Optional root/session IDs remain absent or null. Missing root IDs or cross-scope repeated IDs use explicitly marked derived coordinates. |
 | `requirements` | Mapping[str, Any] | Required | Actual reviewed v1 requirements; unknown tools stay null. |
 | `agent_version` | str \| None | `None` | Optional caller build label, at most 80 characters. |
 | `case_id` | str \| None | `None` | Optional stable task identity, at most 128 characters. |
@@ -1130,13 +1130,13 @@ Bind a native-event bundle to a specific requirements revision for explicit subm
 
 ### atif_events
 
-Partition a finite ATIF 1.8 document into lossless, source-addressed records.
+Partition common ATIF 1.7/1.8 input into sanitized source-addressed records.
 
 <!-- api-parameters:atif_events:start -->
 
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
-| `document` | Mapping[str, Any] | Required | Caller-owned JSON trajectory with unique trajectory IDs, ordered steps and optional nested subagent_trajectories. Unknown fields and artifact references stay data. |
+| `document` | Mapping[str, Any] | Required | Caller-owned ATIF 1.7/1.8 JSON with optional root/session IDs, ordered steps and optional nested subagent_trajectories. Embedded child IDs must be nonempty and sibling-unique. Unknown fields and artifact references remain data. |
 
 <!-- api-parameters:atif_events:end -->
 
@@ -1155,7 +1155,7 @@ Prepare ATIF as a normal public review bundle with exact source coordinates.
 | Argument | Type | Required/default | What it does and when to use it |
 | --- | --- | --- | --- |
 | `task` | str | Required | Actual caller-provided task/review scope, 1..12000 characters; never inferred. |
-| `document` | Mapping[str, Any] | Required | ATIF-v1.8 source object, bounded by existing four-MiB/depth-32 preparation. |
+| `document` | Mapping[str, Any] | Required | ATIF 1.7/1.8 source object, bounded by existing four-MiB/depth-32 preparation. |
 | `sample` | str | `'trajectory'` | Nonblank review label up to 200 characters, default trajectory. |
 | `tools` | list[dict[str, Any]] \| None | `None` | Actual declared tools, None for unknown, empty list for explicitly no tools. |
 | `limitations` | list[str] \| tuple[str, ...] | `()` | Up to 32 caller-known capture limits. Format notes use remaining slots; Core independently preserves source-format and coordinate semantics. |
