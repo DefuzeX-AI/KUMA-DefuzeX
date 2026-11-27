@@ -241,7 +241,8 @@ def list_captures(
         storage_path: Original external parent or None for ~/.kuma-captures; must exist.
         limit: Integer 1..100, default 20; maximum summaries, not automatic pagination.
         redact_sensitive: Strict bool, default True. False explicitly retains original
-            bounded content for this operation only; existing redaction cannot be undone.
+            bounded content for this operation only; emits RawContentWarning first.
+            Existing redaction cannot be undone.
     Returns:
         List of metadata dicts sorted by file modification time then name, newest first.
         Each has capture_id, execution_status, capture_status, span_count, operation_counts

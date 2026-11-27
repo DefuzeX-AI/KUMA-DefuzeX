@@ -41,7 +41,8 @@ def classify_observation(
     Raises:
         ValidationError: Invalid, sensitive or oversized observation.
     Side Effects:
-        None; no collector, Agent, tool, network or filesystem operation.
+        Emits RawContentWarning when redact_sensitive=False; no collector, Agent,
+        tool, network or filesystem operation.
     """
     safe = local_observation(observation, redact_sensitive=redact_sensitive)
     spans = []
@@ -97,7 +98,8 @@ def prepare_observation(
     Raises:
         ValidationError: Invalid input, unsafe policies or complete review bundle above 4 MiB.
     Side Effects:
-        None; importing/preparing does not upload, evaluate, save or charge.
+        Emits RawContentWarning when redact_sensitive=False; preparation does not
+        upload, evaluate, save or charge.
     """
     safe = local_observation(observation, redact_sensitive=redact_sensitive)
     profile = validate_requirements(requirements, redact_sensitive=redact_sensitive)
@@ -156,7 +158,8 @@ def prepare_submission(
     Raises:
         ValidationError: Invalid/mismatched bundle, policy or observation ID; no network occurs.
     Side Effects:
-        None; owner/project identity and server credentials are never caller-controlled fields.
+        Emits RawContentWarning when redact_sensitive=False; no file I/O or network.
+        Owner/project identity and server credentials are never caller-controlled fields.
     """
     import json
 

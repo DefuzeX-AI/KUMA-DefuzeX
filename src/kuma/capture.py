@@ -119,7 +119,8 @@ class CaptureSession:
             requirements: Advanced v1 rules matching the task; mutually exclusive with tools.
             limits: TraceEvidenceLimits or None for observation defaults; at least 2048 bytes.
             redact_sensitive: Strict bool, default True. False explicitly retains original
-                bounded content for this operation only; existing redaction cannot be undone.
+                bounded content for this operation only; emits RawContentWarning first.
+                Existing redaction cannot be undone.
         Returns:
             Inactive CaptureSession with stable capture_id and persistence_status=not_saved.
         Raises:
@@ -292,7 +293,8 @@ class CaptureSession:
             ConfigurationError: Finalization has not produced a document; no synthetic
                 successful capture is returned.
         Side Effects:
-            None; reads only finalized in-memory state, with no I/O or upload.
+            Emits RawContentWarning when redact_sensitive=False; no file I/O or upload.
+            Reads only finalized in-memory state.
 
         Args:
             redact_sensitive: Strict bool, default True. False explicitly retains original
@@ -372,7 +374,8 @@ def capture(
         limits: TraceEvidenceLimits or None for existing observation limits. Omissions
             and zero capture remain visible; no hidden whole-field truncation.
         redact_sensitive: Strict bool, default True. False explicitly retains original
-            bounded content for this operation only; existing redaction cannot be undone.
+            bounded content for this operation only; emits RawContentWarning first.
+            Existing redaction cannot be undone.
     Returns:
         One-shot CaptureSession, supporting with/async with and stable capture_id.
     Raises:
@@ -416,7 +419,8 @@ def export_capture(
         repo_path: Existing original workspace path, default current directory.
         storage_path: Original disjoint external parent or None for ~/.kuma-captures.
         redact_sensitive: Strict bool, default True. False explicitly retains original
-            bounded content for this operation only; existing redaction cannot be undone.
+            bounded content for this operation only; emits RawContentWarning first.
+            Existing redaction cannot be undone.
     Returns:
         Absolute pathlib.Path of the atomically published task-bound JSON document.
     Raises:
@@ -516,7 +520,8 @@ def judge_capture(
             legacy media rejection and automatic keys. True enters automatic keys;
             explicit keys must retain their original mode when recovering a review.
         redact_sensitive: Strict bool, default True. False explicitly retains original
-            bounded content for this operation only; existing redaction cannot be undone.
+            bounded content for this operation only; emits RawContentWarning first.
+            Existing redaction cannot be undone.
     Returns:
         Validated completed/stopped public review, also durably retained locally.
     Raises:

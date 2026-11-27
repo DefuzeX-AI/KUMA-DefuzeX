@@ -149,7 +149,8 @@ def encode_review(bundle: Mapping[str, Any], *, redact_sensitive: bool = True) -
     Raises:
         ValidationError: Unsupported schema, fields or content. No raw value is echoed.
     Side Effects:
-        None; the caller owns file creation and any later submission authorization.
+        Emits RawContentWarning when redact_sensitive=False; no file I/O or network.
+        The caller owns file creation and any later submission authorization.
         This is a local preparation API, not a live hosted review endpoint.
     """
     allowed = {

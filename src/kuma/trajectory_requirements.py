@@ -156,7 +156,8 @@ def validate_requirements(
         ValidationError: Invalid/oversized shape or sensitive content requiring redaction.
             Requirements with redacted policies are rejected for user correction, not changed.
     Side Effects:
-        None; no model, network, files, credentials, tool/schema execution or scoring.
+        Emits RawContentWarning when redact_sensitive=False; no model, network,
+        files, credentials, tool/schema execution or scoring.
     """
     from .trajectory_privacy import checked_policy
 
@@ -219,7 +220,8 @@ def requirements_fingerprint(
     Raises:
         ValidationError: The same invalid/sensitive/size conditions as validation.
     Side Effects:
-        None; does not register or persist a revision.
+        Emits RawContentWarning when redact_sensitive=False; no file I/O or network,
+        and does not register or persist a revision.
     """
     return hashlib.sha256(
         _bytes(validate_requirements(value, redact_sensitive=redact_sensitive))

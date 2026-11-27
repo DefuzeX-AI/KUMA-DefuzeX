@@ -71,7 +71,8 @@ class ObservationSession:
 
         Args:
             redact_sensitive: Strict bool, default True. False explicitly retains original
-                bounded content for this operation only; existing redaction cannot be undone.
+                bounded content for this operation only; emits RawContentWarning first.
+                Existing redaction cannot be undone.
         """
         self._redact_sensitive = checked_policy(redact_sensitive)
         chosen = TraceEvidenceLimits() if limits is None else limits
@@ -274,7 +275,8 @@ class ObservationSession:
 
         Args:
             redact_sensitive: Strict bool, default True. False explicitly retains original
-                bounded content for this operation only; existing redaction cannot be undone.
+                bounded content for this operation only; emits RawContentWarning first.
+                Existing redaction cannot be undone.
         """
         with self._lock:
             if self._result is None:
@@ -330,7 +332,8 @@ class ObservationSession:
             root: Existing local directory authorizing writes. Links, mount escapes
                 and reparse paths fail closed; no repository scanning occurs.
             redact_sensitive: Strict bool, default True. False explicitly retains original
-                bounded content for this operation only; existing redaction cannot be undone.
+                bounded content for this operation only; emits RawContentWarning first.
+                Existing redaction cannot be undone.
         Returns:
             Absolute published path containing exactly ``export()`` as JSON.
         Raises:
@@ -371,7 +374,8 @@ def observe(
             at least 2048. Export additionally has a hard 5 MiB aggregate cap and
             10000 span cap; body/attribute/privacy limits remain enforced.
         redact_sensitive: Strict bool, default True. False explicitly retains original
-            bounded content for this operation only; existing redaction cannot be undone.
+            bounded content for this operation only; emits RawContentWarning first.
+            Existing redaction cannot be undone.
     Returns:
         One-shot ObservationSession supporting ``with`` and ``async with``.
     Raises:

@@ -183,7 +183,8 @@ class TrajectoryClient:
                 True permits text-and-structure review and scoped artifact reads; media
                 is not understood. Changing this option with a manual key conflicts.
             redact_sensitive: Strict bool, default True. False explicitly retains original
-                bounded content for this operation only; existing redaction cannot be undone.
+                bounded content for this operation only; emits RawContentWarning first.
+                Existing redaction cannot be undone.
         Returns:
             Detached user-owned result from kuma.trajectory_workspace.v1, with no automatic pagination.
         Raises:
@@ -249,7 +250,8 @@ class TrajectoryClient:
         Args:
             requirements: Complete v1 requirements mapping; validated locally before transport.
             redact_sensitive: Strict bool, default True. False explicitly retains original
-                bounded content for this operation only; existing redaction cannot be undone.
+                bounded content for this operation only; emits RawContentWarning first.
+                Existing redaction cannot be undone.
         Returns:
             Owned immutable requirements receipt with ID, hash and display summary.
         Raises:
@@ -284,7 +286,8 @@ class TrajectoryClient:
             accept_media_omission: Strict bool, default True to read scoped artifacts.
                 False retains legacy request semantics and rejects media-scoped reports.
             redact_sensitive: Strict bool, default True. False explicitly retains original
-                bounded content for this operation only; existing redaction cannot be undone.
+                bounded content for this operation only; emits RawContentWarning first.
+                Existing redaction cannot be undone.
         Returns:
             UTF-8 JSON bytes bound to the requested ID digest, at most 6 MiB uncompressed.
             Response identity, category, declared digest and decoded-byte hash must agree.
@@ -352,7 +355,8 @@ class TrajectoryClient:
             case_id: Optional stable caller test-case ID up to 128 characters; required for version matching.
             tags: Optional list of up to 32 labels of 1..120 characters, default empty.
             redact_sensitive: Strict bool, default True. False explicitly retains original
-                bounded content for this operation only; existing redaction cannot be undone.
+                bounded content for this operation only; emits RawContentWarning first.
+                Existing redaction cannot be undone.
         Returns:
             Owned trace document receipt; unchanged content reuses its content identity.
         Raises:
@@ -434,7 +438,8 @@ class TrajectoryClient:
             case_id: Optional stable task identity, at most 128 characters.
             tags: Optional list of at most 32 metadata labels, each 1..120 characters.
             redact_sensitive: Strict bool, default True. False explicitly retains original
-                bounded content for this operation only; existing redaction cannot be undone.
+                bounded content for this operation only; emits RawContentWarning first.
+                Existing redaction cannot be undone.
         Returns:
             Owned trace receipt from upload(); no model review is automatically requested.
         Raises:
@@ -487,7 +492,8 @@ class TrajectoryClient:
                 review while preserving the original trace and marking unreviewed media.
                 False keeps legacy media rejection. Reuse the original value on recovery.
             redact_sensitive: Strict bool, default True. False explicitly retains original
-                bounded content for this operation only; existing redaction cannot be undone.
+                bounded content for this operation only; emits RawContentWarning first.
+                Existing redaction cannot be undone.
         Returns:
             Completed report with blank human labels, or an explicit stopped artifact with reason.
         Raises:
@@ -533,7 +539,8 @@ class TrajectoryClient:
                 False retains legacy child keys. True binds the mode into generated child
                 keys; changing the mode requests separate reviews, not automatic recovery.
             redact_sensitive: Strict bool, default True. False explicitly retains original
-                bounded content for this operation only; existing redaction cannot be undone.
+                bounded content for this operation only; emits RawContentWarning first.
+                Existing redaction cannot be undone.
         Returns:
             Always a dict with exactly experiment, reviews and errors on normal return.
             experiment is a saved experiment receipt (dict), or None only when no review

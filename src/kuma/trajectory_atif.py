@@ -52,7 +52,8 @@ def atif_events(
     Raises:
         ValidationError: Invalid, oversized, nonfinite/deep, sensitive or ambiguous source.
     Side Effects:
-        None. No file/URL resolution, imports of Agent code, network or model calls.
+        Emits RawContentWarning when redact_sensitive=False. No file/URL resolution,
+        imports of Agent code, network or model calls.
     """
     if not isinstance(document, Mapping):
         raise ValidationError("ATIF document must be an object")
