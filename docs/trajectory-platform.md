@@ -1,5 +1,25 @@
 # Agent execution review workspace
 
+## Delete an owned trace
+
+Use the existing workspace request method with the exact ID returned by upload:
+
+```python
+workspace = client.trajectory()
+result = workspace.request("traces.delete", {"id": trace["id"]})
+print(result["deleted"])  # True when removed; False if already absent for this owner.
+```
+
+This write requires `sdk:observe` for an API key (or the existing workspace write
+permission for JWT). Only the selected owned trace is deleted and its storage
+quota reclaimed. Reports, dataset snapshots and experiment snapshots are not
+cascade-deleted; already-started Judge work is not cancelled. Later trace reads
+and new Judge requests return not-found. Foreign-owner or wrong-kind IDs return
+404 from the service. The SDK rejects malformed/wrong-kind input locally.
+Deleting raw traces does not require `redact_sensitive=False`: no source content
+is returned. The closed result is exactly `{id, deleted}`, with the same requested
+ID and a Boolean. No automatic retry or new convenience API is introduced.
+
 If workspace storage is full, Judge may return HTTP 507 as `ServiceError` with
 code `workspace_storage_exceeded`, `retryable=False`, and the message
 "Workspace storage is full. Contact support before running Judge again."

@@ -47,6 +47,7 @@ WRITE_ACTIONS = frozenset(
     {
         "requirements.save",
         "traces.import",
+        "traces.delete",
         "datasets.create",
         "experiments.create",
         "feedback.submit",
@@ -177,6 +178,7 @@ class TrajectoryClient:
         Args:
             action: Exact supported workspace action; see docs/trajectory-platform.md.
             data: Action-specific finite JSON fields; no owner, provider URL or credentials.
+                traces.delete accepts only id, an owned trace coordinate; no source body.
             idempotency_key: Required for reviews.run, 8..200 ASCII letters/digits/._:-.
                 Reuse unchanged to recover the same logical paid review; never reuse with new input.
             accept_media_omission: Strict bool, default False for legacy raw requests.
@@ -194,6 +196,7 @@ class TrajectoryClient:
         Side Effects:
             One authenticated public Backend POST, no retries. reviews.run may consume the existing
             Judge fee only after completion; imports, storage, labels and reads never invoke Judge.
+            traces.delete removes only the selected trace, not dependent snapshots or active work.
             A timeout is an unknown server outcome; retry explicitly with the same key, not a new key.
         """
         if not isinstance(action, str) or action not in READ_ACTIONS | WRITE_ACTIONS | {
@@ -203,6 +206,12 @@ class TrajectoryClient:
         if type(accept_media_omission) is not bool:
             raise ValidationError("accept_media_omission must be a boolean")
         safe = _safe(data, redact_sensitive=redact_sensitive)
+        if action == "traces.delete" and (
+            set(safe) != {"id"}
+            or not isinstance(safe.get("id"), str)
+            or re.fullmatch(r"[0-9a-f]{64}\.traces\.[0-9a-f]{64}", safe["id"]) is None
+        ):
+            raise ValidationError("Trace deletion requires one valid trace ID")
         if action == "reviews.run":
             _review_input(safe)
         if (action == "reviews.run" or idempotency_key is not None) and (
