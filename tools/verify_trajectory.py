@@ -224,6 +224,100 @@ def backend(replies, *, parent=False):
 
 
 class TrajectoryProtocolTests(unittest.TestCase):
+    def test_owned_trace_delete_uses_write_route_and_closed_bound_result(self):
+        identity = "a" * 64 + ".traces." + "b" * 64
+        with backend(
+            [{"id": identity, "deleted": True}, {"id": identity, "deleted": False}]
+        ) as (client, calls):
+            for deleted in (True, False):
+                self.assertEqual(
+                    client.request("traces.delete", {"id": identity}),
+                    {"id": identity, "deleted": deleted},
+                )
+            self.assertEqual(len(calls), 2)
+            for call in calls:
+                self.assertTrue(call["path"].endswith("/sdk/trajectory/write/"))
+                self.assertEqual(
+                    call["data"], {"action": "traces.delete", "data": {"id": identity}}
+                )
+        from kuma.trajectory_wire import validate_response
+
+        for result in (
+            {"id": identity, "deleted": 1},
+            {"id": identity, "deleted": None},
+            {"id": identity, "deleted": "true"},
+            {"id": identity},
+            {"id": identity, "deleted": True, "private_prompt": "synthetic"},
+            {"id": "c" * 64 + ".traces." + "b" * 64, "deleted": True},
+            {"id": identity.replace("traces", "reviews"), "deleted": True},
+        ):
+            with self.subTest(result=result), self.assertRaises(ProviderError):
+                validate_response(
+                    {
+                        "schema_version": "kuma.trajectory_workspace.v1",
+                        "result": result,
+                    },
+                    "traces.delete",
+                    {"id": identity},
+                )
+
+    def test_trace_delete_invalid_input_and_failure_never_repeat_transport(self):
+        from urllib.error import HTTPError
+
+        from kuma.errors import KumaError, ServiceError
+
+        identity = "a" * 64 + ".traces." + "b" * 64
+        with backend([]) as (client, calls):
+            for data in (
+                {},
+                {"id": None},
+                {"id": "bad"},
+                {"id": identity, "extra": True},
+                {"id": identity.replace("traces", "reviews")},
+            ):
+                with self.subTest(data=data), self.assertRaises(ValidationError):
+                    client.request("traces.delete", data)
+            self.assertEqual(calls, [])
+            error = ServiceError(
+                "The service is unavailable", code="network_error", retryable=True
+            )
+            with patch.object(client._backend, "json", side_effect=error) as transport:
+                with self.assertRaises(ServiceError) as caught:
+                    client.request("traces.delete", {"id": identity})
+                self.assertIs(caught.exception, error)
+                transport.assert_called_once()
+            for status, code in (
+                (404, "resource_not_found"),
+                (507, "workspace_storage_exceeded"),
+            ):
+                wire = json.dumps(
+                    {
+                        "error": {
+                            "code": code,
+                            "message": "private synthetic text",
+                            "retryable": False,
+                        }
+                    }
+                ).encode()
+                remote = HTTPError(
+                    "https://example.invalid/",
+                    status,
+                    "synthetic",
+                    {},
+                    io.BytesIO(wire),
+                )
+                with (
+                    patch(
+                        "kuma.transport.backend.urlopen", side_effect=remote
+                    ) as opened,
+                    self.assertRaises(KumaError) as caught,
+                ):
+                    client.request("traces.delete", {"id": identity})
+                self.assertEqual(caught.exception.code, code)
+                self.assertFalse(caught.exception.retryable)
+                self.assertNotIn("private synthetic text", str(caught.exception))
+                opened.assert_called_once()
+
     def test_media_mode_wire_and_scoped_run_get_export(self):
         trace_id = receipt("traces")["id"]
         legacy, scoped = review_payload(trace_id), media_review_payload(trace_id)

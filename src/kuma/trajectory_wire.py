@@ -208,11 +208,19 @@ def _result(
 ) -> None:
     """Validate action-specific closed result envelopes before application code sees them.
 
+    Deletion acknowledges only the requested trace ID and a strict Boolean; it
+    returns no source body and grants no raw-content read capability.
+
     Args:
         redact_sensitive: Strict bool, default True. False explicitly retains original
             bounded content for this operation only; existing redaction cannot be undone.
     """
     kind, operation = action.split(".")
+    if action == "traces.delete":
+        _require(set(result) == {"id", "deleted"})
+        export_digest(result["id"], "traces")
+        _require(result["id"] == data["id"] and type(result["deleted"]) is bool)
+        return
     _privacy_result(result, redact_sensitive=redact_sensitive)
     if kind in {"reviews", "experiments", "feedback"}:
         _scoped_result(result, kind, accept_media_omission=accept_media_omission)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from contextlib import contextmanager
 from email.message import Message
@@ -43,6 +44,66 @@ def _client(*, retries: int = 0) -> BackendClient:
 
 
 class TransportFailureTests(unittest.TestCase):
+    @patch("kuma.transport.backend.schedule_update_check")
+    @patch("kuma.transport.backend.time.sleep")
+    def test_workspace_storage_error_is_safe_and_never_automatically_retried(
+        self, sleep, _update
+    ):
+        for retryable in (False, True):
+            with self.subTest(retryable=retryable):
+                wire = json.dumps(
+                    {
+                        "error": {
+                            "code": "workspace_storage_exceeded",
+                            "message": "SECRET /private/host/path",
+                            "retryable": retryable,
+                        }
+                    }
+                ).encode()
+                error = HTTPError(
+                    "https://example.test/sdk/trajectory/",
+                    507,
+                    "private storage diagnostics",
+                    {"X-Request-ID": "a" * 32},
+                    BytesIO(wire),
+                )
+                with (
+                    patch(
+                        "kuma.transport.backend.urlopen", side_effect=error
+                    ) as opened,
+                    self.assertRaises(ServiceError) as caught,
+                ):
+                    _client(retries=3).json(
+                        "POST", "/sdk/trajectory/", {}, idempotency_key="same-key"
+                    )
+                self.assertIs(type(caught.exception), ServiceError)
+                self.assertEqual(caught.exception.code, "workspace_storage_exceeded")
+                self.assertEqual(
+                    str(caught.exception),
+                    "Workspace storage is full. Contact support before running Judge again.",
+                )
+                self.assertIs(caught.exception.retryable, retryable)
+                self.assertEqual(caught.exception.request_id, "a" * 32)
+                self.assertEqual(dict(caught.exception.details), {})
+                opened.assert_called_once()
+                sleep.assert_not_called()
+
+    def test_storage_mapping_does_not_change_legacy_or_unknown_errors(self):
+        from kuma.transport.backend import mapped_error
+
+        for code, message in (
+            (
+                "capacity_exceeded",
+                "Processing capacity is currently exhausted. Please try again later.",
+            ),
+            ("future_capacity_code", "The KUMA service request failed."),
+        ):
+            error = mapped_error(code, status=507, retryable=True, message="SECRET")
+            self.assertIs(type(error), ServiceError)
+            self.assertEqual(error.code, code)
+            self.assertTrue(error.retryable)
+            self.assertEqual(str(error), message)
+
     @patch("kuma.transport.backend.schedule_update_check")
     @patch("kuma.transport.backend.urlopen", return_value=_Response(broken=True))
     def test_interrupted_success_body_is_stable_error(self, *_mocks) -> None:
