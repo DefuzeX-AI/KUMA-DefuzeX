@@ -9,6 +9,7 @@ from typing import Any
 
 from .errors import ValidationError
 from .evidence.trace_tool_content import normalize_tool_content
+from .trajectory_privacy import LOCAL_WARNING, privacy_operation
 
 VERSION = "kuma.trajectory_requirements.v1"
 _FIELDS = {
@@ -137,22 +138,33 @@ def _tools(items: Any) -> None:
         _text(item["availability"], 1500)
 
 
-def validate_requirements(value: Mapping[str, Any]) -> dict[str, Any]:
+@privacy_operation(LOCAL_WARNING)
+def validate_requirements(
+    value: Mapping[str, Any], *, redact_sensitive: bool = True
+) -> dict[str, Any]:
     """Validate and detach a reviewed requirements document without changing caller policies.
 
     Args:
         value: Exact v1 template shape. Required nonblank name/version/objective and 1..16
             success criteria; task_type may be empty (unclassified); unknown tools/reference
             and each unknown budget are null. See docs/trajectory-platform.md for every field.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     Returns:
         Detached finite JSON, at most 256 KiB and depth 32, preserving user-declared policies.
     Raises:
         ValidationError: Invalid/oversized shape or sensitive content requiring redaction.
             Requirements with redacted policies are rejected for user correction, not changed.
     Side Effects:
-        None; no model, network, files, credentials, tool/schema execution or scoring.
+        Emits RawContentWarning when redact_sensitive=False; no model, network,
+        files, credentials, tool/schema execution or scoring.
     """
-    safe, status = normalize_tool_content(value, redact=True)
+    from .trajectory_privacy import checked_policy
+
+    checked_policy(redact_sensitive)
+    safe, status = normalize_tool_content(
+        value, redact=True, _redact_sensitive=redact_sensitive
+    )
     if status != "present":
         raise ValidationError("Requirements must be corrected before use")
     _object(safe, _FIELDS)
@@ -193,16 +205,24 @@ def _bytes(value: dict) -> bytes:
     ).encode("utf-8")
 
 
-def requirements_fingerprint(value: Mapping[str, Any]) -> str:
+@privacy_operation(LOCAL_WARNING)
+def requirements_fingerprint(
+    value: Mapping[str, Any], *, redact_sensitive: bool = True
+) -> str:
     """Return SHA-256 of canonical validated requirements; edits produce a different revision.
 
     Args:
         value: Reviewed requirements accepted by validate_requirements.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     Returns:
         Lowercase 64-character content identity, not proof of truth or authority.
     Raises:
         ValidationError: The same invalid/sensitive/size conditions as validation.
     Side Effects:
-        None; does not register or persist a revision.
+        Emits RawContentWarning when redact_sensitive=False; no file I/O or network,
+        and does not register or persist a revision.
     """
-    return hashlib.sha256(_bytes(validate_requirements(value))).hexdigest()
+    return hashlib.sha256(
+        _bytes(validate_requirements(value, redact_sensitive=redact_sensitive))
+    ).hexdigest()

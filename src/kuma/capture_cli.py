@@ -12,11 +12,17 @@ from .capture_store import list_captures, output_target
 from .client import DEFAULT_BASE_URL, KumaClient
 from .errors import ValidationError
 from .repository.case_artifact_io import _unique_object
+from .trajectory_privacy import REMOTE_WARNING, privacy_operation
 from .trajectory_requirements import validate_requirements
 
 
-def _rules(path: str | None) -> dict | None:
-    """Read only an explicitly selected bounded optional advanced profile, before any HTTP."""
+def _rules(path: str | None, *, redact_sensitive: bool = True) -> dict | None:
+    """Read only an explicitly selected bounded optional advanced profile, before any HTTP.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
     if path is None:
         return None
     failed = False
@@ -32,13 +38,16 @@ def _rules(path: str | None) -> dict | None:
         raise ValidationError(
             "Advanced requirements must be bounded readable UTF-8 JSON"
         )
-    return validate_requirements(data)
+    return validate_requirements(data, redact_sensitive=redact_sensitive)
 
 
 def cmd_capture_list(args: argparse.Namespace) -> int:
     """Print local metadata only; never upload or expose recorded task/tool bodies."""
     result = list_captures(
-        repo_path=args.repo_path, storage_path=args.storage_path, limit=args.limit
+        repo_path=args.repo_path,
+        storage_path=args.storage_path,
+        limit=args.limit,
+        redact_sensitive=not getattr(args, "no_redact_sensitive", False),
     )
     print(json.dumps(result, ensure_ascii=True, indent=2))
     return 0
@@ -51,12 +60,23 @@ def cmd_capture_export(args: argparse.Namespace) -> int:
         args.output,
         repo_path=args.repo_path,
         storage_path=args.storage_path,
+        redact_sensitive=not getattr(args, "no_redact_sensitive", False),
     )
     print(json.dumps({"capture_id": args.capture_id, "exported": True}))
     return 0
 
 
 def cmd_capture_judge(args: argparse.Namespace) -> int:
+    """Select explicit CLI privacy policy before reading rules or reserving output."""
+    return _judge(
+        args, redact_sensitive=not getattr(args, "no_redact_sensitive", False)
+    )
+
+
+@privacy_operation(
+    REMOTE_WARNING + " The returned review is saved locally as plaintext."
+)
+def _judge(args: argparse.Namespace, *, redact_sensitive: bool) -> int:
     """Preflight local output/rules, explicitly Judge, retain result, then publish output.
 
     Auth uses only the ordinary Kuma credential. The stable default request identity
@@ -64,7 +84,7 @@ def cmd_capture_judge(args: argparse.Namespace) -> int:
     a successful task verdict. Any later publication failure retains the reviewed
     response in capture storage and can recover with identical capture/key.
     """
-    requirements = _rules(args.requirements)
+    requirements = _rules(args.requirements, redact_sensitive=redact_sensitive)
     with output_target(args.output) as publish:
         result = judge_capture(
             args.capture_id,
@@ -78,6 +98,7 @@ def cmd_capture_judge(args: argparse.Namespace) -> int:
             requirements=requirements,
             idempotency_key=args.idempotency_key,
             accept_media_omission=not args.reject_media,
+            redact_sensitive=redact_sensitive,
         )
         publish(result)
     scope = result.get("coverage", {}).get("media_omission")
@@ -136,6 +157,11 @@ def add_capture_parser(subparsers: Any) -> None:
     judged.add_argument("--timeout", type=float, default=180)
     judged.set_defaults(func=cmd_capture_judge)
     for command in (listed, exported, judged):
+        command.add_argument(
+            "--no-redact-sensitive",
+            action="store_true",
+            help="explicitly allow original content for this operation; warns before raw storage or upload",
+        )
         command.add_argument(
             "--repo-path", default=".", help="original Agent workspace"
         )

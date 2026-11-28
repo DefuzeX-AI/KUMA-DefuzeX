@@ -10,6 +10,7 @@ from typing import Any
 from ._json_values import detach_json
 from .errors import ProviderError
 from .repository.case_artifact_io import _unique_object
+from .repository.privacy import scan_sensitive_json
 from .trajectory_media import validate_media_assessment, validate_media_coverage
 
 
@@ -198,10 +199,21 @@ def _coverage(
 
 
 def _result(
-    result: dict, action: str, data: dict, *, accept_media_omission: bool = False
+    result: dict,
+    action: str,
+    data: dict,
+    *,
+    accept_media_omission: bool = False,
+    redact_sensitive: bool = True,
 ) -> None:
-    """Validate action-specific closed result envelopes before application code sees them."""
+    """Validate action-specific closed result envelopes before application code sees them.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
     kind, operation = action.split(".")
+    _privacy_result(result, redact_sensitive=redact_sensitive)
     if kind in {"reviews", "experiments", "feedback"}:
         _scoped_result(result, kind, accept_media_omission=accept_media_omission)
     if operation == "list":
@@ -251,6 +263,7 @@ def _result(
                 "normal_retries_are_penalties",
             }
             | ({"contains_media_omission"} if scoped else set())
+            | ({"content_privacy"} if "content_privacy" in result else set())
         )
         _require(
             result["schema_version"] == "kuma.trajectory_comparison.v1"
@@ -273,7 +286,41 @@ def _result(
         _require(hashlib.sha256(encoded).hexdigest() == result["content_sha256"])
     elif action == "reviews.run":
         fields |= _review(result, data, accept_media_omission=accept_media_omission)
+        if "content_privacy" in result:
+            fields.add("content_privacy")
     _require(set(result) == fields)
+
+
+def _privacy_result(result: dict, *, redact_sensitive: bool) -> None:
+    """Gate only server wrapper markers; user source text never grants permission.
+
+    Receipt-only writes/pages expose a safe summary marker. Full stored reads
+    and flattened run responses must agree on raw lineage in both positions.
+    Existing get validation separately binds payload bytes to the document hash.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
+    records = result.get("items", [result])
+    for record in records:
+        summary = record.get("summary", {})
+        _require(not scan_sensitive_json(summary, location="trajectory_summary"))
+        payload = record.get("payload", record)
+        marked = "content_privacy" in summary
+        body_marked = "content_privacy" in payload
+        if ("payload" in record or "review_status" in record) and scan_sensitive_json(
+            payload, location="trajectory_payload"
+        ):
+            _require(marked and body_marked and not redact_sensitive)
+        if marked or body_marked:
+            _require(not redact_sensitive)
+            if marked:
+                _require(summary["content_privacy"] == "raw")
+            if body_marked:
+                _require(payload["content_privacy"] == "raw")
+            if "payload" in record or "review_status" in record:
+                _require(marked == body_marked)
 
 
 def _scoped_result(result: dict, kind: str, *, accept_media_omission: bool) -> None:
@@ -346,23 +393,31 @@ def _scoped_review(result: dict, payload: dict, *, accept_media_omission: bool) 
 
 
 def validate_export_scope(
-    raw: bytes, kind: str, *, accept_media_omission: bool
+    raw: bytes, kind: str, *, accept_media_omission: bool, redact_sensitive: bool = True
 ) -> None:
     """Validate report-dependent decoded exports after digest verification without rewriting bytes.
 
-    Original trace/data exports stay opaque and byte-exact. Report-dependent exports
-    must be finite JSON artifacts with explicit opted-in scope; safe failures expose
-    no payload or decoder detail. No external references are followed.
+    All workspace exports remain byte-exact but must be finite, unique-key JSON
+    objects so their reserved privacy marker cannot be hidden from the reader.
+    Report-dependent exports additionally require explicit opted-in media scope.
+    Safe failures expose no payload/decoder detail; no external references are followed.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     """
-    if kind not in {"reviews", "experiments", "feedback"}:
-        return
     failed = False
     try:
         payload = detach_json(json.loads(raw, object_pairs_hook=_unique_object))
         _require(isinstance(payload, dict))
-        _scoped_result(
-            {"payload": payload}, kind, accept_media_omission=accept_media_omission
-        )
+        if "content_privacy" in payload:
+            _require(not redact_sensitive and payload["content_privacy"] == "raw")
+        if scan_sensitive_json(payload, location="trajectory_export"):
+            _require(not redact_sensitive and payload.get("content_privacy") == "raw")
+        if kind in {"reviews", "experiments", "feedback"}:
+            _scoped_result(
+                {"payload": payload}, kind, accept_media_omission=accept_media_omission
+            )
     except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
         failed = True
     if failed:
@@ -375,6 +430,7 @@ def validate_response(
     data: dict[str, Any],
     *,
     accept_media_omission: bool = False,
+    redact_sensitive: bool = True,
 ) -> dict[str, Any]:
     """Return a detached caller-owned result after shape, identity and revision checks.
 
@@ -384,6 +440,8 @@ def validate_response(
         data: The same admitted action input, used for response identity binding.
         accept_media_omission: Strict capability from the original request, default False.
             True permits closed text-and-structure coverage, never media understanding.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     Returns:
         Public result mapping; metadata pages contain no source bodies. Details bind their payload hash.
     Raises:
@@ -399,8 +457,14 @@ def validate_response(
             and isinstance(value["result"], dict)
         )
         result = value["result"]
-        _require(type(accept_media_omission) is bool)
-        _result(result, action, data, accept_media_omission=accept_media_omission)
+        _require(type(accept_media_omission) is bool and type(redact_sensitive) is bool)
+        _result(
+            result,
+            action,
+            data,
+            accept_media_omission=accept_media_omission,
+            redact_sensitive=redact_sensitive,
+        )
     except (ValueError, TypeError, KeyError, AttributeError):
         failed = True
     if failed:

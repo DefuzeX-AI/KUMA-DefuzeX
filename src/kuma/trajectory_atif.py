@@ -11,6 +11,7 @@ from .capture_privacy import redact_capture_json
 from .errors import ValidationError
 from .evidence.trace_tool_content import normalize_tool_content
 from .trajectory import prepare_review
+from .trajectory_privacy import LOCAL_WARNING, privacy_operation
 
 ATIF_VERSIONS = tuple(f"ATIF-v1.{minor}" for minor in range(9))
 
@@ -28,7 +29,10 @@ def _digest(value: Any) -> str:
     ).hexdigest()
 
 
-def atif_events(document: Mapping[str, Any]) -> list[dict[str, Any]]:
+@privacy_operation(LOCAL_WARNING)
+def atif_events(
+    document: Mapping[str, Any], *, redact_sensitive: bool = True
+) -> list[dict[str, Any]]:
     """Partition known ATIF 1.0..1.8 input into sanitized source-addressed records.
 
     Args:
@@ -37,6 +41,8 @@ def atif_events(document: Mapping[str, Any]) -> list[dict[str, Any]]:
             child IDs must be nonempty and unique within their parent's list.
             Versions 1.0..1.6 require recorded string session_id; 1.7/1.8 also
             permit absence/null. Legacy session-only references remain inert data.
+        redact_sensitive: Strict bool, default True. False retains original recorded
+            values after warning; source hashes bind exactly that representation.
     Returns:
         Detached event list preserving every source field. JSON pointers address original nodes;
         event order is source traversal, not invented global execution chronology. User-step
@@ -46,14 +52,18 @@ def atif_events(document: Mapping[str, Any]) -> list[dict[str, Any]]:
     Raises:
         ValidationError: Invalid, oversized, nonfinite/deep, sensitive or ambiguous source.
     Side Effects:
-        None. No file/URL resolution, imports of Agent code, network or model calls.
+        Emits RawContentWarning when redact_sensitive=False. No file/URL resolution,
+        imports of Agent code, network or model calls.
     """
     if not isinstance(document, Mapping):
         raise ValidationError("ATIF document must be an object")
-    clean, status = normalize_tool_content(dict(document), redact=True)
+    clean, status = normalize_tool_content(
+        dict(document), redact=True, _redact_sensitive=redact_sensitive
+    )
     if status not in {"present", "redacted"} or not isinstance(clean, dict):
         raise ValidationError("ATIF source cannot be safely prepared")
-    clean, _ = redact_capture_json(clean)
+    if redact_sensitive:
+        clean, _ = redact_capture_json(clean)
     digest = _digest(clean)
     layout, derived = _layout(clean)
     coordinates = {
@@ -201,6 +211,7 @@ def _node(node: Any, *, embedded: bool) -> None:
         ids.add(step["step_id"])
 
 
+@privacy_operation(LOCAL_WARNING)
 def prepare_atif(
     task: str,
     document: Mapping[str, Any],
@@ -208,6 +219,7 @@ def prepare_atif(
     sample: str = "trajectory",
     tools: list[dict[str, Any]] | None = None,
     limitations: list[str] | tuple[str, ...] = (),
+    redact_sensitive: bool = True,
 ) -> dict[str, Any]:
     """Prepare ATIF as a normal public review bundle with exact source coordinates.
 
@@ -219,17 +231,21 @@ def prepare_atif(
         tools: Actual declared tools, None for unknown, empty list for explicitly no tools.
         limitations: Up to 32 caller-known capture limits. Format notes use remaining slots;
             Core independently preserves source-format and coordinate semantics.
+        redact_sensitive: Strict bool, default True. False retains raw bounded source
+            after warning, without recovering previously redacted content.
     Returns:
         Existing v1 bundle usable with prepare_submission/upload, retaining redaction status.
-        Source hash covers the sanitized original document, not unavailable raw private bytes.
+        Source hash covers the actual selected source representation: sanitized by
+        default, original bounded JSON only under explicit raw opt-out.
     Raises:
         ValidationError: Unsafe/invalid source, policy or existing bundle size limits exceeded.
     Side Effects:
-        None; references and scripts are never opened, fetched or executed. Caller owns submission.
+        Raw opt-out warns before preparation; references and scripts are never
+        opened, fetched or executed. The caller owns any later submission.
     """
     if not isinstance(limitations, (list, tuple)) or len(limitations) > 32:
         raise ValidationError("ATIF preparation accepts at most 32 caller limitations")
-    events = atif_events(document)
+    events = atif_events(document, redact_sensitive=redact_sensitive)
     notes = [
         "ATIF record order is source traversal; timestamps do not imply cross-Agent causality.",
         "External artifact references are preserved, never automatically resolved or executed.",
@@ -240,9 +256,13 @@ def prepare_atif(
         sample=sample,
         tools=tools,
         limitations=[*limitations, *notes[: 32 - len(limitations)]],
+        redact_sensitive=redact_sensitive,
     )
-    clean, _ = normalize_tool_content(dict(document), redact=True)
-    clean, _ = redact_capture_json(clean)
+    clean, _ = normalize_tool_content(
+        dict(document), redact=True, _redact_sensitive=redact_sensitive
+    )
+    if redact_sensitive:
+        clean, _ = redact_capture_json(clean)
     if clean != dict(document):
         result["content_status"] = "redacted"
     return result

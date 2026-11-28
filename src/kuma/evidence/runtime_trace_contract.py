@@ -99,8 +99,13 @@ def _attributes(value: Any, *, resource: bool = False, tool: bool = False) -> No
                 _require(tool and isinstance(child, str))
 
 
-def _span(value: Any) -> None:
-    """Validate normalized span identity, timing, real links and tool field states."""
+def _span(value: Any, *, redact_sensitive: bool = True) -> None:
+    """Validate normalized span identity, timing, real links and tool field states.
+
+    Args:
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
+    """
     _require(isinstance(value, Mapping))
     tool = (
         isinstance(value.get("attributes"), Mapping)
@@ -118,7 +123,9 @@ def _span(value: Any) -> None:
     )
     if "model_content" in value:
         _require(value["attributes"].get("gen_ai.operation.name") in MODEL_OPERATIONS)
-        validate_model_content(value["model_content"])
+        validate_model_content(
+            value["model_content"], redact_sensitive=redact_sensitive
+        )
     _require(_identifier(value["trace_id"], 32) and _identifier(value["span_id"], 16))
     parent = value["parent_span_id"]
     _require(parent is None or (_identifier(parent, 16) and parent != value["span_id"]))

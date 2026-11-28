@@ -109,7 +109,7 @@ def metadata(value: Mapping[str, Any]) -> None:
     _require(type(value["sdk_version"]) is str and 1 <= len(value["sdk_version"]) <= 32)
 
 
-def export(value: Any) -> dict[str, Any]:
+def export(value: Any, *, _redact_sensitive: bool = True) -> dict[str, Any]:
     """Validate a detached local export for explicit upload or private detail.
 
     Reuses ended-span/capture/topology/model/tool rules without inventing Case,
@@ -144,7 +144,7 @@ def export(value: Any) -> dict[str, Any]:
     _require(isinstance(spans, list) and len(spans) <= 10_000)
     identities = set()
     for span in spans:
-        _span(span)
+        _span(span, redact_sensitive=_redact_sensitive)
         identity = (span["trace_id"], span["span_id"])
         _require(identity not in identities)
         identities.add(identity)

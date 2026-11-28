@@ -59,7 +59,7 @@ with capture(task, framework="langgraph") as recorded:
 print(recorded.capture_id)
 ```
 
-KUMA automatically saves redacted data outside the workspace. In another process:
+KUMA automatically saves redacted data outside the workspace by default. In another process:
 
 ```sh
 python -m kuma captures export cap_REPLACE_WITH_PRINTED_ID --output capture.json
@@ -70,6 +70,10 @@ Only explicit Judge needs `KUMA_API_KEY` and can settle the existing Judge fee.
 No hand-built ATIF or requirements file is needed for this flow. Preserve the same
 capture/rules/key after timeout. See the [capture guide](https://github.com/DefuzeX-AI/KUMA-DefuzeX/blob/main/docs/capture-lifecycle.md)
 for installation, supported integrations, task/tool rules, storage and honest gaps.
+
+KUMA 0.7.0 also supports explicit per-operation original-content retention after a
+warning. Read the [privacy and persistence boundary](docs/capture-lifecycle.md#explicit-original-content)
+before using `redact_sensitive=False`; previously redacted data cannot be recovered.
 
 ## Trajectory Judge: one Kuma Key
 

@@ -16,7 +16,9 @@ from unittest.mock import patch
 from kuma import capture
 
 
-def run_sample(framework: str, repo_path: str, storage_path: str) -> dict:
+def run_sample(
+    framework: str, repo_path: str, storage_path: str, *, redact_sensitive: bool = True
+) -> dict:
     """Capture actual model/tool callbacks without constructing synthetic OTel spans."""
     path = Path(__file__).with_name("instrumented_observation.py")
     spec = importlib.util.spec_from_file_location("offline_capture_calls", path)
@@ -37,10 +39,11 @@ def run_sample(framework: str, repo_path: str, storage_path: str) -> dict:
             framework=framework,
             repo_path=repo_path,
             storage_path=storage_path,
+            redact_sensitive=redact_sensitive,
         ) as recorded,
     ):
         result = calls[framework]()
-    document = recorded.export()
+    document = recorded.export(redact_sensitive=redact_sensitive)
     return {
         "capture_id": recorded.capture_id,
         "result": result,
@@ -58,8 +61,22 @@ def main() -> None:
     )
     parser.add_argument("--repo-path", required=True)
     parser.add_argument("--storage-path", required=True)
+    parser.add_argument(
+        "--no-redact-sensitive",
+        action="store_true",
+        help="retain original bounded local content after a warning; later commands must opt out again",
+    )
     args = parser.parse_args()
-    print(json.dumps(run_sample(args.framework, args.repo_path, args.storage_path)))
+    print(
+        json.dumps(
+            run_sample(
+                args.framework,
+                args.repo_path,
+                args.storage_path,
+                redact_sensitive=not args.no_redact_sensitive,
+            )
+        )
+    )
 
 
 if __name__ == "__main__":

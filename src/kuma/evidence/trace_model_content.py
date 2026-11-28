@@ -111,11 +111,15 @@ def _source_value(attributes: Mapping[str, Any], direction: str) -> tuple[Any, s
 
 def map_model_content(
     attributes: Mapping[str, Any],
+    *,
+    redact_sensitive: bool = True,
 ) -> tuple[dict[str, Any], int, set[str]]:
     """Normalize observed model inputs/results using the existing tool body boundary.
 
     Args:
         attributes: Original attributes of an explicitly observed model span.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     Returns:
         Closed versioned content, count of omitted supported bodies, and stable
         loss reasons. Values exist exactly for present/redacted states, including
@@ -138,7 +142,9 @@ def map_model_content(
         try:
             value, status = _source_value(attributes, direction)
             if status == "present":
-                value, status = normalize_tool_content(value, redact=True)
+                value, status = normalize_tool_content(
+                    value, redact=True, _redact_sensitive=redact_sensitive
+                )
         except Exception:
             value, status = None, "invalid"
         field = {"status": status}
@@ -152,11 +158,13 @@ def map_model_content(
     return content, dropped, reasons
 
 
-def validate_model_content(value: Any) -> None:
+def validate_model_content(value: Any, *, redact_sensitive: bool = True) -> None:
     """Require exact model-body fields/states, budgets and privacy at wire admission.
 
     Args:
         value: Untrusted optional normalized model-content object.
+        redact_sensitive: Strict bool, default True. False explicitly retains original
+            bounded content for this operation only; existing redaction cannot be undone.
     Raises:
         ValueError: Closed shape, state/value consistency, finite graph, size or
             privacy failure. The error contains no rejected value or raw cause.
@@ -195,8 +203,9 @@ def validate_model_content(value: Any) -> None:
                     and len(runtime_evidence_json(plain).encode())
                     <= RUNTIME_AGENT_OUTPUT_MAX_BYTES
                 )
-                valid = valid and not scan_sensitive_json(
-                    plain, location="trace_model_content"
+                valid = valid and (
+                    not redact_sensitive
+                    or not scan_sensitive_json(plain, location="trace_model_content")
                 )
     except Exception:
         valid = False
