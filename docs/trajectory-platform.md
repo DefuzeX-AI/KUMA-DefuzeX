@@ -3,7 +3,7 @@
 ## Explicit privacy policy (0.7.0)
 
 Capture, `prepare_review`, `prepare_atif`, `prepare_observation`,
-`prepare_submission`, requirement validation and `TrajectoryClient` operations accept
+`prepare_submission`, requirements validation and `TrajectoryClient` operations accept
 `redact_sensitive: bool = True`. Default behavior remains protected. Explicit `False`
 retains bounded original domain content after a content-free `RawContentWarning`;
 it does not recover earlier redaction, disable authentication or enlarge size/shape

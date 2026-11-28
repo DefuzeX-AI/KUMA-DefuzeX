@@ -152,7 +152,7 @@ def prepare_submission(
         observation_id: Optional existing obs_ ID for correlation; null for native-file imports.
         inventory: Optional classify_observation output, null for native events; descriptive only.
         redact_sensitive: Strict bool, default True. False retains raw caller-owned
-            content after warning, without changing original source or requirement hashes.
+            content after warning, without changing original source or requirements hashes.
     Returns:
         Detached v1 submission, with a content fingerprint for immutable evaluation provenance.
     Raises:
