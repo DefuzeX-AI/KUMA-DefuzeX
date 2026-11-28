@@ -1,5 +1,12 @@
 # Agent execution review workspace
 
+If workspace storage is full, Judge may return HTTP 507 as `ServiceError` with
+code `workspace_storage_exceeded`, `retryable=False`, and the message
+"Workspace storage is full. Contact support before running Judge again."
+The SDK preserves the response request ID and does not automatically retry this
+error. It is distinct from temporary processing `capacity_exceeded`; increasing
+retry counts does not free storage. No storage quota is increased by this patch.
+
 ## Explicit privacy policy (0.7.0)
 
 Capture, `prepare_review`, `prepare_atif`, `prepare_observation`,

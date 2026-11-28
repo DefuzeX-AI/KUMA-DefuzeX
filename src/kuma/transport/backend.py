@@ -741,6 +741,7 @@ _ERROR_CLASSES: dict[str, type[KumaError]] = {
     "model_output_policy_conflict": ServiceError,
     "model_output_privacy_rejected": ServiceError,
     "capacity_exceeded": ServiceError,
+    "workspace_storage_exceeded": ServiceError,
     "request_failed": ServiceError,
     "operation_failed": ServiceError,
     "request_in_progress": ServiceError,
@@ -820,6 +821,7 @@ _CODE_ERROR_MESSAGES = {
     "model_output_policy_conflict": "The generated result does not satisfy the task requirements. Please try again later.",
     "model_output_privacy_rejected": "The generated result failed safety validation. Please try again later.",
     "capacity_exceeded": "Processing capacity is currently exhausted. Please try again later.",
+    "workspace_storage_exceeded": "Workspace storage is full. Contact support before running Judge again.",
     "request_in_progress": "The request is still processing. Check the original request instead of resubmitting.",
     "upstream_unavailable": "The service is temporarily unavailable. Please try again later.",
     "upload_not_configured": "Evidence upload is not configured. Please contact support.",
@@ -882,7 +884,7 @@ def _automatic_retry_blocked(error: KumaError) -> bool:
         Whether HTTP and operation polling must return control without another
         automatic attempt. Every public category split from the former generic
         busy projection retains its stop behavior, including generated-result,
-        capacity, internal failure, in-progress and unsupported-strategy errors.
+        processing/storage capacity, internal failure, in-progress and unsupported-strategy errors.
         Historical public aliases are retained. Network failures and unrelated
         codes still follow their existing retryable/budget policy.
 
@@ -895,6 +897,7 @@ def _automatic_retry_blocked(error: KumaError) -> bool:
         "upstream_unavailable",
         "upload_not_configured",
         "capacity_exceeded",
+        "workspace_storage_exceeded",
         "request_failed",
         "operation_failed",
         "model_invalid_result",
