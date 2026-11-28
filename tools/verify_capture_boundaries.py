@@ -70,6 +70,10 @@ class CaptureBoundaryTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValidationError):
                 core._review_inputs({}, None, None, accept_media_omission=value)
 
+    @unittest.skipUnless(
+        os.environ.get("KUMA_RUN_INSTRUMENTATION_TESTS") == "1",
+        "Optional OTel matrix required for real raw capture lifecycle",
+    )
     def test_explicit_raw_warning_lifecycle_persistence_and_cli(self):
         from opentelemetry.sdk.resources import Resource
         from opentelemetry.sdk.trace import TracerProvider
